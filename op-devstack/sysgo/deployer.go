@@ -66,6 +66,19 @@ func WithDefaultBPOBlobSchedule(_ devtest.P, _ devkeys.Keys, builder intentbuild
 		BPO2:   params.DefaultBPO2BlobConfig,
 		BPO3:   params.DefaultBPO3BlobConfig,
 		BPO4:   params.DefaultBPO4BlobConfig,
+		// BPO5 / Amsterdam (Glamsterdam) — op-geth does not yet expose Default
+		// BlobConfigs for these forks, so we inline reasonable values (matching
+		// BPO4) to satisfy the chain-config validator when tests activate them.
+		BPO5: &params.BlobConfig{
+			Target:         14,
+			Max:            21,
+			UpdateFraction: 13739630,
+		},
+		Amsterdam: &params.BlobConfig{
+			Target:         14,
+			Max:            21,
+			UpdateFraction: 13739630,
+		},
 	})
 }
 
