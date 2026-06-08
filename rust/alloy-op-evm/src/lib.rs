@@ -20,7 +20,7 @@ pub mod error;
 pub use error::{OpTxError, map_op_err};
 
 use alloy_evm::{Database, Evm, EvmEnv, EvmFactory, IntoTxEnv, precompiles::PrecompilesMap};
-use alloy_primitives::{Address, Bytes, U256};
+use alloy_primitives::{Address, Bytes};
 use core::{
     fmt::Debug,
     marker::PhantomData,
@@ -310,10 +310,6 @@ where
             self.inner.0.inspector.inner_mut(),
             &mut self.inner.0.precompiles,
         )
-    }
-
-    fn token_ratio(&self) -> U256 {
-        U256::ZERO
     }
 }
 

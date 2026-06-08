@@ -683,6 +683,3 @@ revm-precompile = { git = "https://github.com/mantle-xyz/revm", branch = "mantle
 revm-primitives = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
 revm-state = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
 op-revm = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
-
-# alloy-evm: redirected to mantle-xyz/evm @ mantle-v0.34.0 (v0.34.0 + Mantle token_ratio trait method)
-alloy-evm = { git = "https://github.com/mantle-xyz/evm", branch = "mantle-v0.34.0" }

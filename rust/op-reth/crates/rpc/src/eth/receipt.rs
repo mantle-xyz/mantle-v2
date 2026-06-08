@@ -294,6 +294,10 @@ impl OpReceiptFieldsBuilder {
                 operator_fee_scalar,
                 operator_fee_constant,
                 da_footprint_gas_scalar,
+                // [MANTLE] Jovian-class RPC field. This subtree is not the production op-reth
+                // (CI builds the binary from src/reth) and does not implement per-tx token_ratio
+                // surfacing; initialize to null, matching the default constructor in production.
+                token_ratio: None,
             },
             op_gas_refund,
             deposit_nonce,
