@@ -138,10 +138,6 @@ where
     fn components_mut(&mut self) -> (&mut Self::DB, &mut Self::Inspector, &mut Self::Precompiles) {
         self.inner.components_mut()
     }
-
-    fn token_ratio(&self) -> alloy_primitives::U256 {
-        self.inner.token_ratio()
-    }
 }
 
 impl<F, DB, I> PostExecEvm for PostExecEvmAdapter<F::Evm<DB, I>, F, DB, I>
