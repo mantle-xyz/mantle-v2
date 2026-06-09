@@ -319,15 +319,37 @@ in §B confirmed there are no real consumers. **Do not re-add these in a future 
 If a future Mantle hardfork brings non-standard blob submission back, build new code on
 top of develop's `EthereumDataSource` / `BlobSource` instead of resurrecting these files.
 
-**op-reth subtree-sync strategy (Phase 5).** `op-reth/` is part of the upstream optimism
-`rust/` subtree, so a future `git subtree pull` (§4) *will* try to re-introduce it. When
-resolving that merge, **drop all `op-reth/` changes** — the EL node is maintained
-out-of-tree in `mantle-xyz/reth`. Keep the `op-reth/*` entries out of `Cargo.toml`
-`members` / `default-members` / `[workspace.dependencies]` as well. This is the same
-"re-delete on every sync" posture as the orphan modules above. The alternative — keeping
-`op-reth/` on disk but `exclude`-d like `op-revm/` — was rejected because, unlike
-`op-revm` (which is referenced via `[patch.crates-io]`), nothing in-tree consumes
-`op-reth` at all.
+**op-reth subtree-sync strategy (Phase 5).**
+
+**Verified fact:** `op-reth/` is part of the upstream `rust/` subtree — it was present in
+the very first `git subtree add` commit `ba2cc4514` (`git ls-tree ba2cc4514 rust/` lists
+`rust/op-reth`). It comes in via the bridge repo `mantle-xyz/optimism-rust-bridge`, *not*
+as a Mantle-local addition. Therefore a future `git subtree pull` (§4) **will** try to
+re-introduce it. Concretely, the pull is a merge that yields:
+
+- **modify/delete conflicts** for every op-reth file upstream changed (we deleted it);
+- **silent re-add** of any *new* op-reth files upstream introduces (we have nothing to
+  conflict with);
+- a **conflict on `rust/Cargo.toml`** (we removed the `op-reth/*` members/deps; the
+  bridge's copy still has them) — resolve by keeping our op-reth-free version.
+
+There are two ways to keep op-reth out:
+
+- **Strategy A — re-delete on every sync (current posture, same as the orphan modules
+  above).** After `git subtree pull`:
+  ```bash
+  # resolve rust/Cargo.toml keeping the op-reth-free (ours) version, then:
+  git rm -r rust/op-reth
+  grep -n "op-reth\|reth-optimism" rust/Cargo.toml   # must be empty
+  git add -A && git commit
+  ```
+- **Strategy B — drop op-reth from the bridge (recommended, permanent).** Exclude
+  `op-reth/` when assembling/splitting `mantle-xyz/optimism-rust-bridge`, so subtree
+  pulls never carry it. One-time change to the bridge tooling; eliminates Strategy A's
+  per-sync toil.
+
+Keeping `op-reth/` on disk but `exclude`-d like `op-revm/` was rejected: unlike `op-revm`
+(referenced via `[patch.crates-io]`), nothing in-tree consumes `op-reth` at all.
 
 ## 4. Sync workflow
 
