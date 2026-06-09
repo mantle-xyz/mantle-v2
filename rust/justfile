@@ -60,13 +60,8 @@ build-kona-node-debug:
 
 alias build-node := build-kona-node
 
-# Build op-reth
-build-op-reth:
-  cargo build --release --bin op-reth
-
-# Build op-reth in debug mode (faster compilation for local E2E test iteration)
-build-op-reth-debug:
-  cargo build --bin op-reth
+# Note: op-reth (the Mantle EL node) now lives in its own repo
+# (https://github.com/mantle-xyz/reth); it is no longer built from this workspace.
 
 ############################### Test ################################
 
@@ -196,7 +191,7 @@ hack partition="" shuffle="false" seed="default":
 ########################### Release #################################
 
 # Release crates at the given version.
-# target: either "workspace" (releases every subdir under rust/ except op-reth,
+# target: either "workspace" (releases every subdir under rust/,
 #         in dependency order) or one of the subdir names (op-alloy,
 #         alloy-op-hardforks, alloy-op-evm, op-revm, kona).
 # mode: "dry" (default, prints changes without applying) or "execute"
@@ -247,7 +242,6 @@ release TARGET VERSION MODE="dry" *ARGS="":
     ACTUAL_SUBDIRS=$(echo "$METADATA" \
       | jq -r '.packages[].manifest_path' \
       | sed -nE 's|.*/rust/([^/]+)/.*|\1|p' \
-      | grep -vx 'op-reth' \
       | sort -u)
     if [[ "$EXPECTED_SUBDIRS" != "$ACTUAL_SUBDIRS" ]]; then
       echo "error: hardcoded ALL_SUBDIRS list doesn't match actual subdirs under rust/." >&2

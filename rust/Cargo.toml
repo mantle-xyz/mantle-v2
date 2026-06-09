@@ -24,26 +24,6 @@ members = [
   # Op-Alloy
   "op-alloy/crates/*",
 
-  # Op-Reth
-  "op-reth/bin/",
-  "op-reth/bin/proof-bench/",
-  "op-reth/crates/chainspec/",
-  "op-reth/crates/cli/",
-  "op-reth/crates/consensus/",
-  "op-reth/crates/evm/",
-  "op-reth/crates/flashblocks/",
-  "op-reth/crates/hardforks/",
-  "op-reth/crates/node/",
-  "op-reth/crates/payload/",
-  "op-reth/crates/primitives/",
-  "op-reth/crates/reth/",
-  "op-reth/crates/rpc/",
-  "op-reth/crates/storage/",
-  "op-reth/crates/exex/",
-  "op-reth/crates/trie/",
-  "op-reth/crates/txpool/",
-  "op-reth/examples/*",
-
   # Alloy OP EVM
   "alloy-op-evm/",
 
@@ -59,7 +39,6 @@ default-members = [
   "kona/bin/host",
   "kona/bin/client",
   "kona/bin/node",
-  "op-reth/bin/",
 ]
 
 # ==================== WORKSPACE METADATA ====================
@@ -281,24 +260,6 @@ kona-cli = { path = "kona/crates/utilities/cli", version = "0.3.2", default-feat
 kona-serde = { path = "kona/crates/utilities/serde", version = "0.2.2", default-features = false }
 kona-macros = { path = "kona/crates/utilities/macros", version = "0.1.2", default-features = false }
 
-# ==================== OP-RETH INTERNAL CRATES ====================
-op-reth = { path = "op-reth/bin/" }
-reth-optimism-chainspec = { path = "op-reth/crates/chainspec/", default-features = false }
-reth-optimism-cli = { path = "op-reth/crates/cli/", default-features = false }
-reth-optimism-consensus = { path = "op-reth/crates/consensus/", default-features = false }
-reth-optimism-evm = { path = "op-reth/crates/evm/", default-features = false }
-reth-optimism-flashblocks = { path = "op-reth/crates/flashblocks/" }
-reth-optimism-forks = { path = "op-reth/crates/hardforks/", default-features = false }
-reth-optimism-node = { path = "op-reth/crates/node/" }
-reth-optimism-payload-builder = { path = "op-reth/crates/payload/" }
-reth-optimism-primitives = { path = "op-reth/crates/primitives/", default-features = false }
-reth-op = { path = "op-reth/crates/reth/", default-features = false }
-reth-optimism-rpc = { path = "op-reth/crates/rpc/" }
-reth-optimism-storage = { path = "op-reth/crates/storage/" }
-reth-optimism-exex = { path = "op-reth/crates/exex/" }
-reth-optimism-trie = { path = "op-reth/crates/trie/" }
-reth-optimism-txpool = { path = "op-reth/crates/txpool/" }
-
 # ==================== OP-ALLOY INTERNAL CRATES ====================
 op-alloy-consensus = { version = "2.0.0", path = "op-alloy/crates/consensus", default-features = false }
 op-alloy-network = { version = "2.0.0", path = "op-alloy/crates/network", default-features = false }
@@ -392,7 +353,6 @@ reth-trie = { git = "https://github.com/paradigmxyz/reth", rev = "88505c7fcbfdeb
 reth-trie-common = { git = "https://github.com/paradigmxyz/reth", rev = "88505c7fcbfdebfd3b56d88c86b62e950043c6c4", default-features = false }
 reth-trie-db = { git = "https://github.com/paradigmxyz/reth", rev = "88505c7fcbfdebfd3b56d88c86b62e950043c6c4" }
 
-# ==================== REVM (latest: op-reth versions) ====================
 # ==================== REVM (redirected to mantle-xyz/revm @ mantle-elysium via [patch.crates-io]; declared versions track upstream to satisfy transitive constraints) ====================
 revm = { version = "38.0.0", default-features = false }
 revm-bytecode = { version = "10.0.0", default-features = false }
@@ -409,6 +369,7 @@ alloy-chains = { version = "0.2.33", default-features = false }
 alloy-dyn-abi = "1.5.6"
 alloy-eip2124 = { version = "0.2.0", default-features = false }
 alloy-eip7928 = { version = "0.3.4", default-features = false }
+# [MANTLE] upstream alloy-rs/evm via crates.io (no fork patch); see [patch.crates-io] note.
 alloy-evm = { version = "0.34.0", default-features = false }
 alloy-primitives = { version = "1.5.6", default-features = false, features = [
   "map-foldhash",
@@ -684,5 +645,8 @@ revm-primitives = { git = "https://github.com/mantle-xyz/revm", branch = "mantle
 revm-state = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
 op-revm = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
 
-# alloy-evm: redirected to mantle-xyz/evm @ mantle-v0.34.0 (v0.34.0 + Mantle token_ratio trait method)
-alloy-evm = { git = "https://github.com/mantle-xyz/evm", branch = "mantle-v0.34.0" }
+# [MANTLE] alloy-evm is intentionally NOT patched: it resolves from crates.io, which is
+# upstream alloy-rs/evm v0.34.0. The previous mantle-xyz/evm@mantle-v0.34.0 fork existed
+# only to add a `token_ratio` method to the `Evm` trait — that method was dead code
+# (never called in this workspace or in mantle-xyz/reth), so we dropped the fork and the
+# two stub impls in alloy-op-evm. See MANTLE_CHANGES.md §2.3 / §3.7.
