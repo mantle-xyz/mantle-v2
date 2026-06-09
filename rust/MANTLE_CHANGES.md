@@ -26,8 +26,9 @@ when synchronizing future upstream changes via `git subtree pull`.
 | Phase 0 | wire mantle-elysium revm + op-alloy/alloy-op-evm adaptations | ✅ |
 | Phase 1 (a–g) | kona Mantle protocol migration | ✅ |
 | Phase 1.5 (B1–B3) | drop Mantle vendored-but-unused code (≈1066 lines removed) | ✅ |
-| Phase 4 | redirect `alloy-evm` to `mantle-xyz/evm @ mantle-v0.34.0` | ✅ |
+| Phase 4 | redirect `alloy-evm` to `mantle-xyz/evm @ mantle-v0.34.0` | ↩️ reverted in Phase 5 |
 | Sync `rust-develop-20260511` → `rust-kona-client-v1.5.1` | 7 upstream commits, 38 files, 1 trivial conflict + 1 KARST fix | ✅ |
+| Phase 5 | remove `op-reth/` (EL node now lives in `mantle-xyz/reth`); revert `alloy-evm` to upstream `alloy-rs/evm` v0.34.0 + drop the 2 dead `token_ratio` stubs in `alloy-op-evm` | ✅ |
 | Phase 2 | op-succinct upgrade (independent fork) | ⏸️ |
 | Phase 3 | kona security patch follow-up | ⏸️ |
 
@@ -60,40 +61,45 @@ via `[patch.crates-io]`, so the actual EVM execution path is 100% on mantle-elys
 | op-revm major version | v20 | v19 ⚠️ | Adapt Mantle consumers to v19 API |
 | `OpSpecId` variants | Includes `KARST` | No `KARST`; includes `OSAKA` + `ARSIA` | Replace KARST references with OSAKA/JOVIAN/ARSIA fallbacks or comment them out |
 
-### 2.3 alloy-evm sourced from mantle-xyz/evm @ mantle-v0.34.0
+### 2.3 alloy-evm sourced from upstream alloy-rs/evm v0.34.0 (crates.io)
 
-`Cargo.toml` redirects `alloy-evm` to the `mantle-v0.34.0` **branch** (not tag) of
-`mantle-xyz/evm`. That branch contains **two commits**:
+`alloy-evm` is **not** patched in `[patch.crates-io]`; it resolves straight from
+crates.io at `0.34.0`, which is pristine upstream `alloy-rs/evm` v0.34.0.
 
-- `6022e02e` "chore: release 0.34.0" — upstream alloy-rs/evm v0.34.0 baseline.
-- `b91d0077` "feat(evm): port Mantle token_ratio trait method onto v0.34.0" — adds
-  `fn token_ratio(&self) -> U256` to the `Evm` trait (with `U256::ZERO` default on
-  `EthEvm` and a delegating impl on `Either<L, R>`).
+**History (Phase 4 → reverted in Phase 5).** Previously `alloy-evm` was redirected to the
+`mantle-v0.34.0` branch of `mantle-xyz/evm`, a fork whose only delta over upstream
+v0.34.0 was one commit — `b91d0077` "port Mantle token_ratio trait method onto v0.34.0" —
+adding `fn token_ratio(&self) -> U256` to the `Evm` trait (`U256::ZERO` default on
+`EthEvm`, delegating impl on `Either<L, R>`).
 
-This is **structurally divergent from `mantle-xyz/evm@main`**. `main` is still on an
-alloy-rs/evm v0.22.x lineage and carries Mantle op-side patches in
-`crates/evm/src/op/tx.rs` (BVM_ETH `eth_value` / `eth_tx_value` propagation through
-`TxEnv` / `OpTransaction`). **v0.34.0 deleted both `crates/op-evm/` and
-`crates/evm/src/op/`** — so those Mantle patches have no landing zone on
-`mantle-v0.34.0` and are not ported. This is the explicit decision documented in the
-`b91d0077` commit message.
+**Why the fork was dropped (Phase 5).** That `token_ratio` trait method was **dead code** —
+never called anywhere:
 
-The Mantle op-side functionality is instead provided by:
+- In this workspace the only `.token_ratio()` call was `alloy-op-evm`'s
+  `PostExecEvmAdapter` impl delegating to its inner EVM; `OpEvm::token_ratio` just
+  returned `U256::ZERO`.
+- In `mantle-xyz/reth@mantle-elysium` there are **zero** `token_ratio()` call sites
+  (all 70 `token_ratio` hits there are the `L1BlockInfo.token_ratio` *field* + GasOracle
+  reads).
+
+The real Mantle eth/MNT ratio for L1 fees flows through the **`op-alloy`
+`L1BlockInfo.token_ratio` field** (§3.2) + the GasOracle contract, and through `op-revm`
+(mantle-xyz/revm) — none of which touch the alloy-evm `Evm` trait. So Phase 5 reverted to
+upstream and removed the two now-orphaned trait-method impls in `alloy-op-evm`
+(`src/lib.rs` `OpEvm::token_ratio`; `src/post_exec/mod.rs`
+`PostExecEvmAdapter::token_ratio`, plus the now-unused `U256` import in `lib.rs`).
+
+**Mantle op-side functionality** (unchanged) is provided by:
 
 - `op-revm` from `mantle-xyz/revm@mantle-elysium` (BVM_ETH execution, token_ratio
   computation, ARSIA / JOVIAN protocol changes).
-- The locally-vendored `alloy-op-evm/` (this repo) per §3.7 — hand-ported Mantle
-  protocol changes that target the v0.32-era alloy-rs/evm `OpTxTr` / `OpBlockExecutor`
-  API.
+- The locally-vendored `alloy-op-evm/` (this repo) per §3.7.
 
-**Audit note (2026-05):** an audit comparing local against `mantle-xyz/evm@main`
-crates/evm/ surfaced no real gaps. Every Mantle change on main's `crates/evm/`
-falls into one of two buckets:
-
-1. `token_ratio` trait method (evm.rs / eth/mod.rs / either.rs) — already ported by
-   `b91d0077`.
-2. Edits to `crates/evm/src/op/tx.rs` (BVM_ETH plumbing) — target a path that
-   v0.34.0 deleted; covered locally by `alloy-op-evm/src/tx.rs` per §3.7.
+**Sync caveat.** A future upstream alloy-evm bump just tracks the new crates.io version
+(no fork to rebase). Do **not** reintroduce the `token_ratio` trait method unless a real
+caller appears. Note `mantle-xyz/reth` still references `mantle-xyz/evm@mantle-v0.34.0`
+for its own `alloy-evm`; that is harmless (the dead method simply remains there) and
+independent of this workspace.
 
 ### 2.4 Mantle data sources use the upstream `EthereumDataSource`
 
@@ -117,6 +123,8 @@ grep -rn "\[MANTLE\]" rust/ --include="*.rs" --include="*.toml"
 |---|---|
 | `Cargo.toml` | `[patch.crates-io]` redirects all 13 revm-family crates to `mantle-xyz/revm@mantle-elysium`. |
 | `Cargo.toml` | Workspace `members` drops `"op-revm/"`; `exclude = ["op-revm"]` keeps the orphan subtree out of the build. |
+| `Cargo.toml` | `alloy-evm` is **not** patched — resolves from crates.io = upstream alloy-rs/evm v0.34.0 (Phase 5; see §2.3). |
+| `Cargo.toml` | Workspace `members` / `default-members` drop every `op-reth/*` entry, and the `reth-optimism-* / op-reth / reth-op` block is removed from `[workspace.dependencies]`; the `op-reth/` subtree is deleted (Phase 5; EL node now lives in `mantle-xyz/reth`, see §3.9 / §3.11). |
 
 ### 3.2 op-alloy — TxDeposit gains BVM_ETH fields + L1BlockInfo gains token_ratio
 
@@ -268,11 +276,23 @@ Corresponds to mantle-xyz/evm commits `707922af`, `5f383c5`, `9fe2c85`, `760129f
 |---|---|
 | `kona/bin/client/src/fpvm_evm/precompiles/provider.rs` | Drop the `karst` import. Collapse the `KARST` match arms into `JOVIAN \| OSAKA \| ARSIA \| INTEROP` and route them to `jovian()` / `accelerated_jovian` so the match remains exhaustive. |
 
-### 3.9 op-reth/rpc — handles the Mantle-specific OpTransactionError variants
+### 3.9 op-reth — REMOVED from this workspace (Phase 5)
 
-| File | Change |
-|---|---|
-| `op-reth/crates/rpc/src/error.rs` | `TryFrom<OpTxError>` adds an arm for `BvmEth(_) \| TxL1CostOutOfRange`. Placeholder maps to `MissingEnvelopedTx`. **TODO**: extend `OpInvalidTransactionError` with proper variants and dedicated RPC error codes. |
+The entire `op-reth/` subtree (the Mantle execution-layer node) was **deleted** from
+`rust/`. Nothing in `kona` / `op-alloy` / `alloy-op-evm` / `alloy-op-hardforks` ever
+depended on the `reth-optimism-*` / `op-reth` / `reth-op` crates — `op-reth` was a
+standalone binary that merely shared this workspace (and the shared revm/alloy patches).
+
+The EL node now lives in its own repo, **`mantle-xyz/reth@mantle-elysium`**, which is a
+self-contained workspace (it even pulls `op-alloy` / `alloy-op-evm` *back* from
+`mantle-xyz/mantle-v2@mantle-elysium`). The former lone Mantle change here — the
+`TryFrom<OpTxError>` arm for `BvmEth(_) | TxL1CostOutOfRange` in
+`op-reth/crates/rpc/src/error.rs` — lives in that repo now.
+
+CI is unaffected: `.github/workflows/ci-main-migrated.yml` already installs `op-reth`
+from `https://github.com/mantle-xyz/reth/releases/...`, not from this workspace.
+
+See §3.11 for the subtree-sync strategy.
 
 ### 3.10 op-core — vendored data (outside the rust/ subtree)
 
@@ -294,9 +314,20 @@ in §B confirmed there are no real consumers. **Do not re-add these in a future 
 | `kona/crates/protocol/derive/src/sources/mantle_blob.rs` (817 lines) + `testdata/*.hex` | Mantle fork (originally vendored in Phase 1a) | Orphan code. Mantle's own fork constructs `EthereumDataSource::new_from_parts` everywhere — `MantleBlobSource` was never wired into any pipeline. The `mantle_format_failed` fallback is obsolete because post-Arsia all submissions use the standard blob format. |
 | `kona/crates/protocol/derive/src/sources/mantle_ethereum.rs` (222 lines) | Mantle fork (originally vendored in Phase 1a) | Orphan code. Even in Mantle's own fork, every pipeline call site uses the upstream `EthereumDataSource`. The file was an unfinished refactor. |
 | `DataAvailabilityProvider::reset()` trait method + `L1Retrieval::reset` calling `self.provider.reset()` | Phase 1d addition | Existed solely to clear `MantleBlobSource::mantle_format_failed` — moot after the above two deletions. The trait method was a default-empty no-op with no overriders. |
+| `op-reth/` — entire subtree (bin + the 16 `reth-optimism-*` crates + examples) | optimism `rust/` subtree | **Phase 5.** The Mantle EL node moved to its own repo `mantle-xyz/reth@mantle-elysium`. No kona-side crate depends on it. **Sync note below.** |
 
 If a future Mantle hardfork brings non-standard blob submission back, build new code on
 top of develop's `EthereumDataSource` / `BlobSource` instead of resurrecting these files.
+
+**op-reth subtree-sync strategy (Phase 5).** `op-reth/` is part of the upstream optimism
+`rust/` subtree, so a future `git subtree pull` (§4) *will* try to re-introduce it. When
+resolving that merge, **drop all `op-reth/` changes** — the EL node is maintained
+out-of-tree in `mantle-xyz/reth`. Keep the `op-reth/*` entries out of `Cargo.toml`
+`members` / `default-members` / `[workspace.dependencies]` as well. This is the same
+"re-delete on every sync" posture as the orphan modules above. The alternative — keeping
+`op-reth/` on disk but `exclude`-d like `op-revm/` — was rejected because, unlike
+`op-revm` (which is referenced via `[patch.crates-io]`), nothing in-tree consumes
+`op-reth` at all.
 
 ## 4. Sync workflow
 
