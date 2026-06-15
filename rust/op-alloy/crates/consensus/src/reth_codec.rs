@@ -85,16 +85,19 @@ struct CompactTxDeposit {
     value: U256,
     gas_limit: u64,
     is_system_transaction: bool,
+    // [MANTLE] BVM_ETH fields. Stored as `Option<u128>` (1 flag bit each) and placed
+    // BEFORE `input` to reproduce the exact 2-byte Compact bitfield layout written by
+    // reth v1.9.3-mantle-arsia (15 used bits -> 2 bytes). The op-alloy `TxDeposit` uses
+    // `u128` for `eth_value`; the conversion impls map `0 <-> None` (same pattern as `mint`).
+    //
+    // DO NOT change these types or reorder these fields: it shifts the bitfield and makes
+    // ALL existing on-disk deposit data unreadable (the original op-reth-rpc41 sync failure).
+    // The earlier `reth_codecs_derive: Compact not satisfied` claim was a misdiagnosis;
+    // `Option<u128>` is the same shape as the already-working `mint` field above.
+    // Guarded by `compact_txdeposit_bitfield_is_2_bytes` below.
+    eth_value: Option<u128>,
+    eth_tx_value: Option<u128>,
     input: Bytes,
-    // [MANTLE] Intentional: `eth_value` and `eth_tx_value` cannot be added
-    // here because `reth_codecs_derive::Compact` (sourced from
-    // mantle-v2's pinned reth-codecs-derive) does not regenerate a
-    // matching `Compact` trait impl when these extra fields are appended —
-    // adding them produces `the following trait bounds were not satisfied:
-    // CompactTxDeposit: Compact`. The conversion impls below therefore
-    // drop BVM_ETH data on encode and synthesise zeros on decode. See the
-    // §3.2 TODO note in MANTLE_CHANGES.md for the rationale and impact
-    // assessment.
 }
 
 impl From<&TxDeposit> for CompactTxDeposit {
@@ -110,21 +113,21 @@ impl From<&TxDeposit> for CompactTxDeposit {
             value: tx.value,
             gas_limit: tx.gas_limit,
             is_system_transaction: tx.is_system_transaction,
+            // [MANTLE] map u128 `0` -> `None` (same convention as `mint`).
+            eth_value: match tx.eth_value {
+                0 => None,
+                v => Some(v),
+            },
+            eth_tx_value: tx.eth_tx_value,
             input: tx.input.clone(),
-            // [MANTLE] tx.eth_value and tx.eth_tx_value are intentionally
-            // discarded here — see the struct definition for the rationale
-            // (reth_codecs_derive limitation).
         }
     }
 }
 
 impl From<CompactTxDeposit> for TxDeposit {
     fn from(tx: CompactTxDeposit) -> Self {
-        // [MANTLE] BVM_ETH fields default to 0 / None on Compact decode
-        // because `CompactTxDeposit` cannot carry them (see struct note).
-        // bincode_compat (in `transaction/deposit.rs::serde_bincode_compat`)
-        // **does** preserve these fields — use that path when round-tripping
-        // Mantle deposits through serde is required.
+        // [MANTLE] BVM_ETH fields are preserved across the Compact round-trip
+        // (`eth_value` via `None -> 0`, same as `mint`).
         Self {
             source_hash: tx.source_hash,
             from: tx.from,
@@ -133,9 +136,9 @@ impl From<CompactTxDeposit> for TxDeposit {
             value: tx.value,
             gas_limit: tx.gas_limit,
             is_system_transaction: tx.is_system_transaction,
-            eth_value: 0,
+            eth_value: tx.eth_value.unwrap_or_default(),
             input: tx.input,
-            eth_tx_value: None,
+            eth_tx_value: tx.eth_tx_value,
         }
     }
 }
@@ -151,6 +154,67 @@ impl Compact for TxDeposit {
     fn from_compact(buf: &[u8], len: usize) -> (Self, &[u8]) {
         let (compact, buf) = CompactTxDeposit::from_compact(buf, len);
         (compact.into(), buf)
+    }
+}
+
+#[cfg(test)]
+mod mantle_txdeposit_compact_tests {
+    use super::*;
+    use alloc::vec;
+
+    fn roundtrip(tx: &TxDeposit) -> TxDeposit {
+        let mut buf = Vec::new();
+        let _ = Compact::to_compact(tx, &mut buf);
+        let (decoded, _) = TxDeposit::from_compact(&buf, buf.len());
+        decoded
+    }
+
+    /// The Compact flag bitfield MUST stay 2 bytes to remain byte-for-byte compatible with
+    /// the reth v1.9.3-mantle-arsia on-disk format (B256=0, Address=0, TxKind=1,
+    /// mint Option=1, U256=6, u64=4, bool=1, eth_value Option=1, eth_tx_value Option=1,
+    /// Bytes=0 => 15 used bits => 2 bytes). Changing field types/order shifts the layout and
+    /// makes every existing on-disk deposit unreadable (the op-reth-rpc41 sync failure).
+    #[test]
+    fn compact_txdeposit_bitfield_is_2_bytes() {
+        assert_eq!(CompactTxDeposit::bitflag_encoded_bytes(), 2);
+    }
+
+    #[test]
+    fn roundtrip_zero_bvm_eth() {
+        let tx = TxDeposit { eth_value: 0, eth_tx_value: None, ..Default::default() };
+        assert_eq!(roundtrip(&tx), tx);
+    }
+
+    /// Regression for the elysium `CompactTxDeposit` field-drop: a BVM_ETH deposit must not
+    /// read back with `eth_value = 0` / `eth_tx_value = None`, and `input` (the last,
+    /// length-suffixed field) must survive the two extra bitfield bits intact.
+    #[test]
+    fn roundtrip_nonzero_bvm_eth_preserves_fields() {
+        let tx = TxDeposit {
+            source_hash: B256::repeat_byte(0xab),
+            from: Address::repeat_byte(0x11),
+            to: TxKind::Call(Address::repeat_byte(0x22)),
+            mint: 7,
+            value: U256::from(9u64),
+            gas_limit: 300_000,
+            is_system_transaction: false,
+            eth_value: 123_456_000_000_000_000,
+            input: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
+            eth_tx_value: Some(123_456_000_000_000_000),
+        };
+        let rt = roundtrip(&tx);
+        assert_eq!(rt.eth_value, 123_456_000_000_000_000, "eth_value was dropped");
+        assert_eq!(rt.eth_tx_value, Some(123_456_000_000_000_000), "eth_tx_value was dropped");
+        assert_eq!(rt.input, tx.input, "input corrupted (bitfield shift)");
+        assert_eq!(rt, tx);
+    }
+
+    /// `Some(0)` must round-trip as `Some(0)` (not `None`): the Option flag is independent of
+    /// the value being zero.
+    #[test]
+    fn roundtrip_eth_tx_value_some_zero() {
+        let tx = TxDeposit { eth_tx_value: Some(0), ..Default::default() };
+        assert_eq!(roundtrip(&tx).eth_tx_value, Some(0));
     }
 }
 
