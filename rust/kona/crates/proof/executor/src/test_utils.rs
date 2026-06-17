@@ -369,6 +369,9 @@ impl ExecutorTestFixtureCreator {
             expected_block_hash: executing_header.hash_slow(),
         };
 
+        // [MANTLE] Capture the block number before `self` is moved into the builder
+        // so the failure branches below can still report which block failed.
+        let block_number = self.block_number;
         let mut executor = StatelessL2Builder::new(
             &rollup_config,
             OpEvmFactory::<alloy_op_evm::OpTx>::default(),
@@ -376,13 +379,34 @@ impl ExecutorTestFixtureCreator {
             NoopTrieHinter,
             parent_header,
         );
-        let outcome = executor.build_block(payload_attrs).expect("Failed to execute block");
+        // [MANTLE] Do not panic on a failed block execution (e.g. `InvalidChainId`,
+        // validation errors). Record the failure and let the caller tally it so a
+        // single bad block does not abort a multi-block run.
+        let outcome = match executor.build_block(payload_attrs) {
+            Ok(outcome) => outcome,
+            Err(e) => {
+                warn!(
+                    target: "kona_executor::test_utils",
+                    block_number,
+                    error = ?e,
+                    "Failed to execute block"
+                );
+                return Ok(false);
+            }
+        };
 
-        assert_eq!(
-            outcome.header.inner(),
-            &executing_header.inner,
-            "Produced header does not match the expected header"
-        );
+        // [MANTLE] Header mismatch is a soft failure, not a panic: report it and
+        // return `Ok(false)` so the caller records the block and continues.
+        if outcome.header.inner() != &executing_header.inner {
+            warn!(
+                target: "kona_executor::test_utils",
+                block_number,
+                produced = ?outcome.header.inner(),
+                expected = ?executing_header.inner,
+                "Produced header does not match the expected header"
+            );
+            return Ok(false);
+        }
         fs::write(fixture_path.as_path(), serde_json::to_vec(&fixture).unwrap()).await.unwrap();
 
         // Tar the fixture.
