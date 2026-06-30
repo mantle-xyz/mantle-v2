@@ -297,7 +297,8 @@ func TestParseL1InfoDepositTxData(t *testing.T) {
 	t.Run("arsia uses jovian format with arsia signature", func(t *testing.T) {
 		rng := rand.New(rand.NewSource(1234))
 		info := testutils.MakeBlockInfo(nil)(rng)
-		rollupCfg := rollup.Config{BlockTime: 2, Genesis: rollup.Genesis{L2Time: 1000}}
+		// L1ChainID required: the Arsia path calls ChainIDFromBig(L1ChainID), which panics on nil.
+		rollupCfg := rollup.Config{BlockTime: 2, Genesis: rollup.Genesis{L2Time: 1000}, L1ChainID: big.NewInt(1)}
 		rollupCfg.ActivateAtGenesis(forks.Jovian)
 		rollupCfg.MantleActivateAtGenesis(forks.MantleArsia)
 		// Arsia timestamp - one block after genesis to avoid activation block
