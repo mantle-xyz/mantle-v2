@@ -70,18 +70,18 @@ impl L1Config {
                 alloy_hardforks::EthereumHardfork::Prague.name().to_string().to_lowercase(),
                 BlobParams::prague(),
             ),
-            // (
-            //     alloy_hardforks::EthereumHardfork::Osaka.name().to_string().to_lowercase(),
-            //     BlobParams::osaka(),
-            // ),
-            // (
-            //     alloy_hardforks::EthereumHardfork::Bpo1.name().to_string().to_lowercase(),
-            //     BlobParams::bpo1(),
-            // ),
-            // (
-            //     alloy_hardforks::EthereumHardfork::Bpo2.name().to_string().to_lowercase(),
-            //     BlobParams::bpo2(),
-            // ),
+            (
+                alloy_hardforks::EthereumHardfork::Osaka.name().to_string().to_lowercase(),
+                BlobParams::osaka(),
+            ),
+            (
+                alloy_hardforks::EthereumHardfork::Bpo1.name().to_string().to_lowercase(),
+                BlobParams::bpo1(),
+            ),
+            (
+                alloy_hardforks::EthereumHardfork::Bpo2.name().to_string().to_lowercase(),
+                BlobParams::bpo2(),
+            ),
         ])
     }
 
