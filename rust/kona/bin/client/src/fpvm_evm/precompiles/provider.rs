@@ -8,8 +8,8 @@ use alloy_primitives::{Address, Bytes};
 use kona_preimage::{HintWriterClient, PreimageOracleClient};
 use op_revm::{
     OpSpecId,
-    // mantle-elysium's op-revm v19 does not expose a karst() precompile set (KARST was
-    // introduced in upstream op-revm v20; Mantle uses OSAKA/ARSIA instead).
+    // kona does not import the upstream karst() precompile set; Mantle keeps jovian() as the
+    // accelerated fallback for KARST/OSAKA/ARSIA (see the match arms below).
     precompiles::{fjord, granite, isthmus, jovian},
 };
 use revm::{
@@ -19,7 +19,7 @@ use revm::{
     precompile::{
         EthPrecompileResult, PrecompileError, PrecompileOutput, Precompiles, bls12_381_const, bn254,
     },
-    primitives::{hardfork::SpecId, hash_map::HashMap},
+    primitives::{AddressSet, hardfork::SpecId, hash_map::HashMap},
 };
 
 /// The FPVM-accelerated precompiles.
@@ -53,10 +53,14 @@ where
             OpSpecId::FJORD => fjord(),
             OpSpecId::GRANITE | OpSpecId::HOLOCENE => granite(),
             OpSpecId::ISTHMUS => isthmus(),
-            // mantle-elysium's OpSpecId has no KARST and adds OSAKA / ARSIA. jovian() is the
-            // latest precompile set it provides, used here as a fallback for every newer-than-jovian
-            // hardfork to keep the match exhaustive.
-            OpSpecId::JOVIAN | OpSpecId::OSAKA | OpSpecId::ARSIA | OpSpecId::INTEROP => jovian(),
+            // Mantle's OpSpecId adds OSAKA / ARSIA on top of upstream KARST. jovian() is the
+            // latest precompile set kona provides, used here as a fallback for every
+            // newer-than-jovian hardfork to keep the match exhaustive.
+            OpSpecId::JOVIAN |
+            OpSpecId::KARST |
+            OpSpecId::OSAKA |
+            OpSpecId::ARSIA |
+            OpSpecId::INTEROP => jovian(),
         };
 
         let accelerated_precompiles = match spec {
@@ -66,9 +70,13 @@ where
             OpSpecId::ECOTONE | OpSpecId::FJORD => accelerated_ecotone::<H, O>(),
             OpSpecId::GRANITE | OpSpecId::HOLOCENE => accelerated_granite::<H, O>(),
             OpSpecId::ISTHMUS => accelerated_isthmus::<H, O>(),
-            // mantle-elysium has no KARST and adds OSAKA / ARSIA. accelerated_jovian is the
+            // Mantle adds OSAKA / ARSIA on top of upstream KARST. accelerated_jovian is the
             // fallback for every newer-than-jovian hardfork to keep the match exhaustive.
-            OpSpecId::JOVIAN | OpSpecId::OSAKA | OpSpecId::ARSIA | OpSpecId::INTEROP => {
+            OpSpecId::JOVIAN |
+            OpSpecId::KARST |
+            OpSpecId::OSAKA |
+            OpSpecId::ARSIA |
+            OpSpecId::INTEROP => {
                 accelerated_jovian::<H, O>()
             }
         };
@@ -161,7 +169,7 @@ where
     }
 
     #[inline]
-    fn warm_addresses(&self) -> Box<impl Iterator<Item = Address>> {
+    fn warm_addresses(&self) -> &AddressSet {
         self.inner.warm_addresses()
     }
 
