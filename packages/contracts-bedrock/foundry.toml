@@ -79,6 +79,14 @@ ffi = true
 # you increase the gas limit above this value it must be a string.
 gas_limit = 9223372036854775807
 
+[lint]
+# Foundry >=1.3 runs the Solar linter during `forge build`; combined with
+# deny_warnings this fails the build on pre-existing lint findings (and Solar
+# rejects legacy syntax like the old fallback in src/vendor/WETH9.sol). The
+# linter is not part of compilation, so keep it off during build. Run
+# `forge lint` explicitly when linting is desired.
+lint_on_build = false
+
 [fuzz]
 runs = 64
 
