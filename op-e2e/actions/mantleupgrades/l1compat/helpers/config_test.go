@@ -36,4 +36,12 @@ func TestMakeL1GlamsterdamL2ArsiaDeployParams(t *testing.T) {
 
 	require.NotNil(t, dp.DeployConfig.L1AmsterdamTimeOffset)
 	require.Equal(t, amsterdamOffset, *dp.DeployConfig.L1AmsterdamTimeOffset)
+
+	require.NotNil(t, dp.DeployConfig.L1BlobScheduleConfig)
+	require.Equal(t, 14, dp.DeployConfig.L1BlobScheduleConfig.BPO5.Target)
+	require.Equal(t, 21, dp.DeployConfig.L1BlobScheduleConfig.BPO5.Max)
+	require.Equal(t, uint64(11684671), dp.DeployConfig.L1BlobScheduleConfig.BPO5.UpdateFraction)
+	require.Equal(t, 14, dp.DeployConfig.L1BlobScheduleConfig.Amsterdam.Target)
+	require.Equal(t, 21, dp.DeployConfig.L1BlobScheduleConfig.Amsterdam.Max)
+	require.Equal(t, uint64(11684671), dp.DeployConfig.L1BlobScheduleConfig.Amsterdam.UpdateFraction)
 }

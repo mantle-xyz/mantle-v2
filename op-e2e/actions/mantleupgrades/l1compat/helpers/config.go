@@ -13,8 +13,9 @@ import (
 // op-devstack/sysgo.WithDefaultBPOBlobSchedule: it must include an entry for
 // every L1 fork the helper activates, otherwise the chain config validator
 // rejects with "missing entry for fork ... in blobSchedule". op-geth does not
-// yet expose Default BlobConfigs for BPO5 / Amsterdam, so we inline reasonable
-// values (matching BPO4) for those two.
+// yet expose Default BlobConfigs for BPO5 / Amsterdam, so those two inline the
+// devnet-6 post-BPO2 values used by rde-v4's ethereum-genesis-generator v6.1.2
+// profile.
 var glamsterdamL1BlobSchedule = &params.BlobScheduleConfig{
 	Cancun: params.DefaultCancunBlobConfig,
 	Prague: params.DefaultPragueBlobConfig,
@@ -26,12 +27,12 @@ var glamsterdamL1BlobSchedule = &params.BlobScheduleConfig{
 	BPO5: &params.BlobConfig{
 		Target:         14,
 		Max:            21,
-		UpdateFraction: 13739630,
+		UpdateFraction: 11684671,
 	},
 	Amsterdam: &params.BlobConfig{
 		Target:         14,
 		Max:            21,
-		UpdateFraction: 13739630,
+		UpdateFraction: 11684671,
 	},
 }
 
