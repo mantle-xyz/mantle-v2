@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 type Beacon interface {
@@ -30,11 +31,12 @@ type Builder struct {
 	id  seqtypes.BuilderID
 	log log.Logger
 
-	engine     geth.EngineAPI
-	beacon     Beacon
-	blockchain Blockchain
-	genesis    *types.Header
-	config     types.BlockType
+	engine        geth.EngineAPI
+	beacon        Beacon
+	blockchain    Blockchain
+	genesis       *types.Header
+	config        types.BlockType
+	l1ChainConfig *params.ChainConfig
 
 	registry work.Jobs
 
@@ -58,6 +60,7 @@ func NewBuilder(ctx context.Context, id seqtypes.BuilderID, opts *work.ServiceOp
 		log:               opts.Log,
 		genesis:           genesis,
 		config:            config.ChainConfig,
+		l1ChainConfig:     config.L1ChainConfig,
 		registry:          opts.Jobs,
 		engine:            config.EngineAPI,
 		beacon:            config.Beacon,

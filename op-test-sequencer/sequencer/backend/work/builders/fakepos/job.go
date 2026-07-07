@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math/big"
 	"math/rand"
 	"sync"
@@ -50,6 +51,12 @@ type Job struct {
 	finalized *types.Header
 
 	parentBeaconBlockRoot common.Hash
+
+	// fork flags for the block being built; computed in Open, reused in Seal to
+	// select the engine-API version for newPayload/forkchoiceUpdated.
+	isCancun    bool
+	isPrague    bool
+	isAmsterdam bool
 }
 
 func (j *Job) ID() seqtypes.BuildJobID {
@@ -110,23 +117,55 @@ func (j *Job) Open(ctx context.Context) error {
 	if !ok { // we haven't build a block with this parent yet, so we need to build one
 		newBlockTime := j.head.Time + j.b.blockTime
 
+		// Select the fork for the block we are about to build, so we can pick the
+		// right engine-API version and populate fork-specific payload attributes.
+		nextHeight := new(big.Int).SetUint64(j.head.Number.Uint64() + 1)
+		cfg := j.b.l1ChainConfig
+		j.isCancun = cfg.IsCancun(nextHeight, newBlockTime)
+		j.isPrague = cfg.IsPrague(nextHeight, newBlockTime)
+		isOsaka := cfg.IsOsaka(nextHeight, newBlockTime)
+		j.isAmsterdam = cfg.IsAmsterdam(nextHeight, newBlockTime)
+
 		attrs := &engine.PayloadAttributes{
 			Timestamp:             newBlockTime,
 			Random:                common.Hash{},
 			SuggestedFeeRecipient: j.head.Coinbase,
 			Withdrawals:           randomWithdrawals(j.b.withdrawalsIndex),
-			BeaconRoot:            &j.parentBeaconBlockRoot,
+		}
+		if j.isCancun {
+			attrs.BeaconRoot = &j.parentBeaconBlockRoot
+		}
+		if j.isAmsterdam {
+			// Amsterdam (EIP-7843/EIP-7928): geth's forkchoiceUpdatedV4 rejects the
+			// build request (STATUS_INVALID) unless both slotNumber and
+			// targetGasLimit are present in the payload attributes.
+			slotNumber := (newBlockTime - j.b.genesis.Time) / j.b.blockTime
+			attrs.SlotNumber = &slotNumber
+			targetGasLimit := j.head.GasLimit
+			attrs.GasLimit = &targetGasLimit
 		}
 		fcState := engine.ForkchoiceStateV1{
 			HeadBlockHash:      j.head.Hash(),
 			SafeBlockHash:      j.safe.Hash(),
 			FinalizedBlockHash: j.finalized.Hash(),
 		}
-		j.logger.Info("ForkchoiceUpdatedV3", "fcState", fcState)
+		j.logger.Info("ForkchoiceUpdated (start build)", "fcState", fcState, "isOsaka", isOsaka, "isAmsterdam", j.isAmsterdam)
 
-		res, err := j.b.engine.ForkchoiceUpdatedV3(ctx, fcState, attrs)
+		var res engine.ForkChoiceResponse
+		var err error
+		if j.isAmsterdam {
+			res, err = j.b.engine.ForkchoiceUpdatedV4(ctx, fcState, attrs)
+		} else if j.isCancun {
+			res, err = j.b.engine.ForkchoiceUpdatedV3(ctx, fcState, attrs)
+		} else {
+			res, err = j.b.engine.ForkchoiceUpdatedV2(ctx, fcState, attrs)
+		}
 		if err != nil {
 			j.logger.Error("failed to start building L1 block", "err", err)
+			return err
+		}
+		if err := payloadStatusErr(res.PayloadStatus); err != nil {
+			j.logger.Error("engine rejected L1 forkchoice update (start build)", "err", err)
 			return err
 		}
 		if res.PayloadID == nil {
@@ -139,7 +178,17 @@ func (j *Job) Open(ctx context.Context) error {
 		// wait for the block building to finish
 		time.Sleep(100 * time.Millisecond)
 
-		envelope, err = j.b.engine.GetPayloadV4(*res.PayloadID)
+		if j.isAmsterdam {
+			envelope, err = j.b.engine.GetPayloadV6(*res.PayloadID)
+		} else if isOsaka {
+			envelope, err = j.b.engine.GetPayloadV5(*res.PayloadID)
+		} else if j.isPrague {
+			envelope, err = j.b.engine.GetPayloadV4(*res.PayloadID)
+		} else if j.isCancun {
+			envelope, err = j.b.engine.GetPayloadV3(*res.PayloadID)
+		} else {
+			envelope, err = j.b.engine.GetPayloadV2(*res.PayloadID)
+		}
 		if err != nil {
 			j.logger.Error("failed to finish building L1 block", "err", err)
 			return err
@@ -195,9 +244,23 @@ func (j *Job) Seal(ctx context.Context) (work.Block, error) {
 
 	j.logger.Info("about to insert payload into the chain", "envelope-hash", envelope.ExecutionPayload.BlockHash, "txs", len(envelope.ExecutionPayload.Transactions))
 
-	_, err := j.b.engine.NewPayloadV4(ctx, *envelope.ExecutionPayload, blobHashes, &j.parentBeaconBlockRoot, make([]hexutil.Bytes, 0))
+	var payloadStatus engine.PayloadStatusV1
+	var err error
+	if j.isAmsterdam {
+		payloadStatus, err = j.b.engine.NewPayloadV5(ctx, *envelope.ExecutionPayload, blobHashes, &j.parentBeaconBlockRoot, make([]hexutil.Bytes, 0))
+	} else if j.isPrague {
+		payloadStatus, err = j.b.engine.NewPayloadV4(ctx, *envelope.ExecutionPayload, blobHashes, &j.parentBeaconBlockRoot, make([]hexutil.Bytes, 0))
+	} else if j.isCancun {
+		payloadStatus, err = j.b.engine.NewPayloadV3(ctx, *envelope.ExecutionPayload, blobHashes, &j.parentBeaconBlockRoot)
+	} else {
+		payloadStatus, err = j.b.engine.NewPayloadV2(ctx, *envelope.ExecutionPayload)
+	}
 	if err != nil {
 		j.logger.Error("failed to insert built L1 block", "err", err)
+		return nil, err
+	}
+	if err := payloadStatusErr(payloadStatus); err != nil {
+		j.logger.Error("engine rejected built L1 payload", "err", err, "block", envelope.ExecutionPayload.BlockHash)
 		return nil, err
 	}
 
@@ -215,12 +278,23 @@ func (j *Job) Seal(ctx context.Context) (work.Block, error) {
 
 	j.logger.Info("about to forkchoice update", "safe", j.safe.Hash(), "finalized", j.finalized.Hash(), "head", envelope.ExecutionPayload.BlockHash)
 
-	if _, err := j.b.engine.ForkchoiceUpdatedV3(ctx, engine.ForkchoiceStateV1{
+	finalFcState := engine.ForkchoiceStateV1{
 		HeadBlockHash:      envelope.ExecutionPayload.BlockHash,
 		SafeBlockHash:      j.safe.Hash(),
 		FinalizedBlockHash: j.finalized.Hash(),
-	}, nil); err != nil {
+	}
+	var fcRes engine.ForkChoiceResponse
+	if j.isAmsterdam {
+		fcRes, err = j.b.engine.ForkchoiceUpdatedV4(ctx, finalFcState, nil)
+	} else {
+		fcRes, err = j.b.engine.ForkchoiceUpdatedV3(ctx, finalFcState, nil)
+	}
+	if err != nil {
 		j.logger.Error("failed to make built L1 block canonical", "err", err)
+		return nil, err
+	}
+	if err := payloadStatusErr(fcRes.PayloadStatus); err != nil {
+		j.logger.Error("engine rejected final L1 forkchoice update", "err", err)
 		return nil, err
 	}
 
@@ -245,6 +319,17 @@ func (job *Job) IncludeTx(ctx context.Context, tx hexutil.Bytes) error {
 }
 
 var _ work.BuildJob = (*Job)(nil)
+
+func payloadStatusErr(status engine.PayloadStatusV1) error {
+	if status.Status == engine.VALID {
+		return nil
+	}
+	validationErr := "<nil>"
+	if status.ValidationError != nil {
+		validationErr = *status.ValidationError
+	}
+	return fmt.Errorf("engine payload status %q, latestValidHash=%v, validationError=%s", status.Status, status.LatestValidHash, validationErr)
+}
 
 func fakeBeaconBlockRoot(time uint64) common.Hash {
 	var dat [8]byte

@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -180,6 +181,42 @@ func (s *EthClient) SubscribeNewHead(ctx context.Context, ch chan<- *types.Heade
 	// Note that *types.Header does not cache the block hash unlike *HeaderInfo, it always recomputes.
 	// Inefficient if used poorly, but no trust issue.
 	return s.client.Subscribe(ctx, "eth", ch, "newHeads")
+}
+
+func (s *EthClient) SubscribeNewHeadBlockRef(ctx context.Context, ch chan<- eth.L1BlockRef) (ethereum.Subscription, error) {
+	headChanges := make(chan *RPCHeader, 10)
+	sub, err := s.client.Subscribe(ctx, "eth", headChanges, "newHeads")
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case header := <-headChanges:
+				if header == nil {
+					continue
+				}
+				info, err := header.Info(s.trustRPC, s.mustBePostMerge)
+				if err != nil {
+					s.log.Warn("failed to process L1 head subscription header", "err", err)
+					continue
+				}
+				s.headersCache.Add(info.Hash(), info)
+				ref := eth.InfoToL1BlockRef(info)
+				s.blockRefsCache.Add(ref.Hash, ref)
+				select {
+				case ch <- ref:
+				case <-quit:
+					return nil
+				}
+			case <-quit:
+				return nil
+			case err := <-sub.Err():
+				return err
+			}
+		}
+	}), nil
 }
 
 // rpcBlockID is an internal type to enforce header and block call results match the requested identifier

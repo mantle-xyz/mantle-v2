@@ -142,6 +142,10 @@ contract L2Genesis is Script {
         if (fork == MantleFork.MANTLE_ARSIA) {
             return;
         }
+
+        if (fork == MantleFork.MANTLE_ELYSIUM) {
+            return;
+        }
     }
 
     /// @notice Give all of the precompiles 1 wei

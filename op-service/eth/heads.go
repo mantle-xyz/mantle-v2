@@ -17,9 +17,46 @@ type NewHeadSource interface {
 	SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error)
 }
 
+type NewHeadBlockRefSource interface {
+	SubscribeNewHeadBlockRef(ctx context.Context, ch chan<- L1BlockRef) (ethereum.Subscription, error)
+}
+
 // WatchHeadChanges wraps a new-head subscription from NewHeadSource to feed the given Tracker.
 // The ctx is only used to create the subscription, and does not affect the returned subscription.
 func WatchHeadChanges(ctx context.Context, src NewHeadSource, fn HeadSignalFn) (ethereum.Subscription, error) {
+	if refSrc, ok := src.(NewHeadBlockRefSource); ok {
+		headChanges := make(chan L1BlockRef, 10)
+		sub, err := refSrc.SubscribeNewHeadBlockRef(ctx, headChanges)
+		if err != nil {
+			return nil, err
+		}
+		return event.NewSubscription(func(quit <-chan struct{}) error {
+			eventsCtx, eventsCancel := context.WithCancel(context.Background())
+			defer sub.Unsubscribe()
+			defer eventsCancel()
+
+			go func() {
+				select {
+				case <-quit:
+					eventsCancel()
+				case <-eventsCtx.Done():
+					return
+				}
+			}()
+
+			for {
+				select {
+				case ref := <-headChanges:
+					fn(eventsCtx, ref)
+				case <-eventsCtx.Done():
+					return nil
+				case err := <-sub.Err():
+					return err
+				}
+			}
+		}), nil
+	}
+
 	headChanges := make(chan *types.Header, 10)
 	sub, err := src.SubscribeNewHead(ctx, headChanges)
 	if err != nil {
