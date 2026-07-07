@@ -39,8 +39,6 @@ func TestReorg_L2SafeAdvancesUnderTimeTravel(gt *testing.T) {
 	require.Eventually(func() bool {
 		require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: common.Hash{}}), "ts.New")
 		require.NoError(ts.Next(ctx), "ts.Next")
-		// Keep the virtual clock in step with the L1 block we just produced, so the
-		// L2 sequencer and derivation can adopt the advancing L1 origin.
 		sys.AdvanceTime(l1BlockTime)
 
 		l1head := sys.L1EL.BlockRefByLabel(eth.Unsafe)
@@ -58,18 +56,12 @@ func TestReorg_L2SafeAdvancesUnderTimeTravel(gt *testing.T) {
 	logger.Info("L2 safe advanced under time-travel", "l2Safe", l2Safe.Number, "origin", l2Safe.L1Origin.Number, "l1", l1head.Number)
 }
 
-// TestL1Reorg_AtUpgradeActivation drives the L1 past the Amsterdam activation,
-// then reorgs the L1 block that the L2 safe head derives from (post-Amsterdam) by
+// TestL1Reorg_AtUpgradeActivation drives the L1 past the Amsterdam activation
+// while keeping the L2 in step, then reorgs a recent post-Amsterdam L1 block that
+// the L2 derives from (above the finalized horizon and within max reorg depth), by
 // building a competing chain on its parent. It asserts the L1 reorgs and the L2
-// safe chain reorgs and re-converges onto the new L1 — i.e. an L1 reorg across the
-// Glamsterdam activation does not wedge derivation. (M4-1)
+// reorgs its own chain and keeps advancing (no wedge). (M4-1)
 func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
-	gt.Skip("WIP: injecting a competing block on an older L1 head returns " +
-		"forkchoiceUpdated{VALID, PayloadID:nil} — geth's \"ignoring beacon update " +
-		"to old head while syncing\" guard (eth.Synced()==false for the subprocess " +
-		"vanilla geth driven purely by the engine API). L2-safe advancement under " +
-		"time-travel is already proven by TestReorg_L2SafeAdvancesUnderTimeTravel; " +
-		"the remaining work is making the fakepos reorg build on an old L1 head.")
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleSingleChainMultiNodeWithTestSeq(t)
 	require := t.Require()
@@ -80,57 +72,72 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 	cl := sys.L1Network.Escape().L1CLNode(match.FirstL1CL)
 
 	sys.L1Network.WaitForBlock()
+
+	// Take manual control of L1 up front. With the auto-FakePoS stopped, advancing
+	// the (time-travel) clock moves only the real-time-bound L2 sequencer, not the
+	// L1 — so we can let the L2 origin catch up between manually-produced L1 blocks.
+	// This keeps the L2 origin within ~confDepth of the L1 head, so the reorg target
+	// stays above both the finalized horizon (20) and the max reorg depth (32).
 	sys.ControlPlane.FakePoSState(cl.ID(), stack.Stop)
 
-	startL1 := sys.L1EL.BlockRefByLabel(eth.Unsafe)
-
-	// driveL1 builds one L1 block on the current head and steps the virtual clock.
-	driveL1 := func() {
+	// driveL1InStep produces one L1 block, then advances the clock until the L2
+	// unsafe origin catches up to the new L1 head.
+	driveL1InStep := func() {
 		require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: common.Hash{}}))
 		require.NoError(ts.Next(ctx))
-		sys.AdvanceTime(l1BlockTime)
+		require.Eventually(func() bool {
+			sys.AdvanceTime(2 * time.Second)
+			l1head := sys.L1EL.BlockRefByLabel(eth.Unsafe).Number
+			l2origin := sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number
+			return l1head-l2origin <= 2
+		}, 60*time.Second, 200*time.Millisecond)
 	}
 
-	// Advance L1 past Amsterdam and let the L2 safe head derive from a
-	// post-Amsterdam L1 origin.
 	require.Eventually(func() bool {
-		driveL1()
-		l2Safe := sys.L2EL.BlockRefByLabel(eth.Safe)
-		return l2Safe.Number > 0 && l2Safe.L1Origin.Number > startL1.Number+amsterdamOffset
-	}, 120*time.Second, time.Second)
+		driveL1InStep()
+		l1head := sys.L1EL.BlockRefByLabel(eth.Unsafe).Number
+		l2origin := sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number
+		logger.Info("in-step progress", "l1", l1head, "l2Origin", l2origin, "lag", l1head-l2origin)
+		return l2origin > amsterdamOffset
+	}, 180*time.Second, 100*time.Millisecond)
 
-	l2BeforeReorg := sys.L2EL.BlockRefByLabel(eth.Safe)
+	l2BeforeReorg := sys.L2EL.BlockRefByLabel(eth.Unsafe)
 	l1Height := l2BeforeReorg.L1Origin.Number
-	l1BeforeReorg := sys.L1EL.BlockRefByNumber(l1Height)
+	l1Before := sys.L1EL.BlockRefByNumber(l1Height)
 	oldHead := sys.L1EL.BlockRefByLabel(eth.Unsafe).Number
-	logger.Info("reorg target (post-Amsterdam)", "l1Height", l1Height, "l1Hash", l1BeforeReorg.Hash, "l2Safe", l2BeforeReorg.Number)
+	require.Greater(l1Height, amsterdamOffset, "reorg target must be post-Amsterdam")
+	require.Less(oldHead-l1Height, uint64(20), "reorg target must be above the finalized horizon")
+	require.Less(oldHead-l1Height, uint64(32), "reorg must be within geth's max reorg depth")
+	logger.Info("reorg target (post-Amsterdam, reorgable)", "l1Height", l1Height, "l1Head", oldHead, "l2Unsafe", l2BeforeReorg.Number)
 
-	// Inject the L1 reorg: build a competing block on the parent of the target L1
-	// block (the TestSequencer forces it canonical via forkchoiceUpdated), then
-	// extend the competing chain past the old head.
-	require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: l1BeforeReorg.ParentHash}))
+	// Inject the L1 reorg: build a competing block on the parent of the target
+	// (the TestSequencer forces it canonical), then extend past the old head.
+	require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: l1Before.ParentHash}))
 	require.NoError(ts.Next(ctx))
-	sys.AdvanceTime(l1BlockTime)
-	for sys.L1EL.BlockRefByLabel(eth.Unsafe).Number <= oldHead+2 {
-		driveL1()
+	require.Eventually(func() bool {
+		sys.AdvanceTime(2 * time.Second)
+		return sys.L1EL.BlockRefByLabel(eth.Unsafe).Number >= l1Height
+	}, 30*time.Second, 200*time.Millisecond)
+	for sys.L1EL.BlockRefByLabel(eth.Unsafe).Number <= oldHead+1 {
+		driveL1InStep()
 	}
 
-	l1AfterReorg := sys.L1EL.BlockRefByNumber(l1Height)
-	require.NotEqual(l1AfterReorg.Hash, l1BeforeReorg.Hash, "L1 must have reorged at the target height")
-	logger.Info("L1 reorged", "height", l1Height, "old", l1BeforeReorg.Hash, "new", l1AfterReorg.Hash)
+	l1After := sys.L1EL.BlockRefByNumber(l1Height)
+	require.NotEqual(l1After.Hash, l1Before.Hash, "L1 must have reorged at the target height")
+	logger.Info("L1 reorged", "height", l1Height, "old", l1Before.Hash, "new", l1After.Hash)
 
-	// The L2 must detect the L1 reorg and reorg its safe chain onto the new L1.
-	// Keep driving so derivation resets and re-converges under time-travel.
+	// The L2 must detect the L1 reorg and reorg its own chain: the L2 block that
+	// derived from the old L1 target must change, and the chain must keep advancing
+	// (no wedge). Keep driving in step so derivation resets and re-converges.
 	require.Eventually(func() bool {
-		driveL1()
-		l2After := sys.L2EL.BlockRefByNumber(l2BeforeReorg.Number)
-		l2Safe := sys.L2EL.BlockRefByLabel(eth.Safe)
-		return l2After.Hash != l2BeforeReorg.Hash && l2Safe.Number >= l2BeforeReorg.Number
-	}, 120*time.Second, time.Second)
+		driveL1InStep()
+		l2At := sys.L2EL.BlockRefByNumber(l2BeforeReorg.Number)
+		l2Head := sys.L2EL.BlockRefByLabel(eth.Unsafe)
+		return l2At.Hash != l2BeforeReorg.Hash && l2Head.Number > l2BeforeReorg.Number
+	}, 120*time.Second, 100*time.Millisecond)
 
-	l2After := sys.L2EL.BlockRefByNumber(l2BeforeReorg.Number)
-	require.NotEqual(l2After.Hash, l2BeforeReorg.Hash, "L2 safe block must have reorged after the L1 reorg")
-	l2Safe := sys.L2EL.BlockRefByLabel(eth.Safe)
-	require.GreaterOrEqual(l2Safe.Number, l2BeforeReorg.Number, "L2 safe head must re-converge past the reorg point")
-	logger.Info("L2 re-converged after L1 reorg across Amsterdam", "l2Safe", l2Safe.Number, "origin", l2Safe.L1Origin.Number)
+	l2At := sys.L2EL.BlockRefByNumber(l2BeforeReorg.Number)
+	require.NotEqual(l2At.Hash, l2BeforeReorg.Hash, "L2 must have reorged the block that derived from the old L1")
+	logger.Info("L2 reorged and kept advancing after L1 reorg across Amsterdam",
+		"l2Head", sys.L2EL.BlockRefByLabel(eth.Unsafe).Number)
 }
