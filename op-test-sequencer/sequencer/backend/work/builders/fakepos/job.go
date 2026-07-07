@@ -113,23 +113,35 @@ func (j *Job) Open(ctx context.Context) error {
 
 	j.setHeadSafeAndFinalized()
 
-	envelope, ok := j.b.envelopes[j.head.Hash()]
-	if !ok { // we haven't build a block with this parent yet, so we need to build one
-		newBlockTime := j.head.Time + j.b.blockTime
+	newBlockTime := j.head.Time + j.b.blockTime
 
-		// Select the fork for the block we are about to build, so we can pick the
-		// right engine-API version and populate fork-specific payload attributes.
-		nextHeight := new(big.Int).SetUint64(j.head.Number.Uint64() + 1)
-		cfg := j.b.l1ChainConfig
-		j.isCancun = cfg.IsCancun(nextHeight, newBlockTime)
-		j.isPrague = cfg.IsPrague(nextHeight, newBlockTime)
-		isOsaka := cfg.IsOsaka(nextHeight, newBlockTime)
-		j.isAmsterdam = cfg.IsAmsterdam(nextHeight, newBlockTime)
+	// Select the fork for the block we are about to build. This must run for every
+	// path (including reorg rebuilds), so Seal picks the matching newPayload /
+	// forkchoiceUpdated version and Open sets the right payload attributes.
+	nextHeight := new(big.Int).SetUint64(j.head.Number.Uint64() + 1)
+	cfg := j.b.l1ChainConfig
+	j.isCancun = cfg.IsCancun(nextHeight, newBlockTime)
+	j.isPrague = cfg.IsPrague(nextHeight, newBlockTime)
+	isOsaka := cfg.IsOsaka(nextHeight, newBlockTime)
+	j.isAmsterdam = cfg.IsAmsterdam(nextHeight, newBlockTime)
+
+	envelope, rebuilt := j.b.envelopes[j.head.Hash()]
+	// Build a fresh block when we have not built on this parent yet, or when we
+	// need a different post-Amsterdam competing block for a reorg. The gas-bump
+	// rehash in the else branch cannot recompute the EIP-7928 block-access-list
+	// hash (nor re-key it in the engine's BAL map), so post-Amsterdam we always
+	// rebuild via the engine, using a distinct fee recipient to diverge from the
+	// original block.
+	if !rebuilt || j.isAmsterdam {
+		feeRecipient := j.head.Coinbase
+		if rebuilt {
+			feeRecipient = testutils.RandomAddress(rand.New(rand.NewSource(int64(newBlockTime))))
+		}
 
 		attrs := &engine.PayloadAttributes{
 			Timestamp:             newBlockTime,
 			Random:                common.Hash{},
-			SuggestedFeeRecipient: j.head.Coinbase,
+			SuggestedFeeRecipient: feeRecipient,
 			Withdrawals:           randomWithdrawals(j.b.withdrawalsIndex),
 		}
 		if j.isCancun {
