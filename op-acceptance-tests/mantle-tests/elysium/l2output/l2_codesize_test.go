@@ -19,7 +19,7 @@ func deployInitCode(runtimeLen int) []byte {
 		0x61, hi, lo, // PUSH2 runtimeLen
 		0x60, 0x00, //   PUSH1 <prefixLen>  (patched below to the runtime offset)
 		0x60, 0x00, //   PUSH1 0
-		0x39,       //   CODECOPY   mem[0:runtimeLen] = code[prefixLen:prefixLen+runtimeLen]
+		0x39,         //   CODECOPY   mem[0:runtimeLen] = code[prefixLen:prefixLen+runtimeLen]
 		0x61, hi, lo, // PUSH2 runtimeLen
 		0x60, 0x00, //   PUSH1 0
 		0xf3, //         RETURN     mem[0:runtimeLen]

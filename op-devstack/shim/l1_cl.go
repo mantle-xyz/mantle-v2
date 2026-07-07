@@ -15,8 +15,9 @@ type L1CLNodeConfig struct {
 
 type rpcL1CLNode struct {
 	commonImpl
-	id     stack.L1CLNodeID
-	client apis.BeaconClient
+	id         stack.L1CLNodeID
+	client     apis.BeaconClient
+	httpClient client.HTTP
 }
 
 var _ stack.L1CLNode = (*rpcL1CLNode)(nil)
@@ -27,6 +28,7 @@ func NewL1CLNode(cfg L1CLNodeConfig) stack.L1CLNode {
 		commonImpl: newCommon(cfg.CommonConfig),
 		id:         cfg.ID,
 		client:     sources.NewBeaconHTTPClient(cfg.Client),
+		httpClient: cfg.Client,
 	}
 }
 
@@ -36,4 +38,12 @@ func (r *rpcL1CLNode) ID() stack.L1CLNodeID {
 
 func (r *rpcL1CLNode) BeaconClient() apis.BeaconClient {
 	return r.client
+}
+
+// RawBeaconHTTP exposes the underlying raw Beacon HTTP client. Tests can use it to
+// issue raw GETs against beacon endpoints (e.g. /eth/v1/config/spec) and decode fields
+// that the typed apis.BeaconClient deliberately does not surface. It is an optional
+// capability, discovered via a type assertion, so it does not widen stack.L1CLNode.
+func (r *rpcL1CLNode) RawBeaconHTTP() client.HTTP {
+	return r.httpClient
 }
