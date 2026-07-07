@@ -15,52 +15,14 @@ import (
 
 const l1BlockTime = 6 * time.Second
 
-// TestReorg_L2SafeAdvancesUnderTimeTravel verifies that, on a time-travel clock,
-// the L2 safe head advances while the L1 is driven manually via the
-// TestSequencer across the Amsterdam boundary. On the wall clock the same driving
-// pattern stalls L2 derivation (L1 races ahead of real time). This is the
-// prerequisite for the L1-reorg acceptance tests.
-func TestReorg_L2SafeAdvancesUnderTimeTravel(gt *testing.T) {
-	t := devtest.SerialT(gt)
-	sys := presets.NewMantleSingleChainMultiNodeWithTestSeq(t)
-	require := t.Require()
-	logger := t.Logger()
-	ctx := t.Ctx()
-
-	ts := sys.TestSequencer.Escape().ControlAPI(sys.L1Network.ChainID())
-	cl := sys.L1Network.Escape().L1CLNode(match.FirstL1CL)
-
-	sys.L1Network.WaitForBlock()
-	sys.ControlPlane.FakePoSState(cl.ID(), stack.Stop)
-
-	startL1 := sys.L1EL.BlockRefByLabel(eth.Unsafe)
-	logger.Info("driving L1 via TestSequencer under time-travel", "start", startL1.Number, "amsterdamOffset", amsterdamOffset)
-
-	require.Eventually(func() bool {
-		require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: common.Hash{}}), "ts.New")
-		require.NoError(ts.Next(ctx), "ts.Next")
-		sys.AdvanceTime(l1BlockTime)
-
-		l1head := sys.L1EL.BlockRefByLabel(eth.Unsafe)
-		l2Safe := sys.L2EL.BlockRefByLabel(eth.Safe)
-		logger.Info("progress", "l1", l1head.Number, "l2Safe", l2Safe.Number, "l2SafeOrigin", l2Safe.L1Origin.Number)
-		return l2Safe.Number > 0 && l2Safe.L1Origin.Number > startL1.Number
-	}, 120*time.Second, time.Second)
-
-	l2Safe := sys.L2EL.BlockRefByLabel(eth.Safe)
-	require.Greater(l2Safe.L1Origin.Number, startL1.Number,
-		"L2 safe head must advance its L1 origin while the L1 is driven under time-travel")
-	l1head := sys.L1EL.BlockRefByLabel(eth.Unsafe)
-	require.Greater(l1head.Number, startL1.Number+amsterdamOffset,
-		"L1 must have crossed the Amsterdam boundary")
-	logger.Info("L2 safe advanced under time-travel", "l2Safe", l2Safe.Number, "origin", l2Safe.L1Origin.Number, "l1", l1head.Number)
-}
-
 // TestL1Reorg_AtUpgradeActivation drives the L1 past the Amsterdam activation
 // while keeping the L2 in step, then reorgs a recent post-Amsterdam L1 block that
 // the L2 derives from (above the finalized horizon and within max reorg depth), by
 // building a competing chain on its parent. It asserts the L1 reorgs and the L2
 // reorgs its own chain and keeps advancing (no wedge). (M4-1)
+//
+// This test takes exclusive control of L1 production, so it is the only test in
+// this package: two L1-driving tests cannot share one devstack system.
 func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleSingleChainMultiNodeWithTestSeq(t)
