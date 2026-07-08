@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// TestL2EVM_NoEIP7708TransferLog is the GAP A(ii) / §7-4 discriminating test: the
+// TestL2EVM_NoEIP7708TransferLog is the EIP-7708 discriminating test: the
 // Mantle L2 must NOT emit an EIP-7708 system Transfer log for an ordinary ETH
 // value transfer, even while the L1 runs Glamsterdam (Amsterdam EL).
 //

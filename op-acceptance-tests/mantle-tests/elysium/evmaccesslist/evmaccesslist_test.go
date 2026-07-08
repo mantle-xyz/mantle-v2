@@ -44,7 +44,7 @@ const (
 
 // TestL2EVM_AccessListGasStaysArsia asserts the Mantle L2 keeps Arsia access-list
 // pricing while the L1 runs Glamsterdam — it does NOT adopt EIP-7981's raised
-// access-list cost (§3-5 gas repricing).
+// access-list cost.
 //
 // It sends two value-less calls to the same plain EOA, each carrying an EIP-2930
 // access list with a different number of addresses (and zero storage keys). A
@@ -60,10 +60,9 @@ const (
 // EIP-2930 entries flow through the same IntrinsicGas access-list branch
 // (state_transition.go:132-159) that EIP-7981 modifies regardless of tx type.
 //
-// COVERAGE (§3-5): this covers the EIP-7981 access-list-repricing sub-case that the
-// evmgas (EIP-7976 calldata floor) package explicitly left open. It does NOT cover
-// EIP-8037 gas repricing or EIP-7778 block-level gas accounting, which remain open
-// items on the §3-5 status row.
+// COVERAGE: this covers the EIP-7981 access-list-repricing sub-case, sibling to the
+// EIP-7976 calldata floor (evmgas). EIP-7778 block-level gas accounting is covered in
+// evmblockgas; EIP-8024 opcodes in evmopcodes.
 func TestL2EVM_AccessListGasStaysArsia(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)

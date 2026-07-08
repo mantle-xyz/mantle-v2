@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 )
 
-// TestDeposit_AcrossL1Upgrade (§1-1) asserts that an L1->L2 deposit initiated while
+// TestDeposit_AcrossL1Upgrade asserts that an L1->L2 deposit initiated while
 // the L1 runs Glamsterdam (Amsterdam EL) is still credited on the Mantle L2. The L2
 // stays on Mantle Arsia rules across the boundary and only *consumes* the upgraded
 // L1, so a native MNT gas-token deposit must land as a plain L2 native-balance

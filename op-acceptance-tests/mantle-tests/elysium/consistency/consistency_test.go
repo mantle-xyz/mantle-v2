@@ -10,7 +10,7 @@ import (
 )
 
 // TestDeposit_SeqVerifierConsistency_AcrossL1Upgrade closes the "sequencer 与 verifier
-// 对同一 L1 块还原出一致的 deposit" half of §1-1 that the single-node deposit/derivation
+// 对同一 L1 块还原出一致的 deposit" half that the single-node deposit/derivation
 // tests structurally cannot cover: it runs an independent verifier node alongside the
 // sequencer and asserts BOTH derive the same L2 state — including an L1->L2 deposit
 // submitted while the L1 runs Glamsterdam (Amsterdam).
@@ -21,8 +21,8 @@ import (
 //  2. The two nodes' SAFE chains — which each node derives from L1 independently, not by
 //     gossiping unsafe blocks — are byte-identical at a common height (equal block hash).
 //
-// COVERAGE (§1-1): this is the seq/verifier consistency half. The EIP-7708 system
-// Transfer-log filtering half of §1-1 is NOT covered here — op-node already filters
+// COVERAGE: this is the seq/verifier consistency half. The EIP-7708 system
+// Transfer-log filtering half is NOT covered here — op-node already filters
 // deposits by address+topic0 (deposit_log.go), but exercising it end-to-end needs the L1
 // to actually emit a 7708 Transfer log on the deposit path, which is a separate open item.
 func TestDeposit_SeqVerifierConsistency_AcrossL1Upgrade(gt *testing.T) {

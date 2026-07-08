@@ -36,7 +36,7 @@ const (
 
 // TestL2EVM_CalldataGasStaysArsia asserts the Mantle L2 keeps Arsia calldata
 // pricing while the L1 runs Glamsterdam — it does NOT adopt EIP-7976's raised
-// calldata floor (§3-5 gas part).
+// calldata floor.
 //
 // It sends two value-less calls to the same plain EOA carrying different amounts
 // of non-zero calldata. Because such a call executes no code, the EIP-7623 data
@@ -47,10 +47,10 @@ const (
 // standard rate of 16 gas/byte is identical on both forks, so it cannot
 // discriminate — only the floor regime can.)
 //
-// COVERAGE (§3-5): this covers ONLY the EIP-7976 calldata-floor sub-case. The other
-// §3-5 "no SFI behaviour" gas sub-cases — EIP-7981 / EIP-8037 gas repricing and EIP-7778
-// block-level gas accounting — are NOT exercised here and remain open items on the §3-5
-// status row. (EIP-8024 opcodes are covered separately in the evmopcodes package.)
+// COVERAGE: this covers ONLY the EIP-7976 calldata-floor sub-case. The other "no SFI
+// behaviour" gas sub-cases live in sibling packages: EIP-7981 access-list repricing
+// (evmaccesslist), EIP-7778 block-level gas accounting (evmblockgas), EIP-8024 opcodes
+// (evmopcodes).
 func TestL2EVM_CalldataGasStaysArsia(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)

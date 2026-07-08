@@ -24,7 +24,7 @@ const eip3529ClearRefund = uint64(4800)
 
 // TestL2BlockGas_RefundReducesBlockGasUsed asserts the Mantle L2 keeps Arsia
 // block-level gas accounting while the L1 runs Glamsterdam — it does NOT adopt
-// EIP-7778 "block-level gas accounting" (§3-5 gas part, gap C3).
+// EIP-7778 "block-level gas accounting".
 //
 // WHAT EIP-7778 CHANGES (verified in op-geth, sibling clone, branch mantle-elysium):
 //   - The whole feature is the fork-gated branch in core/state_transition.go:991-997.
@@ -57,10 +57,9 @@ const eip3529ClearRefund = uint64(4800)
 // *discriminates* when the block actually contains a refund, which we guarantee
 // by construction and confirm by observing the storage slot go 1 -> 0.
 //
-// COVERAGE (§3-5, gap C3): this is the EIP-7778 block-level gas accounting sub-case.
-// The other §3-5 gas sub-cases live in sibling packages: EIP-7976 calldata floor
-// (evmgas), EIP-7981 access-list repricing (evmaccesslist), EIP-8024 opcodes
-// (evmopcodes).
+// COVERAGE: this is the EIP-7778 block-level gas accounting sub-case. The other gas
+// sub-cases live in sibling packages: EIP-7976 calldata floor (evmgas), EIP-7981
+// access-list repricing (evmaccesslist), EIP-8024 opcodes (evmopcodes).
 func TestL2BlockGas_RefundReducesBlockGasUsed(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)

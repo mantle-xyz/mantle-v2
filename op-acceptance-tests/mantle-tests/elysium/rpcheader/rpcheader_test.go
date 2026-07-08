@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-// TestL2RPCHeader_OmitsNewFields (design §3-3) asserts the Mantle L2 EL's raw
+// TestL2RPCHeader_OmitsNewFields asserts the Mantle L2 EL's raw
 // JSON-RPC block header omits the Glamsterdam/Amsterdam header keys
 // "blockAccessListHash" (EIP-7928) and "slotNumber" (EIP-7843). The Mantle L2
 // stays on Arsia rules even while the L1 runs Glamsterdam, so these fields must
