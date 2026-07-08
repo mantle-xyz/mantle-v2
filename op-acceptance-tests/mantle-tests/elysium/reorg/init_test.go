@@ -11,7 +11,10 @@ import (
 	"github.com/ethereum/go-ethereum/params/forks"
 )
 
-const amsterdamOffset = uint64(6)
+// amsterdamOffset activates Amsterdam this many SECONDS after L1 genesis (the offset unit
+// is seconds, not blocks). With 6s L1 blocks that is L1 block amsterdamOffset/6 = block 5,
+// leaving pre-Amsterdam blocks 1-4 so the reorg can fork across the activation boundary.
+const amsterdamOffset = uint64(30)
 
 func TestMain(m *testing.M) {
 	resetEnvVars := configureDevstackEnvVars()
