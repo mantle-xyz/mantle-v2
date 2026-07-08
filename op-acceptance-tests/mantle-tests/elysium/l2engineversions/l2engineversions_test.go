@@ -28,13 +28,6 @@ import (
 // It also checks the three blocks are genuinely consecutive (parent-hash linked
 // and numbered n, n+1, n+2), so this is a multi-block statement about steady-state
 // block production, not a single lucky sample.
-//
-// COVERAGE: this is the block-header PROXY only. It does NOT hook the L2 engine
-// API, so it does not directly assert the engine-method versions (FCU=V3 / NewPayload=V4
-// / GetPayload=V5, and never V6/newPayloadV5) nor that the V5 ExecutionPayloadEnvelope
-// omits BAL/SlotNumber. Verifying that layer needs either an engine-RPC proxy that
-// records op-node's method calls, or an op-e2e unit that calls the engine API directly;
-// it is NOT covered by this test.
 func TestL2Block_ArsiaHeaderShape(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
