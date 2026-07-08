@@ -1,4 +1,4 @@
-package derivation
+package smoke
 
 import (
 	"testing"
@@ -10,11 +10,13 @@ import (
 	"github.com/ethereum/go-ethereum/params/forks"
 )
 
+// amsterdamOffset activates Amsterdam on the L1 a few blocks after genesis, so
+// the L2 spends the bulk of its life producing blocks under a Glamsterdam L1.
+const amsterdamOffset = uint64(6)
+
 func TestMain(m *testing.M) {
 	resetEnvVars := configureDevstackEnvVars()
 	defer resetEnvVars()
-
-	amsterdamOffset := uint64(30)
 
 	presets.DoMain(m, stack.MakeCommon(stack.Combine[*sysgo.Orchestrator](
 		sysgo.DefaultMantleMinimalSystem(&sysgo.DefaultMinimalSystemIDs{}),

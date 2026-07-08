@@ -1,4 +1,4 @@
-package derivation
+package derivepoch
 
 import (
 	"testing"
@@ -14,6 +14,9 @@ func TestMain(m *testing.M) {
 	resetEnvVars := configureDevstackEnvVars()
 	defer resetEnvVars()
 
+	// Amsterdam activates a few seconds into the L1 chain (offset is SECONDS, not
+	// blocks). After it activates we still need many more L1 blocks to become L2
+	// safe epochs, so the exact offset only controls WHEN the boundary lands.
 	amsterdamOffset := uint64(30)
 
 	presets.DoMain(m, stack.MakeCommon(stack.Combine[*sysgo.Orchestrator](
