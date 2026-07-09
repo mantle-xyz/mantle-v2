@@ -19,7 +19,6 @@ svm-rs = "0.5.19"
 
 # Go dependencies
 "go:github.com/ethereum/go-ethereum/cmd/abigen" = "1.15.10"
-"go:github.com/ethereum/go-ethereum/cmd/geth" = "1.16.4" # Osaka testnet release.
 
 # Python dependencies
 "pipx:slither-analyzer" = "0.10.2"
@@ -48,6 +47,15 @@ op-acceptor = "op-acceptor/v3.6.6"
 asterisc = "1.3.0"
 kontrol = "1.0.90"
 binary_signer = "1.0.4"
+
+# L1 EL for Glamsterdam/devnet-6 acceptance tests. This commit includes the
+# Amsterdam Engine API methods and the devnet-6 BAL serialization fix that is
+# not in the stable geth tags yet.
+[tools."http:geth"]
+version = "49e199bbfb7eb149f02a785ee2b73a841cccbc42"
+url = "https://github.com/ethereum/go-ethereum/archive/49e199bbfb7eb149f02a785ee2b73a841cccbc42.tar.gz"
+bin = "geth"
+postinstall = "cd $MISE_TOOL_INSTALL_PATH/go-ethereum-49e199bbfb7eb149f02a785ee2b73a841cccbc42 && mise exec go@1.24 -- go build -o $MISE_TOOL_INSTALL_PATH/geth ./cmd/geth"
 
 [tool_alias]
 forge = "github:foundry-rs/foundry[exe=forge]"
