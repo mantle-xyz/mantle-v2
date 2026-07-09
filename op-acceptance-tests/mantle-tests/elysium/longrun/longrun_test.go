@@ -18,12 +18,15 @@ import (
 // growing (no stall), the safe head keeps advancing and never regresses (derivation keeps up), a
 // once-safe block never reorgs, and every sampled head stays Arsia.
 //
-// The window defaults to ~90s so it fits a CI run; set ELYSIUM_LONGRUN_SECONDS to run the full
-// 30-minute soak against a real system (e.g. under sysext).
+// This is the full 30-minute soak, so it is moved OUT of the CI gate: it skips unless ELYSIUM_HEAVY
+// is set. The duration defaults to 30 minutes and can be overridden with ELYSIUM_LONGRUN_SECONDS.
 //
 // Flips red if, at any sample over the run, the unsafe head stalls, the safe head regresses, a
 // previously-safe block reorgs, or a header leaks an Amsterdam field.
 func TestSystem_LongRun_AcrossUpgrade(gt *testing.T) {
+	if os.Getenv("ELYSIUM_HEAVY") == "" {
+		gt.Skip("30-minute soak moved out of CI; run with ELYSIUM_HEAVY=1")
+	}
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()
@@ -33,7 +36,7 @@ func TestSystem_LongRun_AcrossUpgrade(gt *testing.T) {
 	require.True(sys.L2Chain.IsMantleForkActive(opforks.MantleElysium), "L2 must run with Mantle Elysium active")
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 
-	runFor := 90 * time.Second
+	runFor := 30 * time.Minute
 	if v := os.Getenv("ELYSIUM_LONGRUN_SECONDS"); v != "" {
 		if s, err := strconv.Atoi(v); err == nil && s > 0 {
 			runFor = time.Duration(s) * time.Second

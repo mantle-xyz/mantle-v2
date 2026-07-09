@@ -3,6 +3,7 @@ package hightps
 import (
 	"fmt"
 	"math/big"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -26,7 +27,13 @@ import (
 // the Glamsterdam L1 rather than a discriminating fork assertion: it flips red if the L2 drops or
 // reverts txs under load, fails to consolidate the loaded blocks to safe, or leaks an Amsterdam
 // header field while busy.
+//
+// It runs the full ~1000-tx (≈50-block × 20-tx) load and is therefore moved OUT of the CI gate:
+// it skips unless ELYSIUM_HEAVY is set, and is meant to be run on demand / scheduled.
 func TestSystem_HighTPS_AcrossUpgrade(gt *testing.T) {
+	if os.Getenv("ELYSIUM_HEAVY") == "" {
+		gt.Skip("heavy load test moved out of CI; run with ELYSIUM_HEAVY=1")
+	}
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()
@@ -44,8 +51,9 @@ func TestSystem_HighTPS_AcrossUpgrade(gt *testing.T) {
 		return l1Config.IsAmsterdam(new(big.Int).SetUint64(o), r.Time)
 	}, 120*time.Second, time.Second, "L2 unsafe origin must cross Amsterdam before the load")
 
-	const wallets = 8
-	const perWallet = 15
+	// Full load: ~1000 txs (≈50 blocks × 20 tx) spread across concurrent senders.
+	const wallets = 20
+	const perWallet = 50
 	recipient := common.HexToAddress("0x00000000000000000000000000000000ABCDEF01")
 
 	var (
