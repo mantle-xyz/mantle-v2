@@ -81,6 +81,11 @@ func TestProposer_OutputRootSubmission(gt *testing.T) {
 				if err != nil || from != proposerAddr {
 					continue
 				}
+				// The proposer's output-root submission is a contract call carrying calldata (an
+				// L2OutputOracle proposeL2Output call), not a plain value transfer.
+				if tx.To() == nil || len(tx.Data()) == 0 {
+					continue
+				}
 				rcpt, err := l1Eth.TransactionReceipt(ctx, tx.Hash())
 				require.NoErrorf(err, "proposer tx on L1 #%d must have a receipt", info.NumberU64())
 				require.Equalf(gethtypes.ReceiptStatusSuccessful, rcpt.Status,
