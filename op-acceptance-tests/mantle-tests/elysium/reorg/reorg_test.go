@@ -181,11 +181,10 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 		"l2Head", sys.L2EL.BlockRefByLabel(eth.Unsafe).Number)
 
 	// Convergence is more than "the sequencer reorged and kept moving": the L2 must re-derive
-	// onto the NEW canonical L1, and the epoch anchored at the reorged activation block must
-	// re-open onto the new canonical block. Without these, a sequencer that forked off alone or
-	// kept a stale L1 origin would still pass the checks above. (Cross-node verifier convergence
-	// is intentionally left to the verifierconverge test: through a reorg the verifier's pipeline
-	// lags far behind, making that assertion fragile here.)
+	// onto the NEW canonical L1, the INDEPENDENT verifier must reach the same re-derived safe
+	// block, and the epoch anchored at the reorged activation block must re-open onto the new
+	// canonical block. Without these, a sequencer that forked off alone or kept a stale L1 origin
+	// would still pass the checks above.
 
 	// (a) The re-derived L2 block's L1 origin must be a block on the NEW canonical L1 chain
 	// (hash-matched), and still post-Amsterdam — it tracked the reorged L1, not a stale origin.
@@ -195,7 +194,41 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 	require.True(l1Config.IsAmsterdam(new(big.Int).SetUint64(canonOrigin.Number), canonOrigin.Time),
 		"the re-derived L2 block's L1 origin must still be post-Amsterdam after the reorg")
 
-	// (b) Epoch-boundary re-derivation: the epoch anchored at the reorged activation block must
+	// (b) INDEPENDENT verifier convergence. Both the sequencer and the verifier derive their SAFE
+	// chain from L1 alone (not by gossiping unsafe blocks), so after the reorg the verifier must
+	// independently re-derive the SAME post-reorg safe chain. A deep reorg makes the verifier's
+	// pipeline lag, so the window is generous and we keep the clock and L1 moving while it catches up.
+	driveWhile := func(cond func() bool, timeout time.Duration, msg string) {
+		require.Eventually(func() bool {
+			sys.AdvanceTime(2 * time.Second)
+			if sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number+2 >= sys.L1EL.BlockRefByLabel(eth.Unsafe).Number {
+				produceL1()
+			}
+			return cond()
+		}, timeout, 300*time.Millisecond, msg)
+	}
+
+	// (b-i) Drive the SEQUENCER's safe head PAST the reorged activation block, so its safe chain
+	// provably contains the re-derived epoch (not just unsafe blocks that never went through L1).
+	driveWhile(func() bool {
+		return sys.L2EL.BlockRefByLabel(eth.Safe).L1Origin.Number > l1Height
+	}, 240*time.Second, "sequencer safe head must derive past the reorged activation block")
+	seqSafe := sys.L2EL.BlockRefByLabel(eth.Safe)
+	require.Greater(seqSafe.Number, uint64(0), "sequencer must have a post-reorg safe head")
+
+	// (b-ii) The verifier must INDEPENDENTLY reach that exact safe block — same height AND hash.
+	// Waiting on the hash (not just the height) tolerates the verifier briefly sitting at that
+	// height on the stale pre-reorg chain before its pipeline unwinds and re-derives.
+	driveWhile(func() bool {
+		vSafe := sys.L2ELB.BlockRefByLabel(eth.Safe)
+		return vSafe.Number >= seqSafe.Number && sys.L2ELB.BlockRefByNumber(seqSafe.Number).Hash == seqSafe.Hash
+	}, 300*time.Second, "verifier must independently re-derive the sequencer's post-reorg safe block")
+	require.Equal(seqSafe.Hash, sys.L2ELB.BlockRefByNumber(seqSafe.Number).Hash,
+		"sequencer and verifier must derive an identical safe L2 block at height %d after the reorg", seqSafe.Number)
+	logger.Info("independent verifier re-derived the sequencer's post-reorg safe chain",
+		"safeHeight", seqSafe.Number, "safeHash", seqSafe.Hash)
+
+	// (c) Epoch-boundary re-derivation: the epoch anchored at the reorged activation block must
 	// re-open on L2 and derive from the NEW canonical activation block — not the stale pre-reorg
 	// one. The epoch opener's L2 number may shift across the reorg, so re-scan from the current
 	// unsafe head (the chain is converged by now).
