@@ -4,21 +4,33 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
-	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
-	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
-	"github.com/ethereum-optimism/optimism/op-devstack/presets"
-	"github.com/ethereum-optimism/optimism/op-devstack/stack/match"
 	"github.com/ethereum-optimism/optimism/op-service/apis"
+	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
+	"github.com/ethereum-optimism/optimism/op-service/testlog"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/stretchr/testify/require"
 )
 
-// blobsEndpointDown wraps a BeaconClient and forces the post-Fulu /blobs endpoint to fail, so that
-// L1BeaconClient.GetBlobs must fall back to /blob_sidecars. Every other method (including
-// BeaconBlobSideCars, ConfigSpec, BeaconGenesis) passes through to the real client.
+// These tests drive op-node's blob-fetch client against a REAL post-Gloas L1 CL (Prysm/Lighthouse),
+// exercising the /blobs -> /blob_sidecars fallback that fakebeacon (a fork-agnostic mock) cannot
+// meaningfully test. They complement realclblob (which checks the primary blob fetch) by forcing
+// the /blobs endpoint down so the fallback is exercised against the real beacon.
+//
+// Not CI tests: they skip unless L1_EL_URL + L1_BEACON_URL point at a real post-Gloas geth+beacon
+// (same convention as realclblob). On a post-Gloas Prysm the /blob_sidecars endpoint may itself be
+// broken (500); if the forced fallback then fails, that red IS the finding — op-node has no
+// data_column_sidecars fallback, so Mantle must keep the primary /blobs path working.
+
+// blobsEndpointDown wraps a BeaconClient and forces /blobs to fail, so GetBlobs must fall back to
+// /blob_sidecars. Every other method passes through to the real client.
 type blobsEndpointDown struct {
 	apis.BeaconClient
 }
@@ -27,118 +39,110 @@ func (blobsEndpointDown) BeaconBlobs(_ context.Context, _ uint64, _ []eth.Indexe
 	return eth.APIBeaconBlobsResponse{}, fmt.Errorf("injected fault: /blobs endpoint is down")
 }
 
-// findPostAmsterdamBlobBlock crosses Amsterdam and returns a post-Amsterdam L1 block carrying
-// batcher blobs together with its indexed blob hashes in block order.
-func findPostAmsterdamBlobBlock(t devtest.T, sys *presets.MantleMinimal) (eth.L1BlockRef, []eth.IndexedBlobHash) {
-	require := t.Require()
-	ctx := t.Ctx()
-	l1Config := sys.L1Network.Escape().ChainConfig()
-	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
+// realCLEnv reads the real-CL endpoints, skipping if unset.
+func realCLEnv(t *testing.T) (elURL, beaconURL string) {
+	elURL = os.Getenv("L1_EL_URL")
+	beaconURL = os.Getenv("L1_BEACON_URL")
+	if elURL == "" || beaconURL == "" {
+		t.Skip("set L1_EL_URL and L1_BEACON_URL to a real post-Gloas geth+beacon carrying blobs")
+	}
+	return elURL, beaconURL
+}
 
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
-
-	l1Eth := sys.L1EL.EthClient()
-	var (
-		ref    eth.L1BlockRef
-		hashes []eth.IndexedBlobHash
-	)
-	require.Eventually(func() bool {
-		head := sys.L1EL.BlockRefByLabel(eth.Unsafe)
-		floor := uint64(1)
-		if head.Number > 64 {
-			floor = head.Number - 64
-		}
-		for n := head.Number; n >= floor; n-- {
-			info, txs, err := l1Eth.InfoAndTxsByNumber(ctx, n)
-			require.NoErrorf(err, "read L1 block %d", n)
-			if !l1Config.IsAmsterdam(new(big.Int).SetUint64(info.NumberU64()), info.Time()) {
+// findBlobBlock scans recent L1 blocks for one carrying batcher blobs, returning its ref and the
+// indexed blob hashes in block order.
+func findBlobBlock(ctx context.Context, t *testing.T, el *ethclient.Client) (eth.L1BlockRef, []eth.IndexedBlobHash) {
+	head, err := el.BlockByNumber(ctx, nil)
+	require.NoError(t, err, "get L1 head")
+	lo := uint64(0)
+	if head.NumberU64() > 64 {
+		lo = head.NumberU64() - 64
+	}
+	for n := head.NumberU64(); n > lo; n-- {
+		blk, err := el.BlockByNumber(ctx, new(big.Int).SetUint64(n))
+		require.NoError(t, err)
+		idx := uint64(0)
+		var hashes []eth.IndexedBlobHash
+		for _, tx := range blk.Transactions() {
+			if tx.Type() != types.BlobTxType {
 				continue
 			}
-			idx := uint64(0)
-			var hs []eth.IndexedBlobHash
-			for _, tx := range txs {
-				for _, h := range tx.BlobHashes() {
-					hs = append(hs, eth.IndexedBlobHash{Index: idx, Hash: h})
-					idx++
-				}
-			}
-			if len(hs) > 0 {
-				ref = sys.L1EL.BlockRefByNumber(n)
-				hashes = hs
-				return true
+			for _, h := range tx.BlobHashes() {
+				hashes = append(hashes, eth.IndexedBlobHash{Index: idx, Hash: h})
+				idx++
 			}
 		}
-		return false
-	}, 120*time.Second, 2*time.Second, "a post-Amsterdam L1 block carrying batcher blobs must appear")
-
-	return ref, hashes
+		if len(hashes) > 0 {
+			return eth.L1BlockRef{
+				Hash:       blk.Hash(),
+				Number:     blk.NumberU64(),
+				ParentHash: blk.ParentHash(),
+				Time:       blk.Time(),
+			}, hashes
+		}
+	}
+	require.FailNow(t, "no L1 block with blobs in the last 64 blocks — is the blob spammer running and past Gloas?")
+	return eth.L1BlockRef{}, nil
 }
 
-// TestL1Beacon_BlobSidecarFallback_PostGlamsterdam proves op-node's blob fetch survives a failing
-// post-Fulu /blobs endpoint after the L1 upgrades to Glamsterdam: with /blobs forced down via an
-// injected fault, GetBlobs must fall back to /blob_sidecars and still return the correct blobs
-// (each blob's KZG commitment matches its versioned hash, in the requested order).
-//
-// Flips red if the fallback path is broken (GetBlobs errors) or returns wrong/misordered blobs.
-func TestL1Beacon_BlobSidecarFallback_PostGlamsterdam(gt *testing.T) {
-	t := devtest.SerialT(gt)
-	sys := presets.NewMantleMinimal(t)
-	require := t.Require()
-	ctx := t.Ctx()
-	require.True(sys.L2Chain.IsMantleForkActive(opforks.MantleElysium), "L2 must run with Mantle Elysium active")
+// TestL1Beacon_BlobSidecarFallback_RealCL forces the real beacon's /blobs endpoint down and
+// requires GetBlobs to fall back to /blob_sidecars and still return the correct blobs (KZG
+// commitment matching the versioned hash, in the requested order).
+func TestL1Beacon_BlobSidecarFallback_RealCL(t *testing.T) {
+	elURL, beaconURL := realCLEnv(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	logger := testlog.Logger(t, log.LevelInfo)
 
-	ref, hashes := findPostAmsterdamBlobBlock(t, sys)
-	t.Log("found post-Amsterdam blob block", "block", ref.Number, "blobs", len(hashes))
+	el, err := ethclient.DialContext(ctx, elURL)
+	require.NoError(t, err, "dial L1 EL")
+	defer el.Close()
+	ref, hashes := findBlobBlock(ctx, t, el)
+	t.Logf("found L1 block %d carrying %d blobs", ref.Number, len(hashes))
 
-	l1CL := sys.L1Network.Escape().L1CLNode(match.Assume(t, match.FirstL1CL))
-	// /blobs forced down -> GetBlobs must fall back to /blob_sidecars.
-	down := sources.NewL1BeaconClient(blobsEndpointDown{l1CL.BeaconClient()}, sources.L1BeaconClientConfig{})
+	realBeacon := sources.NewBeaconHTTPClient(client.NewBasicHTTPClient(beaconURL, logger))
+	down := sources.NewL1BeaconClient(blobsEndpointDown{realBeacon}, sources.L1BeaconClientConfig{})
 
 	blobs, err := down.GetBlobs(ctx, ref, hashes)
-	require.NoError(err, "GetBlobs must succeed via the /blob_sidecars fallback when /blobs is down")
-	require.Len(blobs, len(hashes), "the fallback must return exactly the requested blobs")
+	require.NoError(t, err, "GetBlobs must succeed via the /blob_sidecars fallback when /blobs is down")
+	require.Len(t, blobs, len(hashes), "the fallback must return exactly the requested blobs")
 	for i, blob := range blobs {
-		require.NotNilf(blob, "fallback blob %d must be present", i)
+		require.NotNilf(t, blob, "fallback blob %d must be present", i)
 		commitment, err := blob.ComputeKZGCommitment()
-		require.NoErrorf(err, "fallback blob %d KZG commitment", i)
-		require.Equalf(hashes[i].Hash, eth.KZGToVersionedHash(commitment),
-			"fallback blob %d must match its versioned hash (correct blob, correct order)", i)
+		require.NoErrorf(t, err, "fallback blob %d KZG commitment", i)
+		require.Equalf(t, hashes[i].Hash, eth.KZGToVersionedHash(commitment),
+			"fallback blob %d must match its versioned hash", i)
 	}
-	t.Log("GetBlobs fell back to /blob_sidecars and returned valid blobs", "blobs", len(blobs))
 }
 
-// TestL1Beacon_BlobOrderConsistency_PostGlamsterdam proves the main /blobs path and the
-// /blob_sidecars fallback return BYTE-IDENTICAL blobs, in the same order, for the same set of
-// hashes — so a client that falls back mid-flight cannot silently reorder or corrupt blobs.
-//
-// Flips red if the two paths disagree on any blob's bytes or ordering.
-func TestL1Beacon_BlobOrderConsistency_PostGlamsterdam(gt *testing.T) {
-	t := devtest.SerialT(gt)
-	sys := presets.NewMantleMinimal(t)
-	require := t.Require()
-	ctx := t.Ctx()
-	require.True(sys.L2Chain.IsMantleForkActive(opforks.MantleElysium), "L2 must run with Mantle Elysium active")
+// TestL1Beacon_BlobOrderConsistency_RealCL requires the real beacon's main /blobs path and its
+// /blob_sidecars fallback to return BYTE-IDENTICAL blobs, in the same order, for the same hashes.
+func TestL1Beacon_BlobOrderConsistency_RealCL(t *testing.T) {
+	elURL, beaconURL := realCLEnv(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	logger := testlog.Logger(t, log.LevelInfo)
 
-	ref, hashes := findPostAmsterdamBlobBlock(t, sys)
-	require.GreaterOrEqual(len(hashes), 1, "need at least one blob to compare")
+	el, err := ethclient.DialContext(ctx, elURL)
+	require.NoError(t, err, "dial L1 EL")
+	defer el.Close()
+	ref, hashes := findBlobBlock(ctx, t, el)
+	require.GreaterOrEqual(t, len(hashes), 1, "need at least one blob to compare")
 
-	l1CL := sys.L1Network.Escape().L1CLNode(match.Assume(t, match.FirstL1CL))
-	realCl := l1CL.BeaconClient()
-	mainPath := sources.NewL1BeaconClient(realCl, sources.L1BeaconClientConfig{})                    // uses /blobs
-	fallback := sources.NewL1BeaconClient(blobsEndpointDown{realCl}, sources.L1BeaconClientConfig{}) // uses /blob_sidecars
+	realBeacon := sources.NewBeaconHTTPClient(client.NewBasicHTTPClient(beaconURL, logger))
+	mainPath := sources.NewL1BeaconClient(realBeacon, sources.L1BeaconClientConfig{})                    // /blobs
+	fallback := sources.NewL1BeaconClient(blobsEndpointDown{realBeacon}, sources.L1BeaconClientConfig{}) // /blob_sidecars
 
 	mainBlobs, err := mainPath.GetBlobs(ctx, ref, hashes)
-	require.NoError(err, "main-path GetBlobs (/blobs) must succeed")
+	require.NoError(t, err, "main-path GetBlobs (/blobs) must succeed against the real beacon")
 	fbBlobs, err := fallback.GetBlobs(ctx, ref, hashes)
-	require.NoError(err, "fallback GetBlobs (/blob_sidecars) must succeed")
-	require.Len(mainBlobs, len(hashes), "main path must return all blobs")
-	require.Len(fbBlobs, len(hashes), "fallback must return all blobs")
-
+	require.NoError(t, err, "fallback GetBlobs (/blob_sidecars) must succeed against the real beacon")
+	require.Len(t, mainBlobs, len(hashes))
+	require.Len(t, fbBlobs, len(hashes))
 	for i := range hashes {
-		require.NotNilf(mainBlobs[i], "main-path blob %d must be present", i)
-		require.NotNilf(fbBlobs[i], "fallback blob %d must be present", i)
-		require.Truef(*mainBlobs[i] == *fbBlobs[i],
-			"blob %d must be byte-identical between the main /blobs path and the /blob_sidecars fallback (no order mismatch)", i)
+		require.NotNilf(t, mainBlobs[i], "main-path blob %d must be present", i)
+		require.NotNilf(t, fbBlobs[i], "fallback blob %d must be present", i)
+		require.Truef(t, *mainBlobs[i] == *fbBlobs[i],
+			"blob %d must be byte-identical between the main /blobs path and the /blob_sidecars fallback", i)
 	}
-	t.Log("main path and fallback returned byte-identical blobs in the same order", "blobs", len(hashes))
 }
