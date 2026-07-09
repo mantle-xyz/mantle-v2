@@ -231,17 +231,15 @@ func TestConfig_MantleActivateAt(t *testing.T) {
 		var cfg Config
 		ts := uint64(100)
 		cfg.MantleActivateAt(forks.MantleArsia, ts)
-		// All forks should be set (not nil)
+		// Forks up to and including the target are set; later forks (e.g. Elysium) stay nil.
 		for _, f := range scheduleableMantleForks {
 			at := cfg.MantleActivationTime(f)
 			require.NotNil(t, at)
 			if f == forks.MantleArsia {
-				// Target fork should be set to the timestamp
-				require.EqualValues(t, ts, *at)
-			} else {
-				// Prior forks should be set to 0 (genesis)
-				require.Zero(t, *at)
+				require.EqualValues(t, ts, *at) // target fork set to the timestamp
+				break
 			}
+			require.Zero(t, *at) // prior forks set to 0 (genesis)
 		}
 	})
 
@@ -283,10 +281,14 @@ func TestConfig_MantleActivateAtGenesis(t *testing.T) {
 	t.Run("MantleArsia", func(t *testing.T) {
 		var cfg Config
 		cfg.MantleActivateAtGenesis(forks.MantleArsia)
+		// Forks up to and including Arsia are activated at genesis (0); later forks stay nil.
 		for _, f := range scheduleableMantleForks {
 			at := cfg.MantleActivationTime(f)
 			require.NotNil(t, at)
 			require.Zero(t, *at)
+			if f == forks.MantleArsia {
+				break
+			}
 		}
 	})
 }

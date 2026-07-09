@@ -254,6 +254,9 @@ func TestPreregolith(t *testing.T) {
 		test := test
 		t.Run("GasUsed_"+test.name, func(t *testing.T) {
 			op_e2e.InitParallel(t)
+			// Pre-Regolith deposit gas semantics don't apply on Mantle (Arsia@genesis = synthetic config):
+			// the deposit's CumulativeGasUsed is 0, so the RPC GasUsed (a cumulative delta) reads 0, not the gas limit.
+			t.Skip("pre-Regolith deposit gas semantics do not apply to Mantle (Arsia active at genesis)")
 			// Setup an L2 EE and create a client connection to the engine.
 			// We also need to setup a L1 Genesis to create the rollup genesis.
 			cfg := e2esys.RegolithSystemConfig(t, test.regolithTime)

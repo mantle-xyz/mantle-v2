@@ -39,14 +39,14 @@ func (m *mockEVM) TxContext() *vm.TxContext {
 	return result.(*vm.TxContext)
 }
 
-func (m *mockEVM) Call(from common.Address, to common.Address, input []byte, gas uint64, value *uint256.Int) ([]byte, uint64, error) {
+func (m *mockEVM) Call(from common.Address, to common.Address, input []byte, gas vm.GasBudget, value *uint256.Int) ([]byte, vm.GasBudget, error) {
 	args := m.Called(from, to, input, gas, value)
-	return args.Get(0).([]byte), args.Get(1).(uint64), args.Error(2)
+	return args.Get(0).([]byte), args.Get(1).(vm.GasBudget), args.Error(2)
 }
 
-func (m *mockEVM) Create(from common.Address, code []byte, gas uint64, value *uint256.Int) ([]byte, common.Address, uint64, error) {
+func (m *mockEVM) Create(from common.Address, code []byte, gas vm.GasBudget, value *uint256.Int) ([]byte, common.Address, vm.GasBudget, error) {
 	args := m.Called(from, code, gas, value)
-	return args.Get(0).([]byte), args.Get(1).(common.Address), args.Get(2).(uint64), args.Error(3)
+	return args.Get(0).([]byte), args.Get(1).(common.Address), args.Get(2).(vm.GasBudget), args.Error(3)
 }
 
 func (m *mockEVM) Config() *vm.Config {
