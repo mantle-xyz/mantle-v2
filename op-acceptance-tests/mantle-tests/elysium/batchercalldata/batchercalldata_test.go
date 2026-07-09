@@ -54,7 +54,7 @@ import (
 //     tokenization / floor charging can differ (empirically the mined gas matches neither
 //     recomputed floor). The numbers are recorded for visibility, not as a pass/fail signal.
 //
-// DISCRIMINATION is therefore LIVENESS + DA-path — which is exactly §2's real risk: if the
+// DISCRIMINATION is therefore LIVENESS + DA-path — which is exactly the real batcher-submission risk: if the
 // batcher underprices under the raised 7976 floor, its inbox tx is rejected/never mined and the
 // L2 stops reaching safe. This flips red if: the batcher can't get its calldata batch onto a
 // Glamsterdam L1 so the L2 tx never reaches safe (ReachedRef by hash); the inbox tx is a blob tx
