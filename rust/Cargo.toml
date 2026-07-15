@@ -30,7 +30,7 @@ members = [
   # Alloy OP Hardforks
   "alloy-op-hardforks/",
 
-  # Op-Revm: sourced from mantle-xyz/revm @ mantle-elysium via [patch.crates-io]
+  # Op-Revm: sourced from mantle-xyz/revm-ghsa-5vfr-x84h-hmvf @ 99707e9f via [patch.crates-io]
   # below; the local op-revm/ subtree is intentionally excluded from the workspace.
   # "op-revm/",
 ]
@@ -353,7 +353,7 @@ reth-trie = { git = "https://github.com/paradigmxyz/reth", rev = "88505c7fcbfdeb
 reth-trie-common = { git = "https://github.com/paradigmxyz/reth", rev = "88505c7fcbfdebfd3b56d88c86b62e950043c6c4", default-features = false }
 reth-trie-db = { git = "https://github.com/paradigmxyz/reth", rev = "88505c7fcbfdebfd3b56d88c86b62e950043c6c4" }
 
-# ==================== REVM (redirected to mantle-xyz/revm @ mantle-elysium via [patch.crates-io]; declared versions track upstream to satisfy transitive constraints) ====================
+# ==================== REVM (redirected to mantle-xyz/revm-ghsa-5vfr-x84h-hmvf @ 99707e9f via [patch.crates-io]; declared versions track upstream to satisfy transitive constraints) ====================
 revm = { version = "38.0.0", default-features = false }
 revm-bytecode = { version = "10.0.0", default-features = false }
 revm-database = { version = "13.0.0", default-features = false }
@@ -629,21 +629,21 @@ snmalloc-rs = { version = "0.3.8", features = ["build_cc"] }
 # K/V database
 rocksdb = { version = "0.24.0", default-features = false }
 
-# ==================== PATCH: redirect every revm-* crate (including those pulled transitively) to mantle-xyz/revm @ mantle-elysium ====================
+# ==================== PATCH: redirect every revm-* crate (including those pulled transitively) to mantle-xyz/revm-ghsa-5vfr-x84h-hmvf @ 99707e9f ====================
 [patch.crates-io]
-revm = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
-revm-bytecode = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
-revm-context = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
-revm-context-interface = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
-revm-database = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
-revm-database-interface = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
-revm-handler = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
-revm-inspector = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
-revm-interpreter = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
-revm-precompile = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
-revm-primitives = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
-revm-state = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
-op-revm = { git = "https://github.com/mantle-xyz/revm", branch = "mantle-elysium" }
+revm = { git = "https://github.com/mantle-xyz/revm-ghsa-5vfr-x84h-hmvf", rev = "99707e9f" }
+revm-bytecode = { git = "https://github.com/mantle-xyz/revm-ghsa-5vfr-x84h-hmvf", rev = "99707e9f" }
+revm-context = { git = "https://github.com/mantle-xyz/revm-ghsa-5vfr-x84h-hmvf", rev = "99707e9f" }
+revm-context-interface = { git = "https://github.com/mantle-xyz/revm-ghsa-5vfr-x84h-hmvf", rev = "99707e9f" }
+revm-database = { git = "https://github.com/mantle-xyz/revm-ghsa-5vfr-x84h-hmvf", rev = "99707e9f" }
+revm-database-interface = { git = "https://github.com/mantle-xyz/revm-ghsa-5vfr-x84h-hmvf", rev = "99707e9f" }
+revm-handler = { git = "https://github.com/mantle-xyz/revm-ghsa-5vfr-x84h-hmvf", rev = "99707e9f" }
+revm-inspector = { git = "https://github.com/mantle-xyz/revm-ghsa-5vfr-x84h-hmvf", rev = "99707e9f" }
+revm-interpreter = { git = "https://github.com/mantle-xyz/revm-ghsa-5vfr-x84h-hmvf", rev = "99707e9f" }
+revm-precompile = { git = "https://github.com/mantle-xyz/revm-ghsa-5vfr-x84h-hmvf", rev = "99707e9f" }
+revm-primitives = { git = "https://github.com/mantle-xyz/revm-ghsa-5vfr-x84h-hmvf", rev = "99707e9f" }
+revm-state = { git = "https://github.com/mantle-xyz/revm-ghsa-5vfr-x84h-hmvf", rev = "99707e9f" }
+op-revm = { git = "https://github.com/mantle-xyz/revm-ghsa-5vfr-x84h-hmvf", rev = "99707e9f" }
 
 # [MANTLE] alloy-evm is intentionally NOT patched: it resolves from crates.io, which is
 # upstream alloy-rs/evm v0.34.0. The previous mantle-xyz/evm@mantle-v0.34.0 fork existed
