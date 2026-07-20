@@ -16,7 +16,17 @@ contract BVM_ETH is OptimismMintableERC20 {
      * Constructor *
      *
      */
-    constructor() OptimismMintableERC20(Predeploys.L2_STANDARD_BRIDGE, address(0), "Ether", "WETH") { }
+    constructor() OptimismMintableERC20(Predeploys.L2_STANDARD_BRIDGE, address(0), "", "") { }
+
+    /// @notice Returns the token name.
+    function name() public pure override returns (string memory) {
+        return "Ether";
+    }
+
+    /// @notice Returns the token symbol.
+    function symbol() public pure override returns (string memory) {
+        return "WETH";
+    }
 
     /// @notice Allows the StandardBridge on this network to mint tokens.
     /// @dev This function is disabled and will always revert. BVM_ETH mint can only be triggered in deposit transaction

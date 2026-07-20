@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	altda "github.com/ethereum-optimism/optimism/op-alt-da"
@@ -996,7 +997,8 @@ type TxSender[T any] interface {
 // sendTx uses the txmgr queue to send the given transaction candidate after setting its
 // gaslimit. It will block if the txmgr queue has reached its MaxPendingTransactions limit.
 func (l *BatchSubmitter) sendTx(txdata txData, isCancel bool, candidate *txmgr.TxCandidate, queue TxSender[txRef], receiptsCh chan txmgr.TxReceipt[txRef]) {
-	floorDataGas, err := core.FloorDataGas(candidate.TxData)
+	// use Amsterdam rules to cal floorDataGas
+	floorDataGas, err := core.FloorDataGas(params.Rules{IsAmsterdam: true}, candidate.TxData, nil)
 	if err != nil {
 		// We log instead of return an error here because the txmgr will do its own gas estimation.
 		l.Log.Warn("Failed to calculate floor data gas", "err", err)

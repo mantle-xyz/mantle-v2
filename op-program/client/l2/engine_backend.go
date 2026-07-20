@@ -1,6 +1,7 @@
 package l2
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -200,8 +201,8 @@ func (o *OracleBackedL2Chain) Engine() consensus.Engine {
 	return o.engine
 }
 
-func (o *OracleBackedL2Chain) StateAt(root common.Hash) (*state.StateDB, error) {
-	stateDB, err := state.New(root, state.NewDatabase(triedb.NewDatabase(rawdb.NewDatabase(o.db), nil), nil))
+func (o *OracleBackedL2Chain) StateAt(header *types.Header) (*state.StateDB, error) {
+	stateDB, err := state.New(header.Root, state.NewDatabase(triedb.NewDatabase(rawdb.NewDatabase(o.db), nil), nil))
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +210,7 @@ func (o *OracleBackedL2Chain) StateAt(root common.Hash) (*state.StateDB, error) 
 	return stateDB, nil
 }
 
-func (o *OracleBackedL2Chain) InsertBlockWithoutSetHead(block *types.Block, makeWitness bool) (*stateless.Witness, error) {
+func (o *OracleBackedL2Chain) InsertBlockWithoutSetHead(ctx context.Context, block *types.Block, makeWitness bool) (*stateless.Witness, error) {
 	processor, err := engineapi.NewBlockProcessorFromHeader(o, block.Header())
 	if err != nil {
 		return nil, err

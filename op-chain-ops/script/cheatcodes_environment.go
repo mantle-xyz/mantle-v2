@@ -221,7 +221,7 @@ func (c *CheatCodesPrecompile) ResumeGasMetering() error {
 }
 
 // TxGasPrice implements https://book.getfoundry.sh/cheatcodes/tx-gas-price
-func (c *CheatCodesPrecompile) TxGasPrice(newGasPrice *big.Int) {
+func (c *CheatCodesPrecompile) TxGasPrice(newGasPrice *uint256.Int) {
 	c.h.env.TxContext().GasPrice = newGasPrice
 }
 

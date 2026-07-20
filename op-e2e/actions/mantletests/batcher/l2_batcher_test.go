@@ -600,12 +600,12 @@ func BigL2Txs(gt *testing.T, isSpanBatch bool) {
 			_, err := rng.Read(data[:])   // fill with random bytes, to make compression ineffective
 			require.NoError(t, err)
 			// calculate intrinsicGas
-			intrinsicGas, err := core.IntrinsicGas(data, nil, nil, false, true, true, false)
+			intrinsicGas, err := core.IntrinsicGas(data, nil, nil, false, true, true, false, true)
 			require.NoError(t, err)
 			//calculate Floor data gas
-			floorDataGas, err := core.FloorDataGas(data)
+			floorDataGas, err := core.FloorDataGas(params.Rules{IsAmsterdam: true}, data, nil)
 			require.NoError(t, err)
-			gas := intrinsicGas
+			gas := intrinsicGas.Sum()
 			if floorDataGas > gas {
 				gas = floorDataGas
 			}

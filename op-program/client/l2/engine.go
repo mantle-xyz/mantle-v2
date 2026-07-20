@@ -82,7 +82,7 @@ func (o *OracleEngine) l2OutputAtHeader(header *types.Header) (*eth.OutputV0, er
 		if o.hinter != nil {
 			o.hinter.HintWithdrawalsRoot(blockHash, chainID)
 		}
-		stateDB, err := o.backend.StateAt(header.Root)
+		stateDB, err := o.backend.StateAt(header)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open L2 state db at block %s: %w", blockHash, err)
 		}

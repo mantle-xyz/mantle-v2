@@ -227,6 +227,6 @@ func (f *ForkedAccountsTrie) Prove(key []byte, proofDb ethdb.KeyValueWriter) err
 	return errors.New("proving of a ForkedAccountsTrie is not supported")
 }
 
-func (f *ForkedAccountsTrie) IsVerkle() bool {
+func (f *ForkedAccountsTrie) IsUBT() bool {
 	return false
 }

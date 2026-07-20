@@ -37,6 +37,11 @@ func (c *Config) IsMantleArsia(timestamp uint64) bool {
 	return c.IsMantleForkActive(forks.MantleArsia, timestamp)
 }
 
+// IsMantleElysium returns true if the MantleElysium hardfork is active at or past the given timestamp.
+func (c *Config) IsMantleElysium(timestamp uint64) bool {
+	return c.IsMantleForkActive(forks.MantleElysium, timestamp)
+}
+
 // IsMantleBaseFeeActivationBlock returns whether the specified block is the first block subject to the
 // MantleBaseFee upgrade.
 func (c *Config) IsMantleBaseFeeActivationBlock(l2BlockTime uint64) bool {
@@ -85,8 +90,18 @@ func (c *Config) IsMantleArsiaActivationBlock(l2BlockTime uint64) bool {
 		!c.IsMantleArsia(l2BlockTime-c.BlockTime)
 }
 
+// IsMantleElysiumActivationBlock returns whether the specified block is the first block subject to the
+// MantleElysium upgrade.
+func (c *Config) IsMantleElysiumActivationBlock(l2BlockTime uint64) bool {
+	return c.IsMantleElysium(l2BlockTime) &&
+		l2BlockTime >= c.BlockTime &&
+		!c.IsMantleElysium(l2BlockTime-c.BlockTime)
+}
+
 func (c *Config) MantleActivationTime(fork MantleForkName) *uint64 {
 	switch fork {
+	case forks.MantleElysium:
+		return c.MantleElysiumTime
 	case forks.MantleArsia:
 		return c.MantleArsiaTime
 	case forks.MantleLimb:
@@ -108,6 +123,8 @@ func (c *Config) MantleActivationTime(fork MantleForkName) *uint64 {
 
 func (c *Config) SetMantleActivationTime(fork MantleForkName, timestamp *uint64) {
 	switch fork {
+	case forks.MantleElysium:
+		c.MantleElysiumTime = timestamp
 	case forks.MantleArsia:
 		c.MantleArsiaTime = timestamp
 	case forks.MantleLimb:
@@ -208,7 +225,9 @@ func (cfg *Config) CheckMantleForks() error {
 	if err := checkMantleFork(cfg.MantleLimbTime, cfg.MantleArsiaTime, forks.MantleLimb, forks.MantleArsia); err != nil {
 		return err
 	}
-
+	if err := checkMantleFork(cfg.MantleArsiaTime, cfg.MantleElysiumTime, forks.MantleArsia, forks.MantleElysium); err != nil {
+		return err
+	}
 	return nil
 }
 

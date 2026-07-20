@@ -20,7 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/downloader"
-	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
@@ -39,9 +38,9 @@ type EngineBackend interface {
 	// Engine retrieves the chain's consensus engine.
 	Engine() consensus.Engine
 
-	StateAt(root common.Hash) (*state.StateDB, error)
+	StateAt(header *types.Header) (*state.StateDB, error)
 
-	InsertBlockWithoutSetHead(block *types.Block, makeWitness bool) (*stateless.Witness, error)
+	InsertBlockWithoutSetHead(ctx context.Context, block *types.Block, makeWitness bool) (*stateless.Witness, error)
 	SetCanonical(head *types.Block) (common.Hash, error)
 	SetFinalized(header *types.Header)
 	SetSafe(header *types.Header)
@@ -234,6 +233,10 @@ func (ea *L2EngineAPI) GetPayloadV3(ctx context.Context, payloadId eth.PayloadID
 }
 
 func (ea *L2EngineAPI) GetPayloadV4(ctx context.Context, payloadId eth.PayloadID) (*eth.ExecutionPayloadEnvelope, error) {
+	return ea.getPayload(ctx, payloadId)
+}
+
+func (ea *L2EngineAPI) GetPayloadV5(ctx context.Context, payloadId eth.PayloadID) (*eth.ExecutionPayloadEnvelope, error) {
 	return ea.getPayload(ctx, payloadId)
 }
 
@@ -458,7 +461,7 @@ func (ea *L2EngineAPI) forkchoiceUpdated(_ context.Context, state *eth.Forkchoic
 		}
 
 		ea.log.Info("Forkchoice requested sync to new head", "number", header.Number(), "hash", header.Hash())
-		if err := ea.downloader.BeaconSync(ethconfig.SnapSync, header.Header(), nil); err != nil {
+		if err := ea.downloader.BeaconSync(header.Header(), nil); err != nil {
 			return STATUS_SYNCING, err
 		}
 		return STATUS_SYNCING, nil
@@ -551,7 +554,7 @@ func toGethWithdrawals(payload *eth.ExecutionPayload) []*types.Withdrawal {
 	return result
 }
 
-func (ea *L2EngineAPI) newPayload(_ context.Context, payload *eth.ExecutionPayload, hashes []common.Hash, root *common.Hash, requests [][]byte) (*eth.PayloadStatusV1, error) {
+func (ea *L2EngineAPI) newPayload(ctx context.Context, payload *eth.ExecutionPayload, hashes []common.Hash, root *common.Hash, requests [][]byte) (*eth.PayloadStatusV1, error) {
 	ea.log.Trace("L2Engine API request received", "method", "ExecutePayload", "number", payload.BlockNumber, "hash", payload.BlockHash)
 	txs := make([][]byte, len(payload.Transactions))
 	for i, tx := range payload.Transactions {
@@ -609,7 +612,7 @@ func (ea *L2EngineAPI) newPayload(_ context.Context, payload *eth.ExecutionPaylo
 		return &eth.PayloadStatusV1{Status: eth.ExecutionAccepted}, nil
 	}
 	log.Trace("Inserting block without sethead", "hash", block.Hash(), "number", block.Number)
-	if _, err := ea.backend.InsertBlockWithoutSetHead(block, false); err != nil {
+	if _, err := ea.backend.InsertBlockWithoutSetHead(ctx, block, false); err != nil {
 		ea.log.Warn("NewPayloadV1: inserting block failed", "error", err)
 		// Skip remembering the block was invalid, but do return the invalid response.
 		return ea.invalid(err, parent.Header()), nil

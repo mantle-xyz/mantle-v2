@@ -436,6 +436,8 @@ type UpgradeScheduleDeployConfig struct {
 	// L2GenesisMantleArsiaTimeOffset is the number of seconds after genesis block that the Mantle Arsia hard fork activates.
 	// Set it to 0 to activate at genesis. Nil to disable Mantle Arsia.
 	L2GenesisMantleArsiaTimeOffset *hexutil.Uint64 `json:"l2GenesisMantleArsiaTimeOffset,omitempty"`
+	// Set it to 0 to activate at genesis. Nil to disable Mantle Elysium.
+	L2GenesisMantleElysiumTimeOffset *hexutil.Uint64 `json:"l2GenesisMantleElysiumTimeOffset,omitempty"`
 
 	// L2GenesisRegolithTimeOffset is the number of seconds after genesis block that Regolith hard fork activates.
 	// Set it to 0 to activate at genesis. Nil to disable Regolith.

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 
 	"github.com/ethereum-optimism/optimism/op-service/eth"
@@ -230,19 +231,19 @@ func asTxCandidate(bcast script.Broadcast, blockGasLimit uint64) txmgr.TxCandida
 // is clamped to the block gas limit since Geth will reject transactions that exceed it before letting them
 // into the mempool.
 func padGasLimit(data []byte, gasUsed uint64, creation bool, blockGasLimit uint64) uint64 {
-	intrinsicGas, err := core.IntrinsicGas(data, nil, nil, creation, true, true, false)
+	cost, err := core.IntrinsicGas(data, nil, nil, creation, true, true, false, false)
 	// This method never errors - we should look into it if it does.
 	if err != nil {
 		panic(err)
 	}
 
-	floorDataGas, err := core.FloorDataGas(data)
+	floorDataGas, err := core.FloorDataGas(params.Rules{}, data, nil)
 	// We should never cause an overflow here.
 	if err != nil {
 		panic(err)
 	}
 
-	gas := intrinsicGas + gasUsed
+	gas := cost.RegularGas + gasUsed
 	if floorDataGas > gas {
 		gas = floorDataGas
 	}

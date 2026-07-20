@@ -14,6 +14,11 @@ type forkStateReader struct {
 
 var _ state.Reader = (*forkStateReader)(nil)
 
+func (f *forkStateReader) Has(addr common.Address, codeHash common.Hash) bool {
+	code, err := f.trie.ContractCode(addr, codeHash)
+	return err == nil && len(code) > 0
+}
+
 func (f *forkStateReader) Account(addr common.Address) (*types.StateAccount, error) {
 	acc, err := f.trie.GetAccount(addr)
 	if err != nil {
@@ -31,12 +36,14 @@ func (f *forkStateReader) Storage(addr common.Address, slot common.Hash) (common
 	return common.Hash(v), nil
 }
 
-func (f *forkStateReader) Code(addr common.Address, codeHash common.Hash) ([]byte, error) {
-	return f.trie.ContractCode(addr, codeHash)
+func (f *forkStateReader) Code(addr common.Address, codeHash common.Hash) []byte {
+	code, _ := f.trie.ContractCode(addr, codeHash)
+	return code
 }
 
-func (f *forkStateReader) CodeSize(addr common.Address, codeHash common.Hash) (int, error) {
-	return f.trie.ContractCodeSize(addr, codeHash)
+func (f *forkStateReader) CodeSize(addr common.Address, codeHash common.Hash) int {
+	size, _ := f.trie.ContractCodeSize(addr, codeHash)
+	return size
 }
 
 func (f *forkStateReader) Copy() state.Reader {

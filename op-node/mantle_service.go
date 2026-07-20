@@ -22,6 +22,7 @@ func applyMantleOverrides(ctx cliiface.Context, rollupConfig *rollup.Config) {
 		rollupConfig.MantleSkadiTime = hardCodedConfig.MantleSkadiTime
 		rollupConfig.MantleLimbTime = hardCodedConfig.MantleLimbTime
 		rollupConfig.MantleArsiaTime = hardCodedConfig.MantleArsiaTime
+		rollupConfig.MantleElysiumTime = hardCodedConfig.MantleElysiumTime
 	}
 
 	for _, fork := range opflags.OverridableMantleForks {

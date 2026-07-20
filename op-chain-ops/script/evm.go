@@ -11,8 +11,8 @@ type EVM interface {
 	ChainConfig() *params.ChainConfig
 	Context() *vm.BlockContext
 	TxContext() *vm.TxContext
-	Call(from common.Address, to common.Address, input []byte, gas uint64, value *uint256.Int) ([]byte, uint64, error)
-	Create(from common.Address, code []byte, gas uint64, value *uint256.Int) ([]byte, common.Address, uint64, error)
+	Call(from common.Address, to common.Address, input []byte, gas vm.GasBudget, value *uint256.Int) ([]byte, vm.GasBudget, error)
+	Create(from common.Address, code []byte, gas vm.GasBudget, value *uint256.Int) ([]byte, common.Address, vm.GasBudget, error)
 	Config() *vm.Config
 	SetTxContext(txContext vm.TxContext)
 	StateDB() vm.StateDB
@@ -38,11 +38,11 @@ func (w *wrappedEVM) TxContext() *vm.TxContext {
 	return &w.evm.TxContext
 }
 
-func (w *wrappedEVM) Call(from common.Address, to common.Address, input []byte, gas uint64, value *uint256.Int) ([]byte, uint64, error) {
+func (w *wrappedEVM) Call(from common.Address, to common.Address, input []byte, gas vm.GasBudget, value *uint256.Int) ([]byte, vm.GasBudget, error) {
 	return w.evm.Call(from, to, input, gas, value)
 }
 
-func (w *wrappedEVM) Create(from common.Address, code []byte, gas uint64, value *uint256.Int) ([]byte, common.Address, uint64, error) {
+func (w *wrappedEVM) Create(from common.Address, code []byte, gas vm.GasBudget, value *uint256.Int) ([]byte, common.Address, vm.GasBudget, error) {
 	return w.evm.Create(from, code, gas, value)
 }
 

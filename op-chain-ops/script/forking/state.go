@@ -10,8 +10,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/holiman/uint256"
 )
 
@@ -59,6 +59,8 @@ func NewForkableState(base VMStateDB) *ForkableState {
 		idCounter: 0,
 	}
 }
+
+func (fst *ForkableState) Touch(address common.Address) {}
 
 // ExportDiff exports a state diff. Warning: diffs are like flushed states.
 // So we flush the state, making all the contents cold, losing transient storage, etc.
@@ -238,8 +240,8 @@ func (fst *ForkableState) stateFor(addr common.Address) VMStateDB {
 //
 // The changes will be flushed to the underlying DB.
 // A *ForkDB if the state is currently forked.
-func (fst *ForkableState) Finalise(deleteEmptyObjects bool) {
-	fst.selected.Finalise(deleteEmptyObjects)
+func (fst *ForkableState) Finalise(deleteEmptyObjects bool) *bal.StateAccessList {
+	return fst.selected.Finalise(deleteEmptyObjects)
 }
 
 func (fst *ForkableState) CreateAccount(address common.Address) {
@@ -322,16 +324,12 @@ func (fst *ForkableState) SetTransientState(addr common.Address, key, value comm
 	fst.stateFor(addr).SetTransientState(addr, key, value)
 }
 
-func (fst *ForkableState) SelfDestruct(address common.Address) uint256.Int {
-	return fst.stateFor(address).SelfDestruct(address)
+func (fst *ForkableState) SelfDestruct(address common.Address) {
+	fst.stateFor(address).SelfDestruct(address)
 }
 
 func (fst *ForkableState) HasSelfDestructed(address common.Address) bool {
 	return fst.stateFor(address).HasSelfDestructed(address)
-}
-
-func (fst *ForkableState) SelfDestruct6780(address common.Address) (uint256.Int, bool) {
-	return fst.stateFor(address).SelfDestruct6780(address)
 }
 
 func (fst *ForkableState) Exist(address common.Address) bool {
@@ -356,10 +354,6 @@ func (fst *ForkableState) AddAddressToAccessList(addr common.Address) {
 
 func (fst *ForkableState) AddSlotToAccessList(addr common.Address, slot common.Hash) {
 	fst.stateFor(addr).AddSlotToAccessList(addr, slot)
-}
-
-func (fst *ForkableState) PointCache() *utils.PointCache {
-	return fst.selected.PointCache()
 }
 
 func (fst *ForkableState) Prepare(rules params.Rules, sender, coinbase common.Address, dest *common.Address, precompiles []common.Address, txAccesses types.AccessList) {
@@ -392,4 +386,13 @@ func (fst *ForkableState) AccessEvents() *state.AccessEvents {
 
 func (fst *ForkableState) SetBalance(addr common.Address, amount *uint256.Int, reason tracing.BalanceChangeReason) {
 	fst.stateFor(addr).SetBalance(addr, amount, reason)
+}
+
+// IsNewContract implements [VMStateDB].
+func (fst *ForkableState) IsNewContract(addr common.Address) bool {
+	return fst.selected.IsNewContract(addr)
+}
+
+func (fst *ForkableState) LogsForBurnAccounts() []*types.Log {
+	return fst.selected.LogsForBurnAccounts()
 }

@@ -808,14 +808,18 @@ const (
 	FCUV1 EngineAPIMethod = "engine_forkchoiceUpdatedV1"
 	FCUV2 EngineAPIMethod = "engine_forkchoiceUpdatedV2"
 	FCUV3 EngineAPIMethod = "engine_forkchoiceUpdatedV3"
+	FCUV4 EngineAPIMethod = "engine_forkchoiceUpdatedV4"
 
 	NewPayloadV2 EngineAPIMethod = "engine_newPayloadV2"
 	NewPayloadV3 EngineAPIMethod = "engine_newPayloadV3"
 	NewPayloadV4 EngineAPIMethod = "engine_newPayloadV4"
+	NewPayloadV5 EngineAPIMethod = "engine_newPayloadV5"
 
 	GetPayloadV2 EngineAPIMethod = "engine_getPayloadV2"
 	GetPayloadV3 EngineAPIMethod = "engine_getPayloadV3"
 	GetPayloadV4 EngineAPIMethod = "engine_getPayloadV4"
+	GetPayloadV5 EngineAPIMethod = "engine_getPayloadV5"
+	GetPayloadV6 EngineAPIMethod = "engine_getPayloadV6"
 )
 
 // StorageKey is a marshaling utility for hex-encoded storage keys, which can have leading 0s and are

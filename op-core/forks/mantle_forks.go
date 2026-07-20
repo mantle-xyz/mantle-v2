@@ -11,6 +11,7 @@ const (
 	MantleSkadi   MantleForkName = "MantleSkadi"
 	MantleLimb    MantleForkName = "MantleLimb"
 	MantleArsia   MantleForkName = "MantleArsia"
+	MantleElysium MantleForkName = "MantleElysium"
 	MantleNone    MantleForkName = ""
 	// This fork never existed, it is used to indicate that a optimism fork is not active at a given timestamp.
 	MantleNoSupport MantleForkName = "MantleNoSupport"
@@ -23,6 +24,7 @@ var AllMantleForks = []MantleForkName{
 	MantleSkadi,
 	MantleLimb,
 	MantleArsia,
+	MantleElysium,
 	// ADD NEW FORKS HERE!
 }
 

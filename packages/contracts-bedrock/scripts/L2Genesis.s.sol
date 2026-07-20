@@ -435,8 +435,13 @@ contract L2Genesis is Script {
 
     /// @notice Sets BVM_ETH at its predeploy address (Mantle specific)
     function setBVM_ETH() internal {
-        // BVM_ETH has no immutables and can use vm.etch
-        vm.etch(Predeploys.BVM_ETH, vm.getDeployedCode("BVM_ETH.sol:BVM_ETH"));
+        // BVM_ETH has immutables. Deploy a real instance so the constructor patches
+        // them into the runtime code, then etch that code at the predeploy address.
+        // name()/symbol() are constant overrides and do not require storage copying.
+        address bvmEth = DeployUtils.create1({ _name: "BVM_ETH.sol:BVM_ETH", _args: "" });
+        vm.etch(Predeploys.BVM_ETH, address(bvmEth).code);
+        vm.etch(bvmEth, "");
+        vm.resetNonce(bvmEth);
     }
 
     /// @notice This predeploy is following the safety invariant #2.

@@ -12,7 +12,7 @@ import (
 
 type VMStateDB interface {
 	vm.StateDB
-	Finalise(deleteEmptyObjects bool)
+	GetStorageRoot(addr common.Address) common.Hash
 	// SetBalance sets the balance of an account. Not part of the geth VM StateDB interface (add/sub balance are).
 	SetBalance(addr common.Address, amount *uint256.Int, reason tracing.BalanceChangeReason)
 }

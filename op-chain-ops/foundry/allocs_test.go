@@ -30,7 +30,6 @@ func TestForgeAllocs_FromState(t *testing.T) {
 	rawDB := rawdb.NewMemoryDatabase()
 	stateDB := state.NewDatabase(triedb.NewDatabase(rawDB, &triedb.Config{
 		Preimages: true,
-		IsVerkle:  false,
 		HashDB:    hashdb.Defaults,
 		PathDB:    nil,
 	}), nil)

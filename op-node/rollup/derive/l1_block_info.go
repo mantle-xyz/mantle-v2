@@ -505,10 +505,19 @@ func L1InfoDeposit(rollupCfg *rollup.Config, l1ChainConfig *params.ChainConfig, 
 	isJovianActivated := isJovianButNotFirstBlock(rollupCfg, l2Timestamp)
 
 	isMantleArsiaActivated := isMantleArsiaButNotFirstBlock(rollupCfg, l2Timestamp)
+	isMantleElysiumActivated := isMantleElysiumButNotFirstBlock(rollupCfg, l2Timestamp)
 
 	// 1. Set all fields according to active forks
 	if isEcotoneActivated {
-		l1BlockInfo.BlobBaseFee = block.BlobBaseFee(l1ChainConfig)
+		if isMantleArsiaActivated && !isMantleElysiumActivated {
+			arsiaL1ChainConfig := eth.MantleArsiaL1ChainConfigByChainID(eth.ChainIDFromBig(rollupCfg.L1ChainID))
+			if arsiaL1ChainConfig == nil {
+				arsiaL1ChainConfig = l1ChainConfig
+			}
+			l1BlockInfo.BlobBaseFee = block.BlobBaseFee(arsiaL1ChainConfig)
+		} else {
+			l1BlockInfo.BlobBaseFee = block.BlobBaseFee(l1ChainConfig)
+		}
 
 		// Apply Cancun blob base fee calculation if this chain needs the L1 Pectra
 		// blob schedule fix (mostly Holesky and Sepolia OP-Stack chains).
@@ -648,4 +657,10 @@ func (info *L1BlockInfo) unmarshalBinaryMantleArsia(data []byte) error {
 // but is not the activation block itself.
 func isMantleArsiaButNotFirstBlock(rollupCfg *rollup.Config, l2Timestamp uint64) bool {
 	return rollupCfg.IsMantleArsia(l2Timestamp) && !rollupCfg.IsMantleArsiaActivationBlock(l2Timestamp)
+}
+
+// isMantleElysiumButNotFirstBlock returns whether the specified block is subject to the Mantle Elysium upgrade,
+// but is not the activation block itself.
+func isMantleElysiumButNotFirstBlock(rollupCfg *rollup.Config, l2Timestamp uint64) bool {
+	return rollupCfg.IsMantleElysium(l2Timestamp) && !rollupCfg.IsMantleElysiumActivationBlock(l2Timestamp)
 }

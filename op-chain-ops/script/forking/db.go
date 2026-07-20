@@ -10,8 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-ethereum/triedb"
 )
 
@@ -20,6 +18,14 @@ import (
 // and even finalize state changes (so we can accurately measure things like cold storage gas cost).
 type ForkDB struct {
 	active *ForkedAccountsTrie
+}
+
+func (f *ForkDB) Type() state.DatabaseType {
+	return state.TypeMPT
+}
+
+func (f *ForkDB) Iteratee(root common.Hash) (state.Iteratee, error) {
+	panic("unimplemented")
 }
 
 // Reader for read-only access to a known state. All cold reads go through this.
@@ -38,6 +44,10 @@ func (f *ForkDB) Reader(root common.Hash) (state.Reader, error) {
 
 func (f *ForkDB) Snapshot() *snapshot.Tree {
 	return nil
+}
+
+func (f *ForkDB) Commit(*state.StateUpdate) error {
+	panic("unimplemented")
 }
 
 var _ state.Database = (*ForkDB)(nil)
@@ -77,36 +87,13 @@ func (f *ForkDB) OpenStorageTrie(stateRoot common.Hash, address common.Address, 
 	return f.active, nil
 }
 
-func (f *ForkDB) CopyTrie(trie state.Trie) state.Trie {
-	if st, ok := trie.(*ForkedAccountsTrie); ok {
-		return st.Copy()
-	}
-	panic(fmt.Errorf("ForkDB tried to copy non-fork trie %v", trie))
-}
-
-func (f *ForkDB) ContractCode(addr common.Address, codeHash common.Hash) ([]byte, error) {
-	return f.active.ContractCode(addr, codeHash)
-}
-
-func (f *ForkDB) ContractCodeSize(addr common.Address, codeHash common.Hash) (int, error) {
-	return f.active.ContractCodeSize(addr, codeHash)
-}
-
-func (f *ForkDB) DiskDB() ethdb.KeyValueStore {
-	panic("DiskDB() during active Fork is not supported")
-}
-
-func (f *ForkDB) PointCache() *utils.PointCache {
-	panic("PointCache() is not supported")
-}
-
 func (f *ForkDB) TrieDB() *triedb.Database {
 	// The TrieDB is unused, but geth does use to check if Verkle is activated.
 	// So we have to create a read-only dummy one, to communicate that verkle really is disabled.
 	diskDB := rawdb.NewMemoryDatabase()
 	tdb := triedb.NewDatabase(diskDB, &triedb.Config{
 		Preimages: false,
-		IsVerkle:  false,
+		IsUBT:     false,
 		HashDB:    nil,
 		PathDB:    pathdb.ReadOnly,
 	})

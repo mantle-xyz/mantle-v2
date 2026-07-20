@@ -67,7 +67,6 @@ func TestForking(t *testing.T) {
 	rawDB := rawdb.NewMemoryDatabase()
 	stateDB := state.NewDatabase(triedb.NewDatabase(rawDB, &triedb.Config{
 		Preimages: true, // To be able to iterate the state we need the Preimages
-		IsVerkle:  false,
 		HashDB:    hashdb.Defaults,
 		PathDB:    nil,
 	}), nil)

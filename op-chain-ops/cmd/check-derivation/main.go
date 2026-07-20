@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v2"
 )
@@ -226,7 +227,7 @@ func getRandomSignedTransaction(ctx context.Context, ethClient *ethclient.Client
 	var txData types.TxData
 	switch txType {
 	case types.LegacyTxType:
-		gasLimit, err := core.FloorDataGas(data)
+		gasLimit, err := core.FloorDataGas(params.Rules{IsAmsterdam: true}, data, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get intrinsicGas: %w", err)
 		}
@@ -243,7 +244,7 @@ func getRandomSignedTransaction(ctx context.Context, ethClient *ethclient.Client
 			Address:     randomAddress,
 			StorageKeys: []common.Hash{common.HexToHash("0x1234")},
 		}}
-		gasLimit, err := core.FloorDataGas(data)
+		gasLimit, err := core.FloorDataGas(params.Rules{IsAmsterdam: true}, data, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get intrinsicGas: %w", err)
 		}
@@ -258,7 +259,7 @@ func getRandomSignedTransaction(ctx context.Context, ethClient *ethclient.Client
 			Data:       data,
 		}
 	case types.DynamicFeeTxType:
-		gasLimit, err := core.FloorDataGas(data)
+		gasLimit, err := core.FloorDataGas(params.Rules{IsAmsterdam: true}, data, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get intrinsicGas: %w", err)
 		}
@@ -278,7 +279,7 @@ func getRandomSignedTransaction(ctx context.Context, ethClient *ethclient.Client
 		}
 
 	case types.SetCodeTxType:
-		gasLimit, err := core.FloorDataGas(data)
+		gasLimit, err := core.FloorDataGas(params.Rules{IsAmsterdam: true}, data, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get intrinsicGas: %w", err)
 		}

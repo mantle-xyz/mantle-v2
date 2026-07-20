@@ -585,6 +585,11 @@ func (d *Sequencer) startBuildingBlock() {
 		d.log.Info("Sequencing Interop upgrade block")
 	}
 
+	// For the Mantle Elysium activation block we can include sequencer transactions.
+	if d.rollupCfg.IsMantleElysiumActivationBlock(uint64(attrs.Timestamp)) {
+		d.log.Info("Sequencing Mantle Elysium upgrade block")
+	}
+
 	if recoverMode {
 		attrs.NoTxPool = true
 		d.log.Warn("Sequencing temporarily without user transactions, in recover mode")

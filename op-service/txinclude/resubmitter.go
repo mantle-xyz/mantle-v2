@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 )
 
 type Resubmitter struct {
@@ -59,7 +60,7 @@ var fatalErrs = []error{
 
 	// Transaction limits.
 	txpool.ErrOversizedData,
-	core.ErrMaxInitCodeSizeExceeded,
+	vm.ErrMaxInitCodeSizeExceeded,
 	legacypool.ErrAuthorityReserved,
 	legacypool.ErrFutureReplacePending,
 

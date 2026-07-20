@@ -465,7 +465,7 @@ func Test_ProgramAction_OperatorFeeConsistency(gt *testing.T) {
 			t.Logf("DEBUG: l1BlockInfo.BlobBaseFeeScalar = %v", l1BlockInfo.BlobBaseFeeScalar)
 			// Check tokenRatio from state - this is the key for L1Fee calculation
 			tokenRatioFromState := env.Engine.L2Chain().CurrentBlock().BaseFee
-			statedb, _ := env.Engine.L2Chain().StateAt(env.Engine.L2Chain().CurrentBlock().Root)
+			statedb, _ := env.Engine.L2Chain().StateAt(env.Engine.L2Chain().CurrentBlock())
 			if statedb != nil {
 				tokenRatioSlot := statedb.GetState(common.HexToAddress("0x420000000000000000000000000000000000000F"), common.Hash{})
 				t.Logf("DEBUG: tokenRatio from GasPriceOracle state (slot 0) = %v", tokenRatioSlot.Big())
@@ -661,7 +661,7 @@ func Test_ProgramAction_OperatorFeeConsistency(gt *testing.T) {
 						r.OperatorFeeScalar, r.OperatorFeeConstant)
 				}
 				// Check sender balance in safe block state
-				statedb, _ := env.Engine.L2Chain().StateAt(safeHeadBlock.Root())
+				statedb, _ := env.Engine.L2Chain().StateAt(safeHeadBlock.Header())
 				if statedb != nil {
 					sender, _ := types.Sender(signer, tx)
 					t.Logf("DEBUG: sender %v balance after tx = %v", sender, statedb.GetBalance(sender))

@@ -648,10 +648,11 @@ func TestSpanBatchLowThroughputChain(gt *testing.T) {
 				_, err := crand.Read(data[:]) // fill with random bytes
 				require.NoError(t, err)
 				// calculate intrinsicGas
-				intrinsicGas, err := core.IntrinsicGas(data, nil, nil, false, true, true, false)
+				intrinsicGasCosts, err := core.IntrinsicGas(data, nil, nil, false, true, true, false, false)
 				require.NoError(t, err)
+				intrinsicGas := intrinsicGasCosts.Sum()
 				//calculate Floor data gas
-				floorDataGas, err := core.FloorDataGas(data)
+				floorDataGas, err := core.FloorDataGas(params.Rules{IsAmsterdam: true}, data, nil)
 				require.NoError(t, err)
 				gas := intrinsicGas
 				if floorDataGas > gas {
@@ -786,10 +787,11 @@ func TestSpanBatchSingularBatchEquivalence(gt *testing.T) {
 			_, err := crand.Read(data[:]) // fill with random bytes
 			require.NoError(t, err)
 			// calculate intrinsicGas
-			intrinsicGas, err := core.IntrinsicGas(data, nil, nil, false, true, true, false)
+			intrinsicGasCosts, err := core.IntrinsicGas(data, nil, nil, false, true, true, false, false)
 			require.NoError(t, err)
+			intrinsicGas := intrinsicGasCosts.Sum()
 			//calculate Floor data gas
-			floorDataGas, err := core.FloorDataGas(data)
+			floorDataGas, err := core.FloorDataGas(params.Rules{IsAmsterdam: true}, data, nil)
 			require.NoError(t, err)
 			gas := intrinsicGas
 			if floorDataGas > gas {

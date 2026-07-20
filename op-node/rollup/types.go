@@ -157,6 +157,10 @@ type Config struct {
 	// Active if MantleArsiaTime != nil && L2 block timestamp >= *MantleArsiaTime, inactive otherwise.
 	MantleArsiaTime *uint64 `json:"mantle_arsia_time,omitempty"`
 
+	// MantleElysiumTime sets the activation time of the Elysium network-upgrade:
+	// Active if MantleElysiumTime != nil && L2 block timestamp >= *MantleElysiumTime, inactive otherwise.
+	MantleElysiumTime *uint64 `json:"mantle_elysium_time,omitempty"`
+
 	// Note: below addresses are part of the block-derivation process,
 	// and required to be the same network-wide to stay in consensus.
 
@@ -747,7 +751,9 @@ func (c *Config) NewPayloadVersion(timestamp uint64) eth.EngineAPIMethod {
 
 // GetPayloadVersion returns the EngineAPIMethod suitable for the chain hard fork version.
 func (c *Config) GetPayloadVersion(timestamp uint64) eth.EngineAPIMethod {
-	if c.IsIsthmus(timestamp) || c.IsMantleSkadi(timestamp) {
+	if c.IsMantleLimb(timestamp) {
+		return eth.GetPayloadV5
+	} else if c.IsIsthmus(timestamp) || c.IsMantleSkadi(timestamp) {
 		return eth.GetPayloadV4
 	} else if c.IsEcotone(timestamp) {
 		// Cancun
@@ -892,6 +898,7 @@ func (c *Config) forEachFork(callback func(name string, logName string, time *ui
 	callback("MantleSkadi", "mantle_skadi_time", c.MantleSkadiTime)
 	callback("MantleLimb", "mantle_limb_time", c.MantleLimbTime)
 	callback("MantleArsia", "mantle_arsia_time", c.MantleArsiaTime)
+	callback("MantleElysium", "mantle_elysium_time", c.MantleElysiumTime)
 }
 
 func (c *Config) ParseRollupConfig(in io.Reader) error {

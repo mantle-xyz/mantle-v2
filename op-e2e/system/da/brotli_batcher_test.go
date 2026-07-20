@@ -86,7 +86,9 @@ func TestBrotliBatcherFjord(t *testing.T) {
 		opts.Value = big.NewInt(1_000_000_000)
 		opts.Nonce = 1 // Already have deposit
 		opts.ToAddr = &common.Address{0xff, 0xff}
-		opts.Gas, err = core.IntrinsicGas(opts.Data, nil, nil, false, true, true, false)
+		gasCosts, err := core.IntrinsicGas(opts.Data, nil, nil, false, true, true, false, true)
+		opts.Gas = gasCosts.Sum()
+		_ = err
 		require.NoError(t, err)
 		opts.VerifyOnClients(l2Verif)
 	})

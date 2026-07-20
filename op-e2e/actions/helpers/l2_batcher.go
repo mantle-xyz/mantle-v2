@@ -458,7 +458,7 @@ func (s *L2Batcher) ActL2BatchSubmitRaw(t Testing, payload []byte, txOpts ...fun
 			opt(rawTx)
 		}
 
-		gas, err := core.FloorDataGas(rawTx.Data)
+		gas, err := core.FloorDataGas(params.Rules{IsAmsterdam: true}, rawTx.Data, nil)
 		require.NoError(t, err, "need to compute floor data gas")
 		rawTx.Gas = gas
 		txData = rawTx
@@ -533,7 +533,7 @@ func (s *L2Batcher) ActL2BatchSubmitMantleRaw(t Testing, payload []byte, txOpts 
 		for _, opt := range txOpts {
 			opt(rawTx)
 		}
-		gas, err := core.FloorDataGas(rawTx.Data)
+		gas, err := core.FloorDataGas(params.Rules{IsAmsterdam: true}, rawTx.Data, nil)
 		require.NoError(t, err, "need to compute floor data gas")
 		rawTx.Gas = gas
 		txData = rawTx
@@ -645,7 +645,7 @@ func (s *L2Batcher) ActL2BatchSubmitMantleRawAtTime(t Testing, payload []byte, l
 		for _, opt := range txOpts {
 			opt(rawTx)
 		}
-		gas, err := core.FloorDataGas(rawTx.Data)
+		gas, err := core.FloorDataGas(params.Rules{IsAmsterdam: true}, rawTx.Data, nil)
 		require.NoError(t, err, "need to compute floor data gas")
 		rawTx.Gas = gas
 		txData = rawTx

@@ -958,7 +958,7 @@ func TestInvalidPayloadInSpanBatch(gt *testing.T) {
 			aliceNonce, err := seqEng.EthClient().PendingNonceAt(t.Ctx(), dp.Addresses.Alice)
 			require.NoError(t, err)
 			data := make([]byte, rand.Intn(100))
-			gas, err := core.FloorDataGas(data)
+			gas, err := core.FloorDataGas(params.Rules{IsAmsterdam: true}, data, nil)
 			require.NoError(t, err)
 			baseFee := seqEng.L2Chain().CurrentBlock().BaseFee
 			tx := types.MustSignNewTx(dp.Secrets.Alice, signer, &types.DynamicFeeTx{

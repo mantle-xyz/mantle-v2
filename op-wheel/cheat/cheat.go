@@ -90,7 +90,7 @@ func (ch *Cheater) RunAndClose(fn HeadFn) error {
 	if a, b := preHeader.Number.Uint64(), ch.Blockchain.Genesis().NumberU64(); a <= b {
 		return fmt.Errorf("cheating at genesis (head block %d <= genesis block %d) is not supported", a, b)
 	}
-	state, err := ch.Blockchain.StateAt(preHeader.Root)
+	state, err := ch.Blockchain.StateAt(preHeader)
 	if err != nil {
 		_ = ch.Close()
 		return fmt.Errorf("failed to look up head state: %w", err)

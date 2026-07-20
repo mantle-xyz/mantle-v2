@@ -58,6 +58,10 @@ func (d *UpgradeScheduleDeployConfig) MantleArsiaTime(genesisTime uint64) *uint6
 	return offsetToUpgradeTime(d.L2GenesisMantleArsiaTimeOffset, genesisTime)
 }
 
+func (d *UpgradeScheduleDeployConfig) MantleElysiumTime(genesisTime uint64) *uint64 {
+	return offsetToUpgradeTime(d.L2GenesisMantleElysiumTimeOffset, genesisTime)
+}
+
 func (d *UpgradeScheduleDeployConfig) mantleForks() []Fork {
 	return []Fork{
 		{L2GenesisTimeOffset: d.L2GenesisMantleBaseFeeTimeOffset, Name: "mantle_base_fee"},
@@ -70,6 +74,7 @@ func (d *UpgradeScheduleDeployConfig) mantleForks() []Fork {
 		{L2GenesisTimeOffset: d.L2GenesisMantleSkadiTimeOffset, Name: "mantle_skadi"},
 		{L2GenesisTimeOffset: d.L2GenesisMantleLimbTimeOffset, Name: "mantle_limb"},
 		{L2GenesisTimeOffset: d.L2GenesisMantleArsiaTimeOffset, Name: "mantle_arsia"},
+		{L2GenesisTimeOffset: d.L2GenesisMantleElysiumTimeOffset, Name: "mantle_elysium"},
 	}
 }
 
@@ -97,6 +102,7 @@ func DefaultMantleHardforkSchedule() *UpgradeScheduleDeployConfig {
 		L2GenesisMantleSkadiTimeOffset:             op_service.U64UtilPtr(0),
 		L2GenesisMantleLimbTimeOffset:              op_service.U64UtilPtr(0),
 		L2GenesisMantleArsiaTimeOffset:             op_service.U64UtilPtr(0),
+		L2GenesisMantleElysiumTimeOffset:           nil,
 	}
 }
 
@@ -145,6 +151,7 @@ func fillInMantleForksIntoGenesis(config *DeployConfig, genesis *core.Genesis, l
 	chainConfig.MantleSkadiTime = config.MantleSkadiTime(l1StartBlockTimestamp)
 	chainConfig.MantleLimbTime = config.MantleLimbTime(l1StartBlockTimestamp)
 	chainConfig.MantleArsiaTime = config.MantleArsiaTime(l1StartBlockTimestamp)
+	chainConfig.MantleElysiumTime = config.MantleElysiumTime(l1StartBlockTimestamp)
 }
 
 // alignEthWithMantle aligns the Ethereum forks with the Mantle forks.
@@ -203,6 +210,7 @@ func fillInMantleForksIntoRollupConfig(config *DeployConfig, rollupConfig *rollu
 	rollupConfig.MantleSkadiTime = config.MantleSkadiTime(l1StartTime)
 	rollupConfig.MantleLimbTime = config.MantleLimbTime(l1StartTime)
 	rollupConfig.MantleArsiaTime = config.MantleArsiaTime(l1StartTime)
+	rollupConfig.MantleElysiumTime = config.MantleElysiumTime(l1StartTime)
 }
 
 /////////////////////////////////////////////////////////////
@@ -267,6 +275,8 @@ func (d *UpgradeScheduleDeployConfig) SetMantleForkTimeOffset(fork rollup.Mantle
 		d.L2GenesisMantleLimbTimeOffset = (*hexutil.Uint64)(offset)
 	case forks.MantleArsia:
 		d.L2GenesisMantleArsiaTimeOffset = (*hexutil.Uint64)(offset)
+	case forks.MantleElysium:
+		d.L2GenesisMantleElysiumTimeOffset = (*hexutil.Uint64)(offset)
 	default:
 		panic(fmt.Sprintf("unsupported mantle fork: %s", fork))
 	}

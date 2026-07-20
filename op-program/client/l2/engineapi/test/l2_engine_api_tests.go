@@ -48,7 +48,7 @@ func RunEngineAPITests(t *testing.T, createBackend func(t *testing.T) engineapi.
 		api.assert.Len(imported.Transactions(), 1, "should include transaction")
 
 		api.assert.NotEqual(genesis.Root, block.StateRoot)
-		newState, err := api.backend.StateAt(common.Hash(block.StateRoot))
+		newState, err := api.backend.StateAt(api.backend.GetBlockByHash(block.BlockHash).Header())
 		require.NoError(t, err, "imported block state should be available")
 		require.NotNil(t, newState)
 	})
