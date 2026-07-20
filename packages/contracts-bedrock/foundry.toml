@@ -1,3 +1,8 @@
+# Disable forge lint-on-build: foundry 1.5.1's linter aborts the build on
+# pre-existing warnings in these contracts. Linting is not needed to compile.
+[lint]
+lint_on_build = false
+
 ################################################################
 #                   PROFILE: DEFAULT (local)                   #
 ################################################################
