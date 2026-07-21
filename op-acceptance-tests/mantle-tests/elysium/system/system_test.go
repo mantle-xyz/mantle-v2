@@ -16,19 +16,19 @@ func TestL1Glamsterdam_System_RealCL(gt *testing.T) {
 	gt.Run("TestL1Glamsterdam_HighTPS", runL1GlamsterdamHighTPS)
 }
 
-// TestL1Glamsterdam_Derivation_RealCLBeacon is the §1 (L1 -> L2 derivation) coverage that can only
-// run against a REAL consensus layer: cases 1.9, 1.10 and 1.11.
+// TestL1Glamsterdam_Derivation_RealCLBeacon is the L1 -> L2 derivation coverage that can only run
+// against a REAL consensus layer.
 //
-// They live in this package, not with the rest of §1, because of what they need rather than what
-// they test. §1.1-1.8 each stand up their own sysgo system with a case-specific orchestrator
-// config (blob DA for derivblob, time travel for channeltimeout, no discovery for l1reorg), and
-// Go allows exactly one TestMain per package — so those cases structurally cannot share one. The
-// three below need the opposite: a real-CL sysext devnet, which is precisely the system this
-// package's TestMain already gates on. Sharing it also means they inherit its
+// It lives in this package, apart from the rest of the derivation cases, because of what it needs
+// rather than what it tests. The sysgo derivation cases each stand up their own system with a
+// case-specific orchestrator config (blob DA for derivblob, time travel for channeltimeout, no
+// discovery for l1reorg), and Go allows exactly one TestMain per package, so they structurally
+// cannot share one. The cases below need the opposite: a real-CL sysext devnet, which is precisely
+// what this package's TestMain already gates on. Sharing it also means they inherit its
 // DEVNET_EXPECT_PRECONDITIONS_MET guarantee, so a run with no devnet fails instead of skipping.
 //
-// A separate umbrella rather than more subtests of TestL1Glamsterdam_System_RealCL keeps the
-// design doc's §1/§5 split intact and lets either module be run on its own with -run.
+// Keeping them under their own umbrella rather than folding them into
+// TestL1Glamsterdam_System_RealCL keeps derivation and system coverage separable with -run.
 func TestL1Glamsterdam_Derivation_RealCLBeacon(gt *testing.T) {
 	gt.Run("TestL1Beacon_ConfigSpec_PostGlamsterdam", runL1BeaconConfigSpec)
 	gt.Run("TestL1Beacon_BlobsFetch_PostGlamsterdam", runL1BeaconBlobsFetch)

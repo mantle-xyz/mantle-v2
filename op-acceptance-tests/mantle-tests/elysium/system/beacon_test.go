@@ -286,7 +286,7 @@ func runL1BeaconBlobsFetch(gt *testing.T) {
 
 // There is deliberately no main-path-vs-/blob_sidecars-fallback comparison case here.
 //
-// That case (design doc §1.11, TestL1Beacon_BlobOrderConsistency) compared the blobs returned by
+// Such a case (TestL1Beacon_BlobOrderConsistency) compared the blobs returned by
 // GET /eth/v1/beacon/blobs against those returned by GET /eth/v1/beacon/blob_sidecars for the same
 // hashes, to catch a fallback that silently reorders or substitutes blobs. The beacon-API spec has
 // since retired that second path: blob_sidecars/{block_id} was DEPRECATED in beacon-APIs v4.0.0
