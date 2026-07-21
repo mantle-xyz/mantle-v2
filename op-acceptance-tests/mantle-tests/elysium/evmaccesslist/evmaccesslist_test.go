@@ -42,9 +42,13 @@ const (
 	eip7981GasPerAddress = 3680
 )
 
-// TestL2EVM_AccessListGasStaysArsia asserts the Mantle L2 keeps Arsia access-list
-// pricing while the L1 runs Glamsterdam — it does NOT adopt EIP-7981's raised
-// access-list cost.
+// TestL2EVM_AccessListGasStaysArsia verifies an L2-internal Arsia property: the
+// Mantle L2 charges EIP-2930 access-list addresses at the base Arsia rate
+// (2400 gas/address) and has NOT adopted EIP-7981's raised cost. This pricing is
+// gated on the *L2* fork in op-geth core/state_transition.go (IntrinsicGas keys off
+// rules.IsAmsterdam, which is false because the L2's AmsterdamTime == nil) — it is
+// not L1-sensitive and would hold under any L1. The L1 runs Glamsterdam here only
+// as the surrounding environment, not as the discriminator.
 //
 // It sends two value-less calls to the same plain EOA, each carrying an EIP-2930
 // access list with a different number of addresses (and zero storage keys). A
@@ -68,8 +72,10 @@ func TestL2EVM_AccessListGasStaysArsia(gt *testing.T) {
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()
 
-	// Ensure the L1 has actually crossed into Glamsterdam (Amsterdam) so this
-	// asserts the L2 stays on Arsia *while consuming an upgraded L1*.
+	// Establish the environment: drive the L1 across into Glamsterdam (Amsterdam)
+	// so the L2-internal access-list pricing below is exercised *while consuming an
+	// upgraded L1*. The L1 fork is the environment, not the discriminator — the
+	// per-address rate is gated on the L2 fork and is independent of the L1.
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
@@ -99,16 +105,14 @@ func TestL2EVM_AccessListGasStaysArsia(gt *testing.T) {
 	// The relationship that discriminates Arsia from EIP-7981: the marginal gas of
 	// one extra access-list address. The 21000 base and any fixed execution cancel
 	// out, leaving just the per-address rate.
-	require.Greater(largeGas, smallGas, "more access-list addresses must cost more gas")
 	deltaGas := largeGas - smallGas
 	deltaAddrs := uint64(largeAddrs - smallAddrs)
 	require.Zero(deltaGas%deltaAddrs, "marginal gas should be a whole number of gas per address")
 	marginal := deltaGas / deltaAddrs
 
 	require.EqualValues(arsiaGasPerAddress, marginal,
-		"L2 must price access-list addresses at the Arsia rate (2400 gas/address)")
-	require.Less(marginal, uint64(eip7981GasPerAddress),
-		"L2 must NOT adopt EIP-7981's raised access-list cost (3680 gas/address)")
+		"L2 must price access-list addresses at the Arsia rate (2400 gas/address), "+
+			"not EIP-7981's raised 3680 gas/address")
 
 	t.Log("Access-list gas stays on Arsia pricing while L1 runs Glamsterdam",
 		"smallGas", smallGas,

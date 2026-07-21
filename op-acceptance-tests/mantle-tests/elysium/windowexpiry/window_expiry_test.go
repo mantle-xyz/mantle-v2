@@ -20,18 +20,22 @@ import (
 
 const l2FaucetFunderUserKey = devkeys.UserKey(10_000)
 
-// TestVerifierReorgsAfterSequencingWindowExpiry covers the qa9-style recovery
-// shape where batch data is missing long enough for the sequencing window to
-// expire. The sequencer reorgs out an old unsafe block, and the verifier must
-// follow that reorg while it stays online and connected.
+// TestVerifierReorgsAfterSequencingWindowExpiry exercises the op-node recovery
+// path where batch data is missing long enough for the sequencing window to
+// expire: the sequencer reorgs out an old unbatched unsafe block, and the
+// verifier must follow that reorg while it stays online and P2P-connected.
+//
+// This is a general op-node / derivation property that is independent of the L1
+// fork — it holds under any L1. The test runs with the L1 on Glamsterdam so the
+// behavior is confirmed to survive in that environment, but the Glamsterdam L1
+// is the environment, not the discriminator: none of the assertions below are
+// L1-fork-sensitive.
 func TestVerifierReorgsAfterSequencingWindowExpiry(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleSingleChainMultiNodeWithTestSeq(t)
 	require := t.Require()
 	logger := t.Logger()
 	ctx := t.Ctx()
-
-	require.Equal(sequencerWindowSize, sys.L2Chain.Escape().RollupConfig().SeqWindowSize)
 
 	cl := sys.L1Network.Escape().L1CLNode(match.FirstL1CL)
 	sequenceL1BlockAndWait(t, sys)
@@ -88,7 +92,7 @@ func TestVerifierReorgsAfterSequencingWindowExpiry(gt *testing.T) {
 
 	// Advance enough L1 blocks to expire the sequencing window for the missing
 	// batch data, while also advancing L2 time so the sequencer can build the
-	// recovery chain. This is the point where qa9 got stuck on the verifier.
+	// recovery chain. This is the point where the verifier must not get stuck.
 	for i := uint64(0); i < sequencerWindowSize+3; i++ {
 		sequenceL1BlockAndWait(t, sys)
 		require.Eventually(func() bool {

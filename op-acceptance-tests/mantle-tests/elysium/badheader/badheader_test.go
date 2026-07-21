@@ -2,7 +2,10 @@ package badheader
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,16 +36,83 @@ func (r wrongBlockRPC) CallContext(ctx context.Context, result any, method strin
 	return r.RPC.CallContext(ctx, result, method, args...)
 }
 
-// TestDerivation_MaliciousL1Header_Rejected proves op-node's L1 client REJECTS an inconsistent
-// post-Glamsterdam L1 header WITHOUT panicking — the safety property behind derivation trusting L1.
+type headerMutator func(*sources.RPCHeader)
+
+type mutatedHeaderRPC struct {
+	client.RPC
+	mutate headerMutator
+}
+
+func (r mutatedHeaderRPC) CallContext(ctx context.Context, result any, method string, args ...any) error {
+	if method != "eth_getBlockByNumber" {
+		return r.RPC.CallContext(ctx, result, method, args...)
+	}
+	var header *sources.RPCHeader
+	if err := r.RPC.CallContext(ctx, &header, method, args...); err != nil {
+		return err
+	}
+	if header != nil {
+		r.mutate(header)
+	}
+	if out, ok := result.(**sources.RPCHeader); ok {
+		*out = header
+		return nil
+	}
+	return r.RPC.CallContext(ctx, result, method, args...)
+}
+
+type malformedHeaderFieldRPC struct {
+	client.RPC
+	field string
+	value any
+}
+
+func (r malformedHeaderFieldRPC) CallContext(ctx context.Context, result any, method string, args ...any) error {
+	if method != "eth_getBlockByNumber" {
+		return r.RPC.CallContext(ctx, result, method, args...)
+	}
+	var raw json.RawMessage
+	if err := r.RPC.CallContext(ctx, &raw, method, args...); err != nil {
+		return err
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return err
+	}
+	value, err := json.Marshal(r.value)
+	if err != nil {
+		return err
+	}
+	obj[r.field] = value
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(out, result); err != nil {
+		return fmt.Errorf("decode malformed L1 header field %s: %w", r.field, err)
+	}
+	return nil
+}
+
+// TestDerivation_MaliciousL1Header_Rejected proves op-node's L1 client REJECTS a header that does
+// not correspond to the block number/hash it requested or whose new Amsterdam fields are malformed,
+// WITHOUT panicking — the safety property behind derivation trusting L1.
 //
-// op-node fetches L1 headers with TrustRPC=false, so it recomputes each header's hash and checks
-// the result matches the block it asked for (op-service/sources/eth_client.go headerCall +
-// CheckID). This drives that path against a genuine Amsterdam header: a control client fetches a
-// well-formed post-Amsterdam header cleanly, then a client whose RPC returns the WRONG block's
-// header for the same request must be rejected with an ID-mismatch error and no panic.
+// The rejection paths are op-node's real L1 header validation paths: by-number fetches must satisfy
+// numberID.CheckID, and untrusted RPC headers must hash back to the RPC hash after decoding the
+// Amsterdam header fields. The control assertion first proves the header being mutated is a genuine
+// post-Amsterdam header that carries BlockAccessListHash and SlotNumber.
 //
-// Flips red if op-node accepts a header that does not match the requested block, or panics on it.
+// The drive: a control client fetches a well-formed post-Amsterdam header cleanly, then clients
+// that mutate the returned header must be rejected with no panic:
+//   - parent/ID mismatch;
+//   - RPC hash mismatch;
+//   - Amsterdam BAL / SlotNumber stripped while the old hash is retained;
+//   - an ordinary RLP/header field changed while the old hash is retained;
+//   - BAL / SlotNumber invalid JSON types.
+//
+// Flips red if op-node accepts a header whose block number/hash/Amsterdam fields do not match the
+// requested block, or panics on malformed header fields.
 func TestDerivation_MaliciousL1Header_Rejected(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -80,19 +150,73 @@ func TestDerivation_MaliciousL1Header_Rejected(gt *testing.T) {
 	require.NoError(err, "control: op-node's L1 client must fetch a well-formed post-Amsterdam header")
 	require.Equal(n, info.NumberU64(), "control must return the requested block")
 	require.NotNil(info.Header().BlockAccessListHash, "the validated header must be a genuine Glamsterdam header (BAL)")
+	require.NotNil(info.Header().SlotNumber, "the validated header must be a genuine Glamsterdam header (SlotNumber)")
 
-	// Malicious: the RPC returns the parent block's header for the same request. op-node recomputes
-	// the header hash and its ID-consistency check must reject it, without panicking.
-	badCl, err := sources.NewL1Client(wrongBlockRPC{raw}, logger, nil, cfg)
-	require.NoError(err, "build malicious L1 client")
+	cases := []struct {
+		name       string
+		rpc        client.RPC
+		wantErrAll []string
+	}{
+		{
+			name:       "parent block returned for requested number",
+			rpc:        wrongBlockRPC{raw},
+			wantErrAll: []string{"does not match requested ID"},
+		},
+		{
+			name: "rpc hash mismatch",
+			rpc: mutatedHeaderRPC{RPC: raw, mutate: func(h *sources.RPCHeader) {
+				h.Hash[0] ^= 0x01
+			}},
+			wantErrAll: []string{"failed to verify block hash"},
+		},
+		{
+			name: "block access list hash stripped",
+			rpc: mutatedHeaderRPC{RPC: raw, mutate: func(h *sources.RPCHeader) {
+				h.BlockAccessListHash = nil
+			}},
+			wantErrAll: []string{"failed to verify block hash"},
+		},
+		{
+			name: "slot number stripped",
+			rpc: mutatedHeaderRPC{RPC: raw, mutate: func(h *sources.RPCHeader) {
+				h.SlotNumber = nil
+			}},
+			wantErrAll: []string{"failed to verify block hash"},
+		},
+		{
+			name: "ordinary header field mismatch",
+			rpc: mutatedHeaderRPC{RPC: raw, mutate: func(h *sources.RPCHeader) {
+				h.Root[0] ^= 0x01
+			}},
+			wantErrAll: []string{"failed to verify block hash"},
+		},
+		{
+			name:       "block access list hash invalid type",
+			rpc:        malformedHeaderFieldRPC{RPC: raw, field: "blockAccessListHash", value: "0x1234"},
+			wantErrAll: []string{"blockAccessListHash", "hex string has length 4", "want 64", "common.Hash"},
+		},
+		{
+			name:       "slot number invalid type",
+			rpc:        malformedHeaderFieldRPC{RPC: raw, field: "slotNumber", value: "not-a-quantity"},
+			wantErrAll: []string{"slotNumber", "hex string without 0x prefix", "hexutil.Uint64"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t devtest.T) {
+			badCl, err := sources.NewL1Client(tc.rpc, logger, nil, cfg)
+			require.NoError(err, "build malicious L1 client")
 
-	var badInfo eth.BlockInfo
-	var badErr error
-	require.NotPanics(func() { badInfo, badErr = badCl.InfoByNumber(ctx, n) },
-		"op-node must not panic on an inconsistent L1 header")
-	require.Error(badErr, "op-node must reject an L1 header that does not match the requested block")
-	require.Nil(badInfo, "no block info must be returned on rejection")
-	require.Contains(badErr.Error(), "does not match requested ID",
-		"rejection must come from op-node's header ID-consistency check")
-	t.Log("op-node rejected an inconsistent post-Amsterdam L1 header without panic", "block", n, "err", badErr)
+			var badInfo eth.BlockInfo
+			var badErr error
+			require.NotPanics(func() { badInfo, badErr = badCl.InfoByNumber(ctx, n) },
+				"op-node must not panic on an inconsistent L1 header")
+			require.Error(badErr, "op-node must reject the malicious L1 header")
+			require.Nil(badInfo, "no block info must be returned on rejection")
+			for _, want := range tc.wantErrAll {
+				require.Truef(strings.Contains(badErr.Error(), want),
+					"rejection reason mismatch for %q: got %q, want substring %q", tc.name, badErr.Error(), want)
+			}
+			t.Log("op-node rejected malicious post-Amsterdam L1 header", "block", n, "case", tc.name, "err", badErr)
+		})
+	}
 }

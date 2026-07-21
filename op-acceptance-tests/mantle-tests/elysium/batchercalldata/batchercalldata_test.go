@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/txplan"
 	suptypes "github.com/ethereum-optimism/optimism/op-supervisor/supervisor/types"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -47,18 +48,29 @@ import (
 //     normal CALLDATA tx (not an EIP-4844 blob tx, carries no blob hashes, has calldata).
 //  4. Fetch that L1 tx's receipt and assert receipt.Status == Successful: the raised 7976
 //     floor did not make the submission fail or get mined as a revert.
-//  5. GAS OBSERVATION ONLY (NOT asserted). Log the mined receipt.GasUsed next to the floor
-//     recomputed under Amsterdam (EIP-7976) and pre-Amsterdam (EIP-7623) rules. We deliberately
-//     do NOT assert GasUsed against those floors: they are computed with the pinned Mantle
-//     op-geth's FloorDataGas, while the L1 is a SEPARATE vanilla-geth build whose exact byte
-//     tokenization / floor charging can differ (empirically the mined gas matches neither
-//     recomputed floor). The numbers are recorded for visibility, not as a pass/fail signal.
+//  5. Ask the L1 to estimate that exact submission (same sender, inbox, calldata) and require the
+//     batcher's committed gas limit to COVER the L1's own estimate. Under-committing is the
+//     direction that breaks submission: the L1 rejects with ErrFloorDataGas and the batch stalls
+//     until a resubmission re-estimates. Letting the L1 do the estimating keeps this correct
+//     across future repricings without hardcoding an EIP-7623/7976 constant here.
+//  6. Log the mined receipt.GasUsed next to the floor recomputed under Amsterdam (EIP-7976) and
+//     pre-Amsterdam (EIP-7623) rules for visibility. We deliberately do NOT assert GasUsed against
+//     those floors: they are computed with the pinned Mantle op-geth's FloorDataGas, while the L1
+//     is a SEPARATE vanilla-geth build whose exact byte tokenization / floor charging can differ.
 //
-// DISCRIMINATION is therefore LIVENESS + DA-path — which is exactly the real batcher-submission risk: if the
-// batcher underprices under the raised 7976 floor, its inbox tx is rejected/never mined and the
-// L2 stops reaching safe. This flips red if: the batcher can't get its calldata batch onto a
-// Glamsterdam L1 so the L2 tx never reaches safe (ReachedRef by hash); the inbox tx is a blob tx
-// (wrong DA path); or the inbox tx's L1 receipt reverted/failed. It does NOT assert the gas cost.
+// WHAT IS NOT ASSERTED, AND WHY. The batcher deliberately biases its gas limit HIGH: it does not
+// use the L1's estimate at all but sets the limit to a locally computed data floor under the
+// newest rules (op-batcher/batcher/driver.go). That over-reservation costs nothing — a sender pays
+// gasUsed, not the limit — and it is what keeps a batch crafted just before a fork boundary from
+// being rejected by the raised floor after it. How far above the true cost that lands is a
+// function of batch size (a near-empty devnet channel over-reserves a large fraction, a
+// production-sized batch a negligible one), so it is not a stable signal and this test does not
+// bound it.
+//
+// DISCRIMINATION is therefore LIVENESS + DA-path + gas-coverage. This flips red if: the batcher
+// can't get its calldata batch onto a Glamsterdam L1 so the L2 tx never reaches safe (ReachedRef
+// by hash); the inbox tx is a blob tx (wrong DA path); the inbox tx's L1 receipt reverted/failed;
+// or the batcher commits less gas than the Glamsterdam L1 itself requires for that submission.
 func TestBatcher_CalldataCost_After7976(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -164,7 +176,33 @@ func TestBatcher_CalldataCost_After7976(gt *testing.T) {
 	require.Equalf(gethtypes.ReceiptStatusSuccessful, batchReceipt.Status,
 		"batcher CALLDATA inbox tx on L1 #%d must be mined successfully under the raised EIP-7976 floor", batchL1Block)
 
-	// 5) GAS OBSERVATION ONLY. Recompute the calldata floor under Amsterdam (EIP-7976) and
+	// 5) The batcher's gas commitment must COVER what the Glamsterdam L1 itself says the tx
+	//    needs. We ask the L1 to estimate the very same call (same sender, inbox, calldata) and
+	//    require the batcher's submitted gas limit to be at least that. The L1 computes with its
+	//    own live fork rules, so this stays correct across repricings without hardcoding any
+	//    EIP-7623/7976 constant on the test side.
+	//
+	//    This is the falsifiable half of "still lands": under-committing is the direction that
+	//    breaks the batcher (the L1 rejects with ErrFloorDataGas and the batch stalls until a
+	//    resubmission re-estimates). Over-committing is not asserted against — the batcher
+	//    deliberately biases high (op-batcher/batcher/driver.go sets the gas limit to a locally
+	//    computed floor under the newest rules), which is safe for a code-less batch inbox.
+	sender, err := gethtypes.Sender(gethtypes.LatestSignerForChainID(batchTx.ChainId()), batchTx)
+	require.NoError(err, "recover the batcher tx sender")
+	l1Estimate, err := l1Eth.EstimateGas(ctx, ethereum.CallMsg{
+		From:  sender,
+		To:    batchTx.To(),
+		Data:  batchTx.Data(),
+		Value: batchTx.Value(),
+	})
+	require.NoError(err, "the Glamsterdam L1 must estimate the batcher's own calldata submission")
+	require.GreaterOrEqualf(batchTx.Gas(), l1Estimate,
+		"batcher committed gas limit %d must cover the Glamsterdam L1's own estimate %d for the same %d-byte calldata submission; under-committing is rejected with ErrFloorDataGas and stalls the batch",
+		batchTx.Gas(), l1Estimate, len(batchTx.Data()))
+	t.Log("batcher gas commitment covers the L1's own estimate",
+		"committedGasLimit", batchTx.Gas(), "l1Estimate", l1Estimate, "gasUsed", batchReceipt.GasUsed)
+
+	// 6) GAS VISIBILITY. Recompute the calldata floor under Amsterdam (EIP-7976) and
 	//    pre-Amsterdam (EIP-7623) rules purely for the log below. These use the pinned Mantle
 	//    op-geth's FloorDataGas, which need NOT match the separate vanilla-geth L1's actual
 	//    charging, so nothing is asserted against them (a floorAmsterdam>floorPre check would be

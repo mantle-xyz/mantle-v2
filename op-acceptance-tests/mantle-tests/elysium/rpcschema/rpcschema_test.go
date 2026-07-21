@@ -11,16 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-// amsterdamAddedKeys are the top-level block keys the L1 Glamsterdam (Amsterdam
-// EL) upgrade introduces. A Mantle Arsia L2 must never surface them on its user
-// JSON-RPC, so that an external SDK/indexer sees no schema change.
-//   - blockAccessListHash: EIP-7928. op-geth's RPCMarshalHeader has NO branch that
-//     emits this key, so its absence is structural (a weaker signal on its own).
-//   - slotNumber:          EIP-7843. RPCMarshalHeader emits it iff head.SlotNumber
-//     != nil, so its absence is DISCRIMINATING — it proves the Arsia L2 set no
-//     EIP-7843 slot number even while the L1 runs Glamsterdam.
-var amsterdamAddedKeys = []string{"blockAccessListHash", "slotNumber"}
-
 // arsiaBlockKeys is the EXACT top-level key set op-geth's RPCMarshalBlock (which
 // wraps RPCMarshalHeader) emits for a Mantle Arsia L2 block fetched via
 // eth_getBlockByNumber(_, false). Derived directly from Mantle op-geth
@@ -49,20 +39,27 @@ var arsiaBlockKeys = []string{
 	"size", "transactions", "uncles", "withdrawals",
 }
 
-// TestExternal_L2RPCSchemaStable proves the Mantle L2's external
-// eth_getBlockByNumber schema is byte-for-byte the stable Arsia key set — with
-// none of the L1 Glamsterdam (Amsterdam EL) header keys — even after the L1
-// crosses the Amsterdam boundary. An SDK/indexer reading L2 blocks therefore
-// sees no change.
+// TestExternal_L2RPCSchemaStable is an L2-only external-schema regression guard:
+// it pins the Mantle L2's eth_getBlockByNumber(_, false) response to the EXACT
+// Arsia top-level key set, so an external SDK/indexer reading L2 blocks sees a
+// stable schema.
 //
-// Three complementary assertions on the decoded top-level key SET:
+// This asserts an L2-Arsia property, not an L1 discriminator — every assertion
+// below would pass under ANY L1. The test drives the L1 across the Amsterdam
+// (Glamsterdam EL) boundary only to make the environment realistic (the L2 block
+// is genuinely produced while consuming a Glamsterdam L1); the L1 is the
+// environment, not the discriminator. The Amsterdam header keys stay off the L2
+// schema for L2-internal reasons, not because of the L1: op-geth's
+// RPCMarshalHeader has NO branch that emits blockAccessListHash (EIP-7928) at
+// all, and it emits slotNumber (EIP-7843) only when head.SlotNumber != nil,
+// which an Arsia L2 never sets — so slotNumber-nil is an L2-fork property.
 //
-//	(a) MUST NOT contain any Amsterdam-added key (strict): "blockAccessListHash"
-//	    (EIP-7928), "slotNumber" (EIP-7843). slotNumber is discriminating.
-//	(b) MUST contain the exact Arsia key set: no expected key is missing.
-//	(c) DISCRIMINATING exactness: NO key outside the known Arsia set may appear,
-//	    so ANY future Amsterdam/Glamsterdam top-level key trips the test — not
-//	    only the two named in (a).
+// Two complementary assertions pin the decoded top-level key SET exactly:
+//
+//	(a) COMPLETE: every expected Arsia key is present (none missing).
+//	(b) EXACT: NO key outside the known Arsia set may appear, so ANY future
+//	    Amsterdam/Glamsterdam top-level key that ever leaked onto the L2 schema
+//	    (blockAccessListHash, slotNumber, or anything new) trips the test.
 func TestExternal_L2RPCSchemaStable(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -94,13 +91,7 @@ func TestExternal_L2RPCSchemaStable(gt *testing.T) {
 	var fields map[string]json.RawMessage
 	require.NoError(json.Unmarshal(raw, &fields), "L2 block JSON must decode into an object")
 
-	// (a) MUST NOT contain any Amsterdam-added key (strict, discriminating).
-	for _, k := range amsterdamAddedKeys {
-		require.NotContainsf(fields, k,
-			"post-Amsterdam L2 block schema must not expose the Glamsterdam header key %q; an external SDK/indexer must keep seeing the unchanged Arsia schema", k)
-	}
-
-	// (b) MUST contain the exact Arsia key set: no expected key is missing.
+	// (a) COMPLETE: the exact Arsia key set is present — no expected key is missing.
 	var missing []string
 	for _, k := range arsiaBlockKeys {
 		if _, ok := fields[k]; !ok {
@@ -110,8 +101,8 @@ func TestExternal_L2RPCSchemaStable(gt *testing.T) {
 	sort.Strings(missing)
 	require.Emptyf(missing, "L2 (Arsia) block schema is missing expected keys: %v", missing)
 
-	// (c) DISCRIMINATING exactness: no key outside the known Arsia set. This catches
-	// ANY new top-level key generically, not just the two named in (a).
+	// (b) EXACT: no key outside the known Arsia set. This catches ANY new top-level
+	// key generically, including blockAccessListHash/slotNumber.
 	allowed := make(map[string]bool, len(arsiaBlockKeys))
 	for _, k := range arsiaBlockKeys {
 		allowed[k] = true

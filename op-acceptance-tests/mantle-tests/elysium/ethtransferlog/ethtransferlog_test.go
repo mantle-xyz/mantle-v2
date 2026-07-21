@@ -12,9 +12,13 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// TestL2EVM_NoEIP7708TransferLog is the EIP-7708 discriminating test: the
-// Mantle L2 must NOT emit an EIP-7708 system Transfer log for an ordinary ETH
-// value transfer, even while the L1 runs Glamsterdam (Amsterdam EL).
+// TestL2EVM_NoEIP7708TransferLog is an L2-fork isolation test: the Mantle L2,
+// which runs Arsia at genesis with AmsterdamTime left nil, must NOT emit an
+// EIP-7708 system Transfer log for an ordinary ETH value transfer. This is a
+// purely L2-internal fork property — the EIP-7708 log gate reads the L2's own
+// chain rules, so the L1 fork state cannot influence it. The L1 running
+// Glamsterdam (Amsterdam EL) is the environment these tests execute in, not the
+// discriminator; no assertion here is L1-sensitive.
 //
 // MECHANISM. EIP-7708's log is gated on rules.IsAmsterdam in op-geth Transfer():
 //
@@ -22,11 +26,12 @@ import (
 //	    if rules.IsAmsterdam && !amount.IsZero() && sender != recipient {
 //	        db.AddLog(types.EthTransferLog(sender, recipient, amount))
 //
-// The L2 chain config sets MantleArsiaTime (params/config.go:522, IsMantleArsia)
-// but NOT AmsterdamTime (params/config.go:497, IsAmsterdam) — the two fork gates are
-// INDEPENDENT (params/config.go:1010-1011 vs 1082-1083). So on the Arsia L2,
-// rules.IsAmsterdam == false and the value transfer emits NO system log, whereas an
-// L2 that had (wrongly) adopted Amsterdam would emit exactly one Transfer log with:
+// rules.IsAmsterdam is derived from the L2 chain config, which sets MantleArsiaTime
+// (params/config.go:522, IsMantleArsia) but leaves AmsterdamTime nil (params/config.go:497,
+// IsAmsterdam) — the two fork gates are INDEPENDENT (params/config.go:1010-1011 vs
+// 1082-1083). So on the Arsia L2, rules.IsAmsterdam == false and the value transfer emits
+// NO system log, whereas an L2 that had (wrongly) adopted Amsterdam would emit exactly one
+// Transfer log with:
 //   - Address    = params.SystemAddress (0xffff...fffe)          (log.go:73)
 //   - Topics[0]  = params.EthTransferLogEvent
 //     = keccak256("Transfer(address,address,uint256)")
@@ -41,12 +46,6 @@ func TestL2EVM_NoEIP7708TransferLog(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()
-
-	// Ensure the L1 has actually crossed into Glamsterdam (Amsterdam) so this
-	// asserts the L2 stays on Arsia *while consuming an upgraded L1*.
-	l1Config := sys.L1Network.Escape().ChainConfig()
-	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
 
 	wallet := sys.FunderL2.NewFundedEOA(eth.OneEther)
 
@@ -78,7 +77,7 @@ func TestL2EVM_NoEIP7708TransferLog(gt *testing.T) {
 	require.Empty(receipt.Logs,
 		"an Arsia ETH transfer to a code-less EOA emits zero logs; any log here signals Amsterdam/EIP-7708 adoption")
 
-	t.Log("L2 ETH transfer emitted no EIP-7708 system Transfer log while L1 runs Glamsterdam",
+	t.Log("L2 Arsia ETH transfer emitted no EIP-7708 system Transfer log",
 		"logCount", len(receipt.Logs),
 		"amsterdamTopic0", params.EthTransferLogEvent,
 		"systemAddress", params.SystemAddress)

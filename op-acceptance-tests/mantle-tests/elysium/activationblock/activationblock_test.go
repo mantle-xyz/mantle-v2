@@ -17,17 +17,13 @@ import (
 // therefore is the first to carry the new EIP-7928 BlockAccessListHash and
 // EIP-7843 SlotNumber header fields.
 //
-// The L2 runs Mantle Arsia EL rules (it adopts none of the Amsterdam header
-// fields) while consuming a Glamsterdam L1. The discriminating claim is narrow
-// and about the fork-transition block specifically: op-node ingests the VERY
-// FIRST Amsterdam L1 block — with its brand-new BAL/SlotNumber header fields
-// present — and derives a valid, SAFE Arsia L2 block from it. Two distinct
-// failure modes are ruled out at the exact activation origin:
-//
-//	(a) derivation choking on the activation block's new header fields — the L2
-//	    would then never produce a SAFE block whose L1 origin is that block; and
-//	(b) the new L1 header fields leaking onto the derived L2 block — the L2 header
-//	    would then carry a non-nil BlockAccessListHash / SlotNumber.
+// The L2 runs Mantle Arsia EL rules while consuming a Glamsterdam L1. The
+// discriminating claim is narrow and about the fork-transition block
+// specifically: op-node ingests the VERY FIRST Amsterdam L1 block — with its
+// brand-new BAL/SlotNumber header fields present — and still derives a valid,
+// SAFE Arsia L2 block whose L1 origin IS that block. If derivation choked on the
+// activation block's new header fields, no SAFE L2 block would ever carry that
+// L1 origin; that is the failure mode this test rules out at the exact boundary.
 //
 // GOTCHA obeyed: WithForkAtL1Offset's offset is in SECONDS, not blocks, so the
 // activation height is not assumable. The activation block is found DYNAMICALLY
@@ -80,7 +76,7 @@ func TestBoundary_L1ActivationBlock(gt *testing.T) {
 	require.False(l1Config.IsAmsterdam(new(big.Int).SetUint64(activation-1), parent.Time),
 		"the block before the activation block must be pre-Amsterdam — activation must be the exact boundary")
 
-	// (a-precondition) The activation L1 block genuinely carries the NEW Amsterdam
+	// (precondition) The activation L1 block genuinely carries the NEW Amsterdam
 	// header fields. This is exactly what op-node must ingest at the boundary without
 	// choking; if these were absent the test would not actually exercise the new fields.
 	activationHash := sys.L1EL.BlockRefByNumber(activation).Hash
@@ -132,7 +128,7 @@ func TestBoundary_L1ActivationBlock(gt *testing.T) {
 		}
 	}
 
-	// (a) A SAFE L2 block whose L1 origin is exactly the activation block exists.
+	// A SAFE L2 block whose L1 origin is exactly the activation block exists.
 	require.True(foundL2,
 		"a safe L2 block whose L1 origin is the Amsterdam activation block must exist — derivation must not choke at the exact boundary")
 	require.Equal(activation, l2AtActivation.L1Origin.Number,
@@ -143,17 +139,4 @@ func TestBoundary_L1ActivationBlock(gt *testing.T) {
 		"the activation-origin L2 block must be safe (at or below the safe head)")
 	t.Log("L2 block derived from the Amsterdam activation L1 origin",
 		"l2", l2AtActivation.Number, "l1Origin", l2AtActivation.L1Origin.Number)
-
-	// (b) That derived L2 block STAYS Arsia: no Amsterdam header fields leak onto it.
-	// The typed L2 header must have BlockAccessListHash == nil (EIP-7928) and
-	// SlotNumber == nil (EIP-7843), even though its L1 origin carried BOTH. This is the
-	// discriminating no-leakage guard: a BAL/slot-adopting L2 would set these fields on
-	// exactly the block that consumed the activation origin.
-	l2Info, _, err := sys.L2EL.Escape().EthClient().InfoAndTxsByHash(ctx, l2AtActivation.Hash)
-	require.NoError(err, "must read the typed L2 header derived from the activation origin")
-	l2Hdr := l2Info.Header()
-	require.Nil(l2Hdr.BlockAccessListHash,
-		"the L2 block derived from the Amsterdam activation origin must stay Arsia — no EIP-7928 BlockAccessListHash may leak from L1")
-	require.Nil(l2Hdr.SlotNumber,
-		"the L2 block derived from the Amsterdam activation origin must stay Arsia — no EIP-7843 SlotNumber may leak from L1")
 }

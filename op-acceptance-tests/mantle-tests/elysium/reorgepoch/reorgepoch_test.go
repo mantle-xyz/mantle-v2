@@ -35,18 +35,32 @@ const reorgDepth = uint64(4)
 // L2 block whose L1Origin advances to that L1 block), so any post-Amsterdam L1 block above
 // the finalized horizon is a valid epoch-boundary reorg target.
 //
+// SCOPE / HONESTY: the behavior actually verified here — L1-reorg detection, epoch
+// re-derivation onto the new canonical L1, sequencer non-wedge, and verifier convergence — is
+// L1-fork-INDEPENDENT: it would hold identically whether the L1 runs Glamsterdam or an earlier
+// fork. The Amsterdam L1 is the ENVIRONMENT, not the discriminator. The IsAmsterdam(...) guards
+// below only confirm the reorg lands in post-Amsterdam territory; none of them exercise a
+// Glamsterdam-specific derivation code path, so this test does not "defend against" a
+// Glamsterdam L1 in the way its assertions read. The sibling reorg/ package is the stronger,
+// more Glamsterdam-specific case: its divergence STRADDLES the activation block (a pre-Amsterdam
+// parent forking to a post-Amsterdam child), so it re-derives the fork transition itself. This
+// package's complementary, unique angle is a reorg that lands DEEP inside post-Amsterdam
+// territory — target AND fork point both well past the boundary — plus INDEPENDENT VERIFIER
+// convergence, which reorg/ does not assert.
+//
 // The reorg is injected by building a competing chain on the target's POST-Amsterdam parent,
-// so both the old and the new chain around the fork point are entirely post-Glamsterdam
-// (this is the key distinction from reorg/, whose divergence STRADDLES the fork transition).
-// It asserts the L1 reorgs at the target height (old and new target block are both Amsterdam),
+// so both the old and the new chain around the fork point are entirely post-Amsterdam. It
+// asserts the L1 reorgs at the target height (old and new target block are both Amsterdam),
 // the epoch anchored at that L1 block re-derives onto the NEW canonical L1, the sequencer L2 —
 // which had already derived past the boundary — reorgs its own chain, re-converges onto the
 // new L1, and keeps advancing (no wedge), AND the independent verifier re-derives the same
 // post-reorg safe chain from L1 (same safe block, height and hash).
 //
-// Discriminating: BOTH nodes must re-derive an L1 epoch across a reorg that lands entirely past
-// the Glamsterdam boundary — the sequencer without wedging and without keeping a stale pre-reorg
-// L1 origin, and the verifier converging onto the sequencer's re-derived safe block.
+// Discriminating (all L1-fork-independent): BOTH nodes must re-derive an L1 epoch across the
+// reorg — the sequencer without wedging and without keeping a stale pre-reorg L1 origin, and
+// the verifier independently converging onto the sequencer's re-derived safe block. A sequencer
+// that forked off alone or kept a stale L1 origin, or a verifier that never re-derived, would
+// fail these checks.
 //
 // This test takes exclusive control of L1 production, so it is the only test in this
 // package: two L1-driving tests cannot share one devstack system.

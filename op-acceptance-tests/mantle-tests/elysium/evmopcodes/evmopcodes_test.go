@@ -32,15 +32,17 @@ func deployRuntimeInitCode(runtime []byte) []byte {
 }
 
 // TestL2EVM_NoNewOpcodes asserts the Mantle L2 EVM stays on Arsia rules and does
-// NOT implement the EIP-8024 stack opcodes (DUPN=0xe6, SWAPN=0xe7, EXCHANGE=0xe8)
-// even while the L1 runs Glamsterdam (Amsterdam). Those bytes are undefined
-// pre-Osaka, so they must be invalid on Arsia.
+// NOT implement the EIP-8024 stack opcodes (DUPN=0xe6, SWAPN=0xe7, EXCHANGE=0xe8).
+// The L2 EVM opcode set is a function of the L2 fork alone: these bytes are
+// undefined pre-Osaka, so on an Arsia L2 they are invalid no matter what the L1
+// runs. The test exercises the property while the L1 runs Glamsterdam (Amsterdam),
+// but the L1 is the environment here, not the discriminator — the same assertion
+// holds under any L1.
 //
 // For each opcode we deploy a probe contract whose runtime code executes that
 // opcode, then call it. Deployment must succeed (the init code only stores the
 // blob), but the subsequent call must revert (Status == Failed) because the EVM
-// hits an invalid/undefined opcode. If the L2 had silently adopted Amsterdam the
-// opcode would be defined and the call would not fail this way.
+// hits an invalid/undefined opcode.
 //
 // COVERAGE: this is the EIP-8024 opcode sub-case only. The gas sub-cases live in sibling
 // packages: EIP-7976 calldata floor (evmgas), EIP-7981 access-list (evmaccesslist),

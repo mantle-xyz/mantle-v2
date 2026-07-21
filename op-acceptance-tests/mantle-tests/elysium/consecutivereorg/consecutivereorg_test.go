@@ -36,9 +36,17 @@ const numReorgs = 2
 // block, and the next reorg starts from that converged state. After the last reorg the L2 must
 // still be advancing.
 //
-// A single reorg is covered elsewhere; the distinct risk here is that consecutive reorgs leave
-// stale pipeline state behind — a later reorg failing to converge, or the L2 wedging after two in
-// a row, would fail this test even though one reorg alone passes.
+// HONEST SCOPE NOTE: the reorg re-derivation core exercised here is L1-fork-independent. The
+// sequencer/verifier re-derivation and convergence behave identically under any L1 fork, and no
+// assertion in this test is sensitive to whether the L1 runs Glamsterdam — the IsAmsterdam checks
+// only confirm the reorg targets land in the post-Amsterdam environment (guarding the setup), they
+// do not discriminate a Glamsterdam-specific regression. The single-reorg-across-the-boundary case
+// is already covered by the reorg/ package, whose TestL1Reorg_AtUpgradeActivation reorgs the
+// Amsterdam ACTIVATION block itself (forking at its pre-Amsterdam parent) and is the stronger case
+// for L1-fork sensitivity. This test's UNIQUE value is orthogonal to the L1 fork: surviving TWO
+// consecutive reorgs with no stale pipeline state carried between them — a later reorg failing to
+// converge, or the L2 wedging after two in a row, fails this test even though one reorg alone
+// passes.
 //
 // This test takes exclusive control of L1 production, so it is the only test in this package.
 func TestL1Reorg_Consecutive_PostUpgrade(gt *testing.T) {

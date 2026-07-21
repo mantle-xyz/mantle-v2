@@ -29,8 +29,12 @@ func deployInitCode(runtimeLen int) []byte {
 }
 
 // TestL2CodeSizeStillOldLimit asserts the Mantle L2 keeps the EIP-170 24 KiB
-// contract code-size limit while the L1 runs Glamsterdam — i.e. it does not adopt
-// any Amsterdam-era code-size change.
+// contract code-size limit: a contract exactly at the limit deploys, and one byte
+// over is rejected. This is an L2-Arsia property — the code-size limit is L2 EVM
+// config, independent of the L1 fork — verified while the L1 runs Glamsterdam, so
+// the L1 is the environment, not the discriminator. Unlike the header nil-checks,
+// the deploy/reject pair exercises real L2 execution and is genuinely
+// discriminating: it would fail if the L2 raised or dropped the limit.
 func TestL2CodeSizeStillOldLimit(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)

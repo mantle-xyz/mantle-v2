@@ -19,6 +19,13 @@ import (
 // CALLDATA data-availability derivation path must keep working across the L1 Glamsterdam
 // (Amsterdam EL) upgrade.
 //
+// NOTE. This is effectively a SUBSET of batchercalldata's TestBatcher_CalldataCost_After7976
+// and shares a near-identical setup (same external-Glamsterdam-geth L1, same calldata-pinned
+// batcher via init_test.go, same cross-Amsterdam value transfer + ReachedRef-by-hash). This
+// test stops at re-derivation liveness of the calldata DA path; the batchercalldata test goes
+// further by also fetching the inbox tx's L1 receipt to assert it was mined successfully under
+// the raised EIP-7976 floor. Kept as a focused derivation-path check alongside derivblob.
+//
 // SETUP. The L1 EL is an external Glamsterdam geth subprocess (see helpers.go /
 // init_test.go), Amsterdam activates a few blocks after L1 genesis, and the batcher is
 // pinned to DataAvailabilityType=calldata (init_test.go). So the batcher posts its
@@ -137,11 +144,11 @@ func TestDerivation_CalldataPathIntact(gt *testing.T) {
 				if tx.To() == nil || *tx.To() != batchInbox {
 					continue
 				}
-				// Discriminate calldata DA from blob DA.
+				// Discriminate calldata DA from blob DA. Asserting the tx is not an
+				// EIP-4844 blob type already implies BlobHashes() is empty (only a
+				// *BlobTx carries blob versioned hashes), so no separate check is needed.
 				require.NotEqualf(uint8(gethtypes.BlobTxType), tx.Type(),
 					"batcher tx to inbox on L1 #%d must be CALLDATA, not an EIP-4844 blob tx", info.NumberU64())
-				require.Emptyf(tx.BlobHashes(),
-					"batcher calldata tx on L1 #%d must carry no blob versioned hashes", info.NumberU64())
 				require.NotEmptyf(tx.Data(),
 					"batcher calldata tx on L1 #%d must carry the batch data in calldata", info.NumberU64())
 				found = true

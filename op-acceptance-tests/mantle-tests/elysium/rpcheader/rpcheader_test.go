@@ -10,26 +10,28 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-// TestL2RPCHeader_OmitsNewFields asserts the Mantle L2 EL's raw
-// JSON-RPC block header omits the Glamsterdam/Amsterdam header keys
-// "blockAccessListHash" (EIP-7928) and "slotNumber" (EIP-7843). The Mantle L2
-// stays on Arsia rules even while the L1 runs Glamsterdam, so these fields must
-// never appear in an L2 block's user-RPC response.
+// TestL2RPCHeader_OmitsNewFields verifies an L2-Arsia header property: the Mantle
+// L2 header never carries the Amsterdam/Glamsterdam fields "blockAccessListHash"
+// (EIP-7928) and "slotNumber" (EIP-7843). This is a property of the L2 staying on
+// Arsia rules, NOT of the L1 fork. The L1 runs Glamsterdam here only as the
+// environment the L2 is produced against, not as the thing being defended against:
+// every assertion below would pass under any L1, so the L1 is the environment, not
+// the discriminator.
 //
-// Two complementary checks:
-//  1. The *raw* eth_getBlockByNumber payload (op-geth's RPCMarshalHeader) must omit both
-//     keys. "slotNumber" is DISCRIMINATING: RPCMarshalHeader emits it iff head.SlotNumber
-//     != nil, so its absence proves the L2 set no EIP-7843 slot number. NOTE:
-//     "blockAccessListHash" is a WEAKER signal — RPCMarshalHeader has no branch that ever
-//     emits it, so its absence is structural, not proof of non-adoption.
-//  2. The typed L2 header must therefore ALSO have BlockAccessListHash == nil (and
-//     SlotNumber == nil). This is the discriminating guard for EIP-7928 that the raw RPC
-//     key cannot give: a BAL-adopting L2 would set the field while RPCMarshalHeader still
-//     hides it, so check (1) alone would be a false green.
+// The real guard is the TYPED nil-check on the L2 header:
+//   - require.Nil(hdr.BlockAccessListHash) is the ONLY way to catch EIP-7928 adoption.
+//     op-geth's RPCMarshalHeader has no branch that ever emits a "blockAccessListHash"
+//     key, so a raw-JSON key check could never observe a set field — that is why the
+//     raw "blockAccessListHash" NotContains was removed as vacuous (it can never fail).
+//   - require.Nil(hdr.SlotNumber) catches EIP-7843 adoption.
 //
-// (Marshaling a *types.Header with json.Marshal is NOT a substitute for check 1: the
-// generated tags carry no `omitempty`, so a nil field serializes as `...:null` and would
-// spuriously "contain" the keys.)
+// The raw eth_getBlockByNumber "slotNumber" NotContains is a secondary corroboration
+// on the external RPC surface: RPCMarshalHeader emits "slotNumber" iff head.SlotNumber
+// != nil, so its absence confirms the same property from the user-facing JSON.
+//
+// (Marshaling a *types.Header with json.Marshal is NOT a substitute for the raw check:
+// the generated tags carry no `omitempty`, so a nil field serializes as `...:null` and
+// would spuriously "contain" the keys.)
 func TestL2RPCHeader_OmitsNewFields(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -51,7 +53,10 @@ func TestL2RPCHeader_OmitsNewFields(gt *testing.T) {
 
 	head := sys.L2EL.BlockRefByLabel(eth.Unsafe)
 
-	// (1) External RPC surface: the raw eth_getBlockByNumber JSON must omit both keys.
+	// (1) External RPC surface: the raw eth_getBlockByNumber JSON must omit the
+	// slotNumber key (op-geth emits it iff head.SlotNumber != nil). No raw check for
+	// blockAccessListHash: RPCMarshalHeader never emits that key, so its absence is
+	// structural and can never fail — the typed guard in (2) is the real check for it.
 	var raw json.RawMessage
 	err := sys.L2EL.Escape().EthClient().RPC().CallContext(ctx, &raw, "eth_getBlockByNumber", hexutil.EncodeUint64(head.Number), false)
 	require.NoError(err, "raw eth_getBlockByNumber on the L2 EL must succeed")
@@ -59,18 +64,17 @@ func TestL2RPCHeader_OmitsNewFields(gt *testing.T) {
 
 	body := string(raw)
 	require.NotContains(body, "slotNumber",
-		"L2 (Arsia) RPC block header must not carry the EIP-7843 slotNumber key (discriminating: op-geth emits it iff set)")
-	require.NotContains(body, "blockAccessListHash",
-		"L2 (Arsia) RPC block header must not surface the EIP-7928 blockAccessListHash key")
+		"L2 (Arsia) RPC block header must not carry the EIP-7843 slotNumber key (op-geth emits it iff set)")
 
-	// (2) Discriminating guard: the typed L2 header must have both Amsterdam fields nil.
+	// (2) The real guard: the typed L2 header must have both Amsterdam fields nil.
 	// This is what actually catches EIP-7928 adoption — RPCMarshalHeader would hide a set
-	// BlockAccessListHash, so the raw-key check in (1) cannot observe it.
+	// BlockAccessListHash, so the raw-key check in (1) cannot observe it. The L2 stays on
+	// Arsia rules regardless of the L1 fork, so these hold under any L1.
 	info, _, err := sys.L2EL.Escape().EthClient().InfoAndTxsByHash(ctx, head.Hash)
 	require.NoError(err, "must read the typed L2 header by hash")
 	hdr := info.Header()
 	require.Nil(hdr.BlockAccessListHash,
-		"L2 (Arsia) header must not carry an EIP-7928 BlockAccessListHash while L1 runs Glamsterdam")
+		"L2 (Arsia) header must not carry an EIP-7928 BlockAccessListHash")
 	require.Nil(hdr.SlotNumber,
-		"L2 (Arsia) header must not carry an EIP-7843 SlotNumber while L1 runs Glamsterdam")
+		"L2 (Arsia) header must not carry an EIP-7843 SlotNumber")
 }

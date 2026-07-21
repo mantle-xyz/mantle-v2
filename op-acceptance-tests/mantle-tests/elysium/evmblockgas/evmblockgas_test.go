@@ -22,9 +22,12 @@ import (
 // 4800, so the full 4800 refund is applied uncapped.
 const eip3529ClearRefund = uint64(4800)
 
-// TestL2BlockGas_RefundReducesBlockGasUsed asserts the Mantle L2 keeps Arsia
-// block-level gas accounting while the L1 runs Glamsterdam — it does NOT adopt
-// EIP-7778 "block-level gas accounting".
+// TestL2BlockGas_RefundReducesBlockGasUsed verifies an L2-internal Arsia property:
+// the Mantle L2 keeps pre-Amsterdam block-level gas accounting and has NOT adopted
+// EIP-7778 "block-level gas accounting". This accounting is gated on the *L2* fork
+// (Arsia vs Amsterdam) in op-geth core/state_transition.go — it is not L1-sensitive
+// and would hold under any L1. The L1 runs Glamsterdam here only as the surrounding
+// environment, not as the discriminator.
 //
 // WHAT EIP-7778 CHANGES (verified in op-geth, sibling clone, branch mantle-elysium):
 //   - The whole feature is the fork-gated branch in core/state_transition.go:991-997.
@@ -41,21 +44,22 @@ const eip3529ClearRefund = uint64(4800)
 //     gp.CumulativeUsed() (= sum of per-tx gasUsed, refund-reduced in BOTH forks),
 //     core/state_processor.go:207 + gaspool.go:64.
 //
-// THE DISCRIMINATING IDENTITY:
-//   - Arsia (what the L2 must keep): the refund is credited back to the block gas
+// THE L2-FORK DISCRIMINATOR:
+//   - Arsia (what the L2 keeps): the refund is credited back to the block gas
 //     pool, so gp.Used() == gp.CumulativeUsed(). Observably, for the block that
 //     contains a refunding transaction:
 //     block.header.GasUsed == last-receipt.CumulativeGasUsed   (EXACTLY EQUAL).
-//   - EIP-7778 (Amsterdam, what the L2 must NOT adopt): the refund is NOT credited
+//   - EIP-7778 (Amsterdam, what the L2 has NOT adopted): the refund is NOT credited
 //     to the pool, so the block gas used is HIGHER by the total refund:
 //     block.header.GasUsed == last-receipt.CumulativeGasUsed + totalRefund.
 //     With our single-slot clear the gap is exactly eip3529ClearRefund = 4800.
 //
-// So the assertion `blockGasUsed == cumulative` PASSES on Arsia and FAILS on
-// EIP-7778 (it would be short by 4800). This identity is refund-independent in
-// magnitude — it holds for the whole block regardless of tx count — but it only
-// *discriminates* when the block actually contains a refund, which we guarantee
-// by construction and confirm by observing the storage slot go 1 -> 0.
+// So the assertion `blockGasUsed == cumulative` PASSES on an Arsia L2 and FAILS on
+// an EIP-7778 L2 (it would be short by 4800) — the L2 fork is the discriminator,
+// not the L1. This identity is refund-independent in magnitude — it holds for the
+// whole block regardless of tx count — but it only *discriminates* when the block
+// actually contains a refund, which we guarantee by construction and confirm by
+// observing the storage slot go 1 -> 0.
 //
 // COVERAGE: this is the EIP-7778 block-level gas accounting sub-case. The other gas
 // sub-cases live in sibling packages: EIP-7976 calldata floor (evmgas), EIP-7981
@@ -66,8 +70,10 @@ func TestL2BlockGas_RefundReducesBlockGasUsed(gt *testing.T) {
 	require := t.Require()
 	ctx := t.Ctx()
 
-	// Ensure the L1 has actually crossed into Glamsterdam (Amsterdam) so this
-	// asserts the L2 stays on Arsia *while consuming an upgraded L1*.
+	// Establish the environment: drive the L1 across into Glamsterdam (Amsterdam)
+	// so the L2-internal property below is exercised *while consuming an upgraded
+	// L1*. The L1 fork is the environment, not the discriminator — the assertion is
+	// gated on the L2 fork.
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
@@ -128,21 +134,21 @@ func TestL2BlockGas_RefundReducesBlockGasUsed(gt *testing.T) {
 	require.NotEmpty(receipts, "block must contain receipts")
 	cumulative := maxCumulativeGasUsed(receipts)
 
-	// THE DISCRIMINATOR. Arsia: the refund is credited back to the block gas pool,
-	// so block.GasUsed == cumulative EXACTLY. EIP-7778 would leave block.GasUsed
-	// higher by the block's total refund (here exactly eip3529ClearRefund = 4800),
-	// so this equality would FAIL under Amsterdam.
+	// THE L2-FORK DISCRIMINATOR. Arsia: the refund is credited back to the block gas
+	// pool, so block.GasUsed == cumulative EXACTLY. An EIP-7778 L2 would leave
+	// block.GasUsed higher by the block's total refund (here exactly
+	// eip3529ClearRefund = 4800), so this equality would FAIL on an Amsterdam L2.
 	require.EqualValues(cumulative, blockGasUsed,
 		"L2 block GasUsed must equal cumulative receipt gas (Arsia): the storage-clear "+
 			"refund is credited back to the block gas pool. Under EIP-7778 block GasUsed "+
 			"would be cumulative + %d (refund excluded from the pool).", eip3529ClearRefund)
 
-	// Guard against a vacuous pass: on the EIP-7778 (Amsterdam) accounting the
-	// block gas used would have been this larger value, which must differ from the
-	// Arsia value we just asserted.
+	// For reference in the log below only (NOT an assertion): under EIP-7778 the block
+	// GasUsed would have been this larger value. The EqualValues above already rules it
+	// out — since eip3529ClearRefund != 0, blockGasUsed == cumulative implies
+	// blockGasUsed != cumulative + eip3529ClearRefund — so a separate NotEqualValues
+	// check would be logically redundant.
 	amsterdamBlockGasUsed := cumulative + eip3529ClearRefund
-	require.NotEqualValues(amsterdamBlockGasUsed, blockGasUsed,
-		"if the L2 had adopted EIP-7778, block GasUsed would be cumulative + %d", eip3529ClearRefund)
 
 	t.Log("L2 block-level gas accounting stays on Arsia while L1 runs Glamsterdam",
 		"blockGasUsed", blockGasUsed,
