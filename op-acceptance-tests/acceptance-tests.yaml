@@ -136,7 +136,7 @@ gates:
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/base/withdrawal
         timeout: 20m
 
-  # One gate, deliberately. Splitting a fast subset out for the PR path was tried and
+  # One gate, deliberately. Splitting a PR-only subset out of it was tried and
   # reverted: it moved the reorg suites off the PR path, and those are the highest-value
   # cases here (the fakepos rebuild-divergence bug lived in exactly that coverage). It also
   # left no mechanism to decide which gate a NEW package belongs in, so tests would silently

@@ -21,14 +21,17 @@ import (
 // so on. It leaves a comfortable pre-Amsterdam window for a test to observe before the boundary.
 const DefaultAmsterdamOffset = uint64(30)
 
-// FastAmsterdamOffset is for cases whose assertions are L1-fork-INDEPENDENT: they check a property
-// of the Arsia L2 itself (RPC schema, header fields, EVM gas rules, code-size limit) and would
-// hold under any L1. Those tests still cross Amsterdam so the L2 is genuinely running against a
-// Glamsterdam L1, but the pre-boundary window buys them nothing -- it is pure CI wall-clock. Every
-// package on this offset waits the whole thing before its first assertion, so keep it small.
+// PostBoundaryAmsterdamOffset is for cases that observe the L2 only AFTER the activation
+// boundary, and never before it. Those are the ones asserting a property of the Arsia L2 itself
+// -- RPC schema, header fields, EVM gas rules, code-size limit -- which holds under any L1. They
+// still cross Amsterdam, so the L2 is genuinely running against a Glamsterdam L1, but a long
+// pre-boundary window buys them nothing: every package on this offset simply waits it out before
+// its first assertion, which is pure CI wall-clock.
 //
-// Use DefaultAmsterdamOffset instead whenever a test observes anything BEFORE the boundary.
-const FastAmsterdamOffset = uint64(6)
+// The name states the selection criterion rather than the duration on purpose. Pick between the
+// two by asking "does this test look at anything before the boundary?", not by which number is
+// smaller -- if the answer is yes, it needs DefaultAmsterdamOffset regardless of the cost.
+const PostBoundaryAmsterdamOffset = uint64(6)
 
 type Option func(*config)
 

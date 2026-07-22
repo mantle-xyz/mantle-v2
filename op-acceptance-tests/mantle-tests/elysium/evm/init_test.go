@@ -7,5 +7,5 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	testmain.RunMinimal(m, testmain.FastAmsterdamOffset)
+	testmain.RunMinimal(m, testmain.PostBoundaryAmsterdamOffset)
 }
