@@ -217,6 +217,9 @@ func (e *engineClient) NewPayloadV5(ctx context.Context, data engine.ExecutableD
 	if err := e.inner.CallContext(ctx, &result, "engine_newPayloadV5", payload, versionedHashes, beaconRoot, executionRequests); err != nil {
 		return engine.PayloadStatusV1{}, err
 	}
+	e.mu.Lock()
+	delete(e.blockAccessLists, data.BlockHash)
+	e.mu.Unlock()
 	return result, nil
 }
 

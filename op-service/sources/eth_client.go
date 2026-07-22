@@ -193,7 +193,10 @@ func (s *EthClient) SubscribeNewHeadBlockRef(ctx context.Context, ch chan<- eth.
 		defer sub.Unsubscribe()
 		for {
 			select {
-			case header := <-headChanges:
+			case header, ok := <-headChanges:
+				if !ok {
+					return nil
+				}
 				if header == nil {
 					continue
 				}
@@ -212,7 +215,10 @@ func (s *EthClient) SubscribeNewHeadBlockRef(ctx context.Context, ch chan<- eth.
 				}
 			case <-quit:
 				return nil
-			case err := <-sub.Err():
+			case err, ok := <-sub.Err():
+				if !ok {
+					return nil
+				}
 				return err
 			}
 		}

@@ -24,9 +24,9 @@ import (
 // Configure locates a mise-installed geth and selects it as the L1 EL, returning a function
 // that restores the previous environment. Call it from TestMain and defer the result.
 //
-// It is a no-op when the runner has already chosen an L1 EL through either
-// sysgo.DevstackL1ELKindEnvVar or sysgo.GethExecPathEnvVar, so an explicit choice — including
-// a deliberate "use the in-process op-geth" for a test that wants it — always wins.
+// It is a no-op when the runner has already chosen an L1 EL kind, so an explicit choice,
+// including a deliberate "use the in-process op-geth" for a test that wants it, always wins.
+// If the runner only provides a geth executable path, select geth as the L1 EL kind for it.
 //
 // When neither is set and mise cannot produce a geth, this PANICS rather than returning
 // quietly. The alternative, which this code used to do, was to print a line to stdout and let
@@ -37,8 +37,14 @@ func Configure() func() {
 	if _, ok := os.LookupEnv(sysgo.DevstackL1ELKindEnvVar); ok {
 		return func() {}
 	}
-	if _, ok := os.LookupEnv(sysgo.GethExecPathEnvVar); ok {
-		return func() {}
+	if execPath, ok := os.LookupEnv(sysgo.GethExecPathEnvVar); ok {
+		if strings.TrimSpace(execPath) == "" {
+			panic(fmt.Sprintf("%s is set but empty", sysgo.GethExecPathEnvVar))
+		}
+		_ = os.Setenv(sysgo.DevstackL1ELKindEnvVar, "geth")
+		return func() {
+			_ = os.Unsetenv(sysgo.DevstackL1ELKindEnvVar)
+		}
 	}
 
 	cmd := exec.Command("mise", "which", "geth")
