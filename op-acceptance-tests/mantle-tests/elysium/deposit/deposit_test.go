@@ -3,7 +3,7 @@ package deposit
 import (
 	"testing"
 
-	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/testhelpers"
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
 	"github.com/ethereum-optimism/optimism/op-service/eth"

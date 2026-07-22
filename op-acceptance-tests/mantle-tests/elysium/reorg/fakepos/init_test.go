@@ -1,4 +1,4 @@
-package system
+package fakepos
 
 import (
 	"testing"
@@ -6,6 +6,8 @@ import (
 	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testmain"
 )
 
+const amsterdamOffset = uint64(30)
+
 func TestMain(m *testing.M) {
-	testmain.RunSystem(m)
+	testmain.RunTestSeqWallClock(m, amsterdamOffset)
 }

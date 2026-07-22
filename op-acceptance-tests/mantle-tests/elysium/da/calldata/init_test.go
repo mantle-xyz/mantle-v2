@@ -1,4 +1,4 @@
-package system
+package calldata
 
 import (
 	"testing"
@@ -7,5 +7,5 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	testmain.RunSystem(m)
+	testmain.RunMinimal(m, testmain.DefaultAmsterdamOffset, testmain.WithCalldataBatches())
 }

@@ -139,67 +139,63 @@ gates:
   - id: mantle-elysium
     description: "Mantle Elysium tests for an Arsia L2 consuming a Glamsterdam (Amsterdam) L1."
     tests:
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/activationblock
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/activationblock
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/badheader
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/derivation
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/batchercalldata
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/derivepoch
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/beaconslot
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/beaconslot
+        timeout: 1m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/epochcross
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/boundaryrestart
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/ethtransferlog
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/channeltimeout
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/finality
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/consecutivereorg
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/headernopollut
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/consistency
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/l2output
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/deepreorg
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/preactivation
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/rpcheader
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/rpcschema
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/sequenceractive
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/deposit
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/depositcrossing
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/deposit/consistency
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/derivation
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/deposit/crossing
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/derivblob
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/da/blob
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/derivcalldata
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/da/calldata
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/derivcellproof
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/da/cellproof
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/derivepoch
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/da/channeltimeout
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/epochcross
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/da/windowexpiry
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/ethtransferlog
-        timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/evmsfi
-        timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/finality
-        timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/headernopollut
-        timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/l1reorg
-        timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/l2output
-        timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/preactivation
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/evm
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorgepoch
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/boundaryrestart
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/rpcheader
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/consecutive
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/rpcschema
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/deep
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/sequenceractive
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/epoch
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/submitretry
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/fakepos
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/windowexpiry
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/submission
         timeout: 10m
 
   - id: mantle-temp

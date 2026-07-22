@@ -1,16 +1,13 @@
-package reorg
+package crossing
 
 import (
 	"testing"
-	"time"
 
 	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testmain"
 )
 
-const (
-	amsterdamOffset = uint64(30)
-	l1BlockTime     = 6 * time.Second
-)
+// The 60s offset leaves enough pre-Amsterdam L1 blocks for deposits before crossing.
+const amsterdamOffset = uint64(60)
 
 func TestMain(m *testing.M) {
 	testmain.RunTestSeq(m, amsterdamOffset)
