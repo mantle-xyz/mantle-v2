@@ -1,4 +1,4 @@
-package evmopcodes
+package evmsfi
 
 import (
 	"testing"
@@ -47,7 +47,7 @@ func deployRuntimeInitCode(runtime []byte) []byte {
 // COVERAGE: this is the EIP-8024 opcode sub-case only. The gas sub-cases live in sibling
 // packages: EIP-7976 calldata floor (evmgas), EIP-7981 access-list (evmaccesslist),
 // EIP-7778 block-level gas accounting (evmblockgas).
-func TestL2EVM_NoNewOpcodes(gt *testing.T) {
+func runNoNewOpcodes(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()

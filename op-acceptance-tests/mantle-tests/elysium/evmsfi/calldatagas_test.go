@@ -1,4 +1,4 @@
-package evmgas
+package evmsfi
 
 import (
 	"testing"
@@ -43,7 +43,7 @@ const (
 // COVERAGE: this covers ONLY the calldata-floor sub-case of the L2 gas schedule.
 // Sibling packages cover the others: access-list repricing (evmaccesslist),
 // block-level gas accounting (evmblockgas), opcodes (evmopcodes).
-func TestL2EVM_CalldataGasStaysArsia(gt *testing.T) {
+func runCalldataGasStaysArsia(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()

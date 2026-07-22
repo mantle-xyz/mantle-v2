@@ -1,4 +1,4 @@
-package evmblockgas
+package evmsfi
 
 import (
 	"testing"
@@ -64,7 +64,7 @@ const eip3529ClearRefund = uint64(4800)
 // COVERAGE: this is the EIP-7778 block-level gas accounting sub-case. The other gas
 // sub-cases live in sibling packages: EIP-7976 calldata floor (evmgas), EIP-7981
 // access-list repricing (evmaccesslist), EIP-8024 opcodes (evmopcodes).
-func TestL2BlockGas_RefundReducesBlockGasUsed(gt *testing.T) {
+func runBlockGasRefundCredited(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()

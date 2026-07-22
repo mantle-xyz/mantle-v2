@@ -1,4 +1,4 @@
-package evmaccesslist
+package evmsfi
 
 import (
 	"fmt"
@@ -32,9 +32,8 @@ import (
 //
 // So the per-address cost the L2 must keep is 2400 (Arsia); EIP-7981 would make it
 // 2400 + 1280 = 3680. That 2400-vs-3680 gap is the discriminator.
+// txBaseGas (params.TxGas) is shared with the calldata-floor case; see calldatagas_test.go.
 const (
-	txBaseGas = 21_000 // params.TxGas
-
 	// arsiaGasPerAddress is the Mantle-Arsia per-access-list-address cost.
 	arsiaGasPerAddress = 2400 // params.TxAccessListAddressGas
 	// eip7981GasPerAddress is the raised per-address cost the L2 must NOT adopt.
@@ -73,7 +72,7 @@ const (
 // COVERAGE: this covers the EIP-7981 access-list-repricing sub-case, sibling to the
 // EIP-7976 calldata floor (evmgas). EIP-7778 block-level gas accounting is covered in
 // evmblockgas; EIP-8024 opcodes in evmopcodes.
-func TestL2EVM_AccessListGasStaysArsia(gt *testing.T) {
+func runAccessListGasStaysArsia(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()
