@@ -69,19 +69,23 @@ func WithSequencingWindow(size uint64) Option {
 }
 
 func RunMinimal(m *testing.M, amsterdamOffset uint64, opts ...Option) {
-	runSysGo(m, mantleElysiumOption(
-		sysgo.DefaultMantleMinimalSystem(&sysgo.DefaultMinimalSystemIDs{}),
-		amsterdamOffset,
-		opts...,
-	))
+	runSysGo(m, func() stack.Option[*sysgo.Orchestrator] {
+		return mantleElysiumOption(
+			sysgo.DefaultMantleMinimalSystem(&sysgo.DefaultMinimalSystemIDs{}),
+			amsterdamOffset,
+			opts...,
+		)
+	})
 }
 
 func RunMultiNode(m *testing.M, amsterdamOffset uint64, opts ...Option) {
-	runSysGo(m, mantleElysiumOption(
-		sysgo.DefaultMantleSingleChainMultiNodeSystem(&sysgo.DefaultMantleSingleChainMultiNodeSystemIDs{}),
-		amsterdamOffset,
-		opts...,
-	), presets.WithCompatibleTypes(compat.SysGo), presets.WithNoDiscovery())
+	runSysGo(m, func() stack.Option[*sysgo.Orchestrator] {
+		return mantleElysiumOption(
+			sysgo.DefaultMantleSingleChainMultiNodeSystem(&sysgo.DefaultMantleSingleChainMultiNodeSystemIDs{}),
+			amsterdamOffset,
+			opts...,
+		)
+	}, presets.WithCompatibleTypes(compat.SysGo), presets.WithNoDiscovery())
 }
 
 func RunTestSeq(m *testing.M, amsterdamOffset uint64, opts ...Option) {
@@ -111,18 +115,30 @@ func runTestSeq(m *testing.M, amsterdamOffset uint64, timeTravel bool, opts ...O
 	if timeTravel {
 		common = append(common, presets.WithTimeTravel())
 	}
-	runSysGo(m, mantleElysiumOption(
-		sysgo.DefaultMantleSingleChainMultiNodeWithTestSeqSystem(&sysgo.DefaultMantleSingleChainMultiNodeWithTestSeqSystemIDs{}),
-		amsterdamOffset,
-		opts...,
-	), common...)
+	runSysGo(m, func() stack.Option[*sysgo.Orchestrator] {
+		return mantleElysiumOption(
+			sysgo.DefaultMantleSingleChainMultiNodeWithTestSeqSystem(&sysgo.DefaultMantleSingleChainMultiNodeWithTestSeqSystemIDs{}),
+			amsterdamOffset,
+			opts...,
+		)
+	}, common...)
 }
 
-func runSysGo(m *testing.M, sysGoOpt stack.Option[*sysgo.Orchestrator], common ...stack.CommonOption) {
+// runSysGo selects the L1 EL and only THEN builds the system option.
+//
+// The order matters and is easy to get wrong: sysgo.WithL1Nodes reads
+// DEVSTACK_L1EL_KIND with os.Getenv at option-CONSTRUCTION time (l1_nodes.go) to choose
+// between the subprocess geth and the in-process op-geth. Passing the already-built
+// option as an argument to this function would evaluate it before devstackenv.Configure
+// ever runs — Go evaluates arguments first — so the env var would always be unset and
+// every suite would silently come up on the in-process op-geth. That EL does not enforce
+// the Amsterdam header rules, so the whole suite would pass without ever consuming a real
+// Glamsterdam L1. Taking a builder func defers construction until after Configure.
+func runSysGo(m *testing.M, build func() stack.Option[*sysgo.Orchestrator], common ...stack.CommonOption) {
 	resetEnvVars := devstackenv.Configure()
 	defer resetEnvVars()
 
-	opts := append([]stack.CommonOption{stack.MakeCommon(sysGoOpt)}, common...)
+	opts := append([]stack.CommonOption{stack.MakeCommon(build())}, common...)
 	presets.DoMain(m, opts...)
 }
 
