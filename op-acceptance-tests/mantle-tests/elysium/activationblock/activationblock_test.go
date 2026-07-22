@@ -11,27 +11,13 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 )
 
-// TestBoundary_L1ActivationBlock proves the Mantle L2 correctly
-// derives the L2 block whose L1 origin IS the EXACT Amsterdam (Glamsterdam EL)
-// activation block — the first L1 block for which IsAmsterdam holds, and which
-// therefore is the first to carry the new EIP-7928 BlockAccessListHash and
-// EIP-7843 SlotNumber header fields.
+// TestBoundary_L1ActivationBlock proves the Mantle L2 derives a safe block from
+// the exact first Amsterdam L1 block while keeping Arsia L2 header rules.
 //
-// The L2 runs Mantle Arsia EL rules while consuming a Glamsterdam L1. The
-// discriminating claim is narrow and about the fork-transition block
-// specifically: op-node ingests the VERY FIRST Amsterdam L1 block — with its
-// brand-new BAL/SlotNumber header fields present — and still derives a valid,
-// SAFE Arsia L2 block whose L1 origin IS that block. If derivation choked on the
-// activation block's new header fields, no SAFE L2 block would ever carry that
-// L1 origin; that is the failure mode this test rules out at the exact boundary.
-//
-// GOTCHA obeyed: WithForkAtL1Offset's offset is in SECONDS, not blocks, so the
-// activation height is not assumable. The activation block is found DYNAMICALLY
-// as the first IsAmsterdam L1 block, and confirmed to be the exact boundary by
-// checking that its parent is pre-Amsterdam.
-//
-// Uses the minimal preset with auto-FakePoS and WaitForTime; no TestSequencer
-// drives L1 — the L1 advances on its own clock and the L2 derives from it.
+// The activation height is discovered dynamically because the fork offset is in
+// seconds, not blocks. The test confirms the activation block carries the new
+// BAL/SlotNumber fields, its parent is pre-Amsterdam, and the safe L2 block
+// anchors to the activation block by L1-origin hash.
 func TestBoundary_L1ActivationBlock(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -46,14 +32,12 @@ func TestBoundary_L1ActivationBlock(gt *testing.T) {
 	require.NotNil(rollupCfg.MantleElysiumTime, "MantleElysiumTime must be configured")
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 
-	// Wait for the L1 to reach/cross the Amsterdam (Glamsterdam EL) activation time.
+	// Wait for the L1 to reach/cross the Amsterdam activation time.
 	t.Log("Waiting for L1 Amsterdam to activate")
 	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
 	t.Log("L1 Amsterdam activated")
 
-	// --- Find the Amsterdam activation L1 block DYNAMICALLY -------------------
-	// The first block for which IsAmsterdam(num, time) holds. The fork offset is
-	// SECONDS, not blocks, so we must not assume a fixed height.
+	// Find the first block for which IsAmsterdam(num, time) holds.
 	l1Head := sys.L1EL.BlockRefByLabel(eth.Unsafe).Number
 	var activation uint64
 	foundActivation := false
@@ -69,16 +53,12 @@ func TestBoundary_L1ActivationBlock(gt *testing.T) {
 	require.Greater(activation, uint64(0),
 		"Amsterdam must activate above L1 genesis (offset > 0) so the activation block is a real post-genesis block")
 
-	// The block immediately before the activation block must be pre-Amsterdam: this
-	// proves `activation` is the EXACT fork-transition block, not merely some later
-	// post-fork block.
+	// The parent being pre-Amsterdam proves activation is the exact boundary.
 	parent := sys.L1EL.BlockRefByNumber(activation - 1)
 	require.False(l1Config.IsAmsterdam(new(big.Int).SetUint64(activation-1), parent.Time),
 		"the block before the activation block must be pre-Amsterdam — activation must be the exact boundary")
 
-	// (precondition) The activation L1 block genuinely carries the NEW Amsterdam
-	// header fields. This is exactly what op-node must ingest at the boundary without
-	// choking; if these were absent the test would not actually exercise the new fields.
+	// The boundary block must genuinely carry the new Amsterdam header fields.
 	activationHash := sys.L1EL.BlockRefByNumber(activation).Hash
 	l1Info, _, err := sys.L1EL.EthClient().InfoAndTxsByHash(ctx, activationHash)
 	require.NoError(err, "must read the typed Amsterdam activation L1 header")
@@ -89,11 +69,8 @@ func TestBoundary_L1ActivationBlock(gt *testing.T) {
 		"the Amsterdam activation L1 block must carry an EIP-7843 SlotNumber")
 	t.Log("Amsterdam activation L1 block located", "number", activation, "hash", activationHash)
 
-	// --- Wait for the L2 SAFE chain to derive PAST the activation origin -------
-	// Requiring the safe head's L1 origin to be strictly beyond the activation block
-	// guarantees the L2 block(s) whose L1 origin IS the activation block are themselves
-	// safe and fully derived: op-node did not stall or choke on the activation block's
-	// new header fields.
+	// Once the safe head's L1 origin is beyond activation, any L2 block anchored
+	// at activation is fully derived.
 	l2BlockTime := time.Duration(rollupCfg.BlockTime) * time.Second
 	for {
 		safe := sys.L2CL.SyncStatus().SafeL2
@@ -109,10 +86,7 @@ func TestBoundary_L1ActivationBlock(gt *testing.T) {
 		}
 	}
 
-	// --- Locate the SAFE L2 block whose L1 origin IS the activation block ------
-	// L1Origin.Number is monotonic non-decreasing in the L2 block number and cannot
-	// skip an L1 block, so walk the safe chain down from the safe head until the origin
-	// equals the activation height.
+	// Walk down the safe chain to find the block anchored at activation.
 	safeHead := sys.L2CL.SyncStatus().SafeL2
 	var l2AtActivation eth.L2BlockRef
 	foundL2 := false
@@ -135,9 +109,8 @@ func TestBoundary_L1ActivationBlock(gt *testing.T) {
 		"the located L2 block's L1 origin must be the activation block number")
 	require.Equal(activationHash, l2AtActivation.L1Origin.Hash,
 		"the located L2 block's L1 origin hash must be the activation block hash (same block, not a namesake)")
-	// NOTE: no "l2AtActivation.Number <= safeHead.Number" assertion. The scan above starts AT the
-	// safe head and walks down, so that holds by construction and would pass unconditionally. The
-	// block's safety comes from where it was found, not from re-checking the bound.
+	// The reverse scan starts from the safe head, so safety comes from where the
+	// block was found rather than a redundant height check.
 	t.Log("L2 block derived from the Amsterdam activation L1 origin",
 		"l2", l2AtActivation.Number, "l1Origin", l2AtActivation.L1Origin.Number)
 }

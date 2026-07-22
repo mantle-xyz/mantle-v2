@@ -71,27 +71,12 @@ func (b *underPricingBackend) HeaderByNumber(ctx context.Context, number *big.In
 	return head, nil
 }
 
-// TestSubmit_RecoverFromUnderestimatedGas proves that when a submission goes out with too little
-// gas and the Glamsterdam L1 refuses it, the submission path RECOVERS ON ITS OWN: it re-estimates
-// and republishes at a higher gas limit until the tx lands, rather than losing the tx or burning
-// the nonce.
+// TestSubmit_RecoverFromUnderestimatedGas proves txmgr recovers when the first
+// submission uses a gas limit that the Glamsterdam L1 refuses.
 //
-// WHAT IS UNDER TEST. op-batcher and op-proposer both submit through op-service/txmgr, so this
-// drives that exact code (SimpleTxManager.Send) against the devstack's post-Amsterdam L1. It is
-// deliberately not driven through the batcher service: the batcher estimates its own gas
-// internally, so there is no way from outside to force it to under-commit, and a replaced tx
-// never reaches the chain, so "it bumped" would not be observable. Injecting the bad estimate at
-// the backend boundary makes both the trigger and the recovery observable.
-//
-// WHY THE INJECTION IS FAITHFUL. EIP-7976 raises the calldata floor cost, so a gas limit computed
-// against pre-Glamsterdam rules is now too low, and the L1 rejects the tx outright at ingress.
-// underEstimatingBackend reproduces exactly that: one bad estimate, then a correct chain.
-//
-// ASSERTIONS. Send must return a successful receipt (recovery happened at all); the MINED tx must
-// carry a gas limit strictly greater than the bad estimate the txmgr committed to (the recovery
-// was a re-estimate, not a lucky retry of the same tx); its gas limit must cover the gas actually
-// consumed; and it must sit at the same nonce that was first reserved, on a post-Amsterdam block
-// (nothing was lost or skipped).
+// The backend injects one low estimate, then returns the real chain estimate.
+// Send must land a successful tx at the originally reserved nonce with a mined
+// gas limit above the injected estimate and enough gas for actual execution.
 func TestSubmit_RecoverFromUnderestimatedGas(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -134,27 +119,19 @@ func TestSubmit_RecoverFromUnderestimatedGas(gt *testing.T) {
 
 	minedTx := findTx(t, l1Eth, rcpt)
 	require.Greaterf(minedTx.Gas(), badEstimate,
-		"the mined tx must carry a RE-ESTIMATED gas limit, higher than the %d the submission first committed to", badEstimate)
+		"the mined tx must carry a re-estimated gas limit, higher than the %d the submission first committed to", badEstimate)
 	require.GreaterOrEqual(minedTx.Gas(), rcpt.GasUsed, "the mined gas limit must cover the gas actually used")
 	require.Equal(startNonce, minedTx.Nonce(), "the recovery must reuse the reserved nonce, not skip it")
 	t.Log("submission recovered from an underestimated gas limit",
 		"badEstimate", badEstimate, "minedGasLimit", minedTx.Gas(), "gasUsed", rcpt.GasUsed, "l1Block", mined.NumberU64())
 }
 
-// TestBatcher_FeeBump_PostGlamsterdam proves that a submission that goes out underpriced against
-// the Glamsterdam L1 — the "stuck in the mempool" case — is fee-bumped and lands, and that the tx
-// is not lost or duplicated in the process.
+// TestBatcher_FeeBump_PostGlamsterdam proves txmgr fee-bumps an underpriced
+// submission against a post-Amsterdam L1 until it lands.
 //
-// WHAT IS UNDER TEST. Same as above: this is op-batcher's submission engine (op-service/txmgr)
-// pointed at the post-Amsterdam L1. The batcher service itself prices its txs internally and the
-// underpriced attempt never reaches a block, so neither the trigger nor the bump can be observed
-// from outside; injecting a near-zero fee estimate for the first attempt makes both observable.
-//
-// ASSERTIONS. Send must return a successful receipt; the MINED tx's fee cap must be strictly
-// greater than the fee cap the first attempt was signed with (a bump provably happened) and at
-// least the base fee of the block that included it (it became mineable); the mined tx must sit at
-// the reserved nonce, and the account's nonce must advance by exactly one (the stuck tx was
-// REPLACED, not duplicated or abandoned); and inclusion must be on a post-Amsterdam block.
+// The backend injects one near-zero fee estimate. Send must land a successful tx
+// at the reserved nonce with a higher fee cap that covers the inclusion block's
+// base fee, and the account nonce must advance by exactly one.
 func TestBatcher_FeeBump_PostGlamsterdam(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -196,7 +173,7 @@ func TestBatcher_FeeBump_PostGlamsterdam(gt *testing.T) {
 
 	minedTx := findTx(t, l1Eth, rcpt)
 	require.Greaterf(minedTx.GasFeeCap().Uint64(), uint64(firstFeeCap),
-		"the mined tx must carry a BUMPED fee cap, higher than the %d wei the first attempt was signed with", firstFeeCap)
+		"the mined tx must carry a bumped fee cap, higher than the %d wei the first attempt was signed with", firstFeeCap)
 	require.GreaterOrEqual(minedTx.GasFeeCap().Cmp(mined.BaseFee()), 0,
 		"the bumped fee cap must at least cover the base fee of the block that included it")
 	require.Equal(startNonce, minedTx.Nonce(), "the bumped tx must reuse the reserved nonce")
@@ -204,7 +181,7 @@ func TestBatcher_FeeBump_PostGlamsterdam(gt *testing.T) {
 	endNonce, err := l1Eth.NonceAt(ctx, eoa.Address(), nil)
 	require.NoError(err, "read the submitter's final nonce")
 	require.Equalf(startNonce+1, endNonce,
-		"the underpriced tx must have been REPLACED, not duplicated or abandoned: nonce went %d -> %d", startNonce, endNonce)
+		"the underpriced tx must have been replaced, not duplicated or abandoned: nonce went %d -> %d", startNonce, endNonce)
 	t.Log("submission recovered from an underpriced first attempt",
 		"firstFeeCap", firstFeeCap, "minedFeeCap", minedTx.GasFeeCap(), "blockBaseFee", mined.BaseFee(), "l1Block", mined.NumberU64())
 }

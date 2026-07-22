@@ -11,34 +11,13 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 )
 
-// TestBoundary_L1PreActivationBlock is the mirror image of TestBoundary_L1ActivationBlock:
-// it proves that the LAST pre-activation L1 block — the block immediately BEFORE Amsterdam
-// (Glamsterdam EL) activates — is still in the OLD (legacy) header format, and that the
-// Mantle L2 (running Arsia EL rules) derives a valid SAFE block from that pre-Amsterdam
-// origin.
+// TestBoundary_L1PreActivationBlock is the mirror of
+// TestBoundary_L1ActivationBlock: it pins the last pre-Amsterdam L1 block and
+// proves the L2 derives a safe block from that legacy origin.
 //
-// Together the activation and pre-activation tests pin the fork transition to the EXACT
-// activation block: NEW format (EIP-7928 BlockAccessListHash + EIP-7843 SlotNumber present)
-// at/after activation, OLD format (both fields absent) strictly before it.
-//
-// The discriminating claims are narrow and about the block just below the boundary:
-//
-//	(a) IsAmsterdam(parent) == false — the block at height activation-1 is genuinely
-//	    pre-Amsterdam, so it is the LAST legacy block, not some earlier one; and
-//	(b) that pre-Amsterdam L1 header carries NEITHER new field: BlockAccessListHash == nil
-//	    AND SlotNumber == nil. A miscalibrated fork boundary (activation one block too late)
-//	    would set these fields on this very block; a real legacy header leaves them nil.
-//	    For contrast the activation block (parent+1) is confirmed to carry BOTH — old format
-//	    before, new format at/after, boundary exactly at activation; and
-//	(c) the L2 derives a SAFE block whose L1 origin IS that pre-Amsterdam block — op-node
-//	    ingests the legacy origin without stalling, exactly as it does the new-format one.
-//
-// GOTCHA obeyed: WithForkAtL1Offset's offset is in SECONDS, not blocks, so the activation
-// height is not assumable. The activation block is found DYNAMICALLY as the first
-// IsAmsterdam L1 block; the pre-activation block is its parent (activation-1).
-//
-// Uses the minimal preset with auto-FakePoS and WaitForTime; no TestSequencer drives L1 —
-// the L1 advances on its own clock and the L2 derives from it.
+// The activation height is discovered dynamically. The parent must be
+// pre-Amsterdam with no BAL/SlotNumber fields, the activation child must carry
+// both fields, and the safe L2 block must anchor to the parent by hash.
 func TestBoundary_L1PreActivationBlock(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -53,14 +32,12 @@ func TestBoundary_L1PreActivationBlock(gt *testing.T) {
 	require.NotNil(rollupCfg.MantleElysiumTime, "MantleElysiumTime must be configured")
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 
-	// Wait for the L1 to reach/cross the Amsterdam (Glamsterdam EL) activation time.
+	// Wait for the L1 to reach/cross the Amsterdam activation time.
 	t.Log("Waiting for L1 Amsterdam to activate")
 	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
 	t.Log("L1 Amsterdam activated")
 
-	// --- Find the Amsterdam activation L1 block DYNAMICALLY -------------------
-	// The first block for which IsAmsterdam(num, time) holds. The fork offset is
-	// SECONDS, not blocks, so we must not assume a fixed height.
+	// Find the first block for which IsAmsterdam(num, time) holds.
 	l1Head := sys.L1EL.BlockRefByLabel(eth.Unsafe).Number
 	var activation uint64
 	foundActivation := false
@@ -76,19 +53,15 @@ func TestBoundary_L1PreActivationBlock(gt *testing.T) {
 	require.Greater(activation, uint64(0),
 		"Amsterdam must activate above L1 genesis (offset > 0) so a real pre-activation parent block exists")
 
-	// The pre-activation block: the block immediately before the activation block.
+	// The pre-activation block is the block immediately before activation.
 	preActivation := activation - 1
 	preRef := sys.L1EL.BlockRefByNumber(preActivation)
 
-	// (a) The pre-activation block is genuinely PRE-Amsterdam. This proves it is the LAST
-	// legacy block — the exact block just below the fork boundary — not some earlier block.
+	// (a) The pre-activation block is the last legacy block.
 	require.False(l1Config.IsAmsterdam(new(big.Int).SetUint64(preActivation), preRef.Time),
 		"the block before the activation block must be pre-Amsterdam — it is the last legacy (old-format) L1 block")
 
-	// (b) The typed pre-Amsterdam L1 header is in the OLD format: it carries NEITHER of the
-	// two Amsterdam header fields. Both must be nil on a legacy header. This is the
-	// discriminating no-new-fields guard: if the fork boundary were miscalibrated one block
-	// too late, these fields would appear on exactly this block.
+	// (b) The legacy header must carry neither Amsterdam field.
 	preHash := preRef.Hash
 	preInfo, _, err := sys.L1EL.EthClient().InfoAndTxsByHash(ctx, preHash)
 	require.NoError(err, "must read the typed pre-Amsterdam L1 header")
@@ -99,9 +72,7 @@ func TestBoundary_L1PreActivationBlock(gt *testing.T) {
 		"the last pre-Amsterdam L1 block must be old-format — no EIP-7843 SlotNumber")
 	t.Log("Last pre-Amsterdam L1 block located", "number", preActivation, "hash", preHash)
 
-	// (b-contrast) The activation block (parent+1) DOES carry BOTH new Amsterdam header
-	// fields. This pins the transition to the exact boundary: old format at activation-1,
-	// new format at activation — the change happens across this single block edge.
+	// Contrast: the activation child carries both Amsterdam fields.
 	activationHash := sys.L1EL.BlockRefByNumber(activation).Hash
 	actInfo, _, err := sys.L1EL.EthClient().InfoAndTxsByHash(ctx, activationHash)
 	require.NoError(err, "must read the typed Amsterdam activation L1 header")
@@ -113,10 +84,7 @@ func TestBoundary_L1PreActivationBlock(gt *testing.T) {
 	require.Equal(preHash, actHdr.ParentHash,
 		"the activation block must be the direct child of the pre-activation block — the boundary is this single block edge")
 
-	// --- Wait for the L2 SAFE chain to derive PAST the pre-activation origin ---
-	// Requiring the safe head's L1 origin to be strictly beyond the pre-activation block
-	// guarantees the L2 block(s) whose L1 origin IS that block are themselves safe and fully
-	// derived: op-node did not stall or choke on the last legacy L1 block.
+	// Once the safe head is beyond preActivation, blocks anchored there are fully derived.
 	l2BlockTime := time.Duration(rollupCfg.BlockTime) * time.Second
 	for {
 		safe := sys.L2CL.SyncStatus().SafeL2
@@ -132,10 +100,7 @@ func TestBoundary_L1PreActivationBlock(gt *testing.T) {
 		}
 	}
 
-	// --- Locate the SAFE L2 block whose L1 origin IS the pre-activation block --
-	// L1Origin.Number is monotonic non-decreasing in the L2 block number and cannot skip an
-	// L1 block, so walk the safe chain down from the safe head until the origin equals the
-	// pre-activation height.
+	// Walk down the safe chain to find the block anchored at preActivation.
 	safeHead := sys.L2CL.SyncStatus().SafeL2
 	var l2AtPre eth.L2BlockRef
 	foundL2 := false

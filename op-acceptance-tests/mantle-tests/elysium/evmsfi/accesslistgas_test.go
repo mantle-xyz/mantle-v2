@@ -13,26 +13,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-// Access-list gas constants (see op-geth core/state_transition.go IntrinsicGas and
-// params/protocol_params.go).
-//
-// EIP-7981 ("Increase access list cost") is gated on rules.IsAmsterdam in op-geth:
-//   - IntrinsicGas: core/state_transition.go:145 (called at :828 with rules.IsAmsterdam)
-//   - FloorDataGas: core/state_transition.go:182
-//
-// Under Mantle-Arsia rules (L2 AmsterdamTime == nil, so rules.IsAmsterdam == false)
-// an access-list entry is charged ONLY the base EIP-2930 cost:
-//   - per address:     TxAccessListAddressGas    = 2400 gas
-//   - per storage key: TxAccessListStorageKeyGas = 1900 gas
-//
-// When Amsterdam/EIP-7981 is active, op-geth adds an EXTRA per-entry charge
-// (state_transition.go:146-157):
-//   - addressCost    = AddressLength(20) * TxCostFloorPerToken7976(16) * TxTokenPerNonZeroByte(4) = 1280
-//   - storageKeyCost = HashLength(32)    * TxCostFloorPerToken7976(16) * TxTokenPerNonZeroByte(4) = 2048
-//
-// So the per-address cost the L2 must keep is 2400 (Arsia); EIP-7981 would make it
-// 2400 + 1280 = 3680. That 2400-vs-3680 gap is the discriminator.
-// txBaseGas (params.TxGas) is shared with the calldata-floor case; see calldatagas_test.go.
+// Access-list gas constants. Mantle Arsia keeps the base EIP-2930 rates while
+// Amsterdam/EIP-7981 would add calldata-floor charges per address/key.
+// txBaseGas is shared with the calldata-floor case; see calldatagas_test.go.
 const (
 	// arsiaGasPerAddress is the Mantle-Arsia per-access-list-address cost.
 	arsiaGasPerAddress = 2400 // params.TxAccessListAddressGas
@@ -47,49 +30,26 @@ const (
 	eip7981GasPerStorageKey = 3948
 )
 
-// TestL2EVM_AccessListGasStaysArsia verifies an L2-internal Arsia property: the
-// Mantle L2 charges EIP-2930 access-list addresses at the base Arsia rate
-// (2400 gas/address) and has NOT adopted EIP-7981's raised cost. This pricing is
-// gated on the *L2* fork in op-geth core/state_transition.go (IntrinsicGas keys off
-// rules.IsAmsterdam, which is false because the L2's AmsterdamTime == nil) — it is
-// not L1-sensitive and would hold under any L1. The L1 runs Glamsterdam here only
-// as the surrounding environment, not as the discriminator.
+// TestL2EVM_AccessListGasStaysArsia verifies an L2-internal Arsia property:
+// access-list addresses and storage keys keep their base rates while the L1 runs
+// Glamsterdam.
 //
-// It sends two value-less calls to the same plain EOA, each carrying an EIP-2930
-// access list with a different number of addresses (and zero storage keys). A
-// value-less call to an EOA executes no code, and none of the listed addresses is
-// ever touched by an opcode, so warming them yields no execution discount: the
-// access-list charge is purely additive on top of the 21000 base. That makes the
-// receipt's GasUsed exactly 21000 + N*perAddress, and the marginal gas of one
-// extra access-list address reveals the per-address rate directly — 2400 gas under
-// Arsia versus 3680 under EIP-7981. Using the marginal cancels the 21000 base and
-// any fixed per-recipient cost, isolating the access-list rate.
-//
-// The txs carry the access list on the default DynamicFee (EIP-1559) type; the
-// EIP-2930 entries flow through the same IntrinsicGas access-list branch
-// (state_transition.go:132-159) that EIP-7981 modifies regardless of tx type.
-//
-// COVERAGE: this covers the EIP-7981 access-list-repricing sub-case, sibling to the
-// EIP-7976 calldata floor (evmgas). EIP-7778 block-level gas accounting is covered in
-// evmblockgas; EIP-8024 opcodes in evmopcodes.
+// The test compares marginal gas between EOA calls that differ only in access
+// list size, so the 21000 base and fixed execution costs cancel out. That
+// isolates the Arsia rates and would fail if the L2 adopted EIP-7981 pricing.
 func runAccessListGasStaysArsia(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()
 
-	// Establish the environment: drive the L1 across into Glamsterdam (Amsterdam)
-	// so the L2-internal access-list pricing below is exercised *while consuming an
-	// upgraded L1*. The L1 fork is the environment, not the discriminator — the
-	// per-address rate is gated on the L2 fork and is independent of the L1.
+	// Establish the Glamsterdam L1 environment; pricing is still gated by the L2 fork.
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
 
 	wallet := sys.FunderL2.NewFundedEOA(eth.OneEther)
 
-	// A plain EOA recipient (no code, well above the precompile range and not a
-	// Mantle 0x42.. predeploy): a value-less call to it runs no code, so the tx's
-	// gas is intrinsic + access-list only.
+	// A value-less call to a plain EOA keeps gas to intrinsic + access list.
 	recipient := common.HexToAddress("0x00000000000000000000000000000000C0FFEE00")
 
 	const (

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/testhelpers"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
@@ -42,7 +43,7 @@ func TestDeposit_SeqVerifierConsistency_AcrossL1Upgrade(gt *testing.T) {
 	l1User := sys.FunderL1.NewFundedEOA(eth.OneTenthEther)
 	l2UserSeq := l1User.AsEL(sys.L2EL)
 	l2UserVerifier := l1User.AsEL(sys.L2ELB)
-	fundL1MNT(t, &sys.MantleMinimal, l1User, depositAmount)
+	testhelpers.FundL1MNT(t, &sys.MantleMinimal, l1User, depositAmount)
 
 	l1MNTAddr := sys.L2Chain.Escape().Deployment().L1MNTAddr()
 	l1BridgeAddr := sys.L2Chain.Escape().Deployment().L1StandardBridgeProxyAddr()

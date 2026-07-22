@@ -15,36 +15,12 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
-// TestL1UpgradeMidFlight is a discriminating test: the Mantle L2 keeps
-// processing user traffic WITHOUT interruption as the L1 upgrades to Glamsterdam
-// (Amsterdam EL) mid-run.
+// TestL1UpgradeMidFlight verifies user traffic continues while the L1 upgrades
+// to Glamsterdam mid-run.
 //
-// This is deliberately distinct from the smoke test, which only checks
-// liveness AFTER the boundary. Here the L2 must be actively transacting BEFORE the
-// boundary and keep succeeding THROUGH and AFTER it, with both txs safely derived —
-// i.e. the fork moment does not stall the sequencer, the batcher, or derivation.
-//
-// SETUP. The suite runs against a sysext devnet with real L1 EL/CL services. The devnet must
-// start with a genuine pre-Amsterdam window and expose an AmsterdamTime that is still in the
-// future when this subtest starts. This subtest intentionally runs first in the suite.
-//
-// FLOW / DISCRIMINATION.
-//
-//	(a) Assert the current L1 head is still PRE-Amsterdam, then submit an L2 tx and
-//	    require it succeeds — the L2 is genuinely transacting before the upgrade.
-//	(b) Drive the L1 across the Amsterdam boundary (WaitForTime(AmsterdamTime)).
-//	(c) After the L2's own L1 origin has crossed Amsterdam, submit a second L2 tx and
-//	    require it succeeds — the L2 keeps taking user traffic after the upgrade.
-//	(d) Require BOTH tx blocks reach the L2 SAFE head (derivation consolidated them
-//	    from the L1 across the boundary), the pre-boundary block has a pre-Amsterdam
-//	    L1 origin, and the post-boundary block has a post-Amsterdam L1 origin — so the
-//	    two txs provably straddle the fork and derivation advanced past it.
-//	(e) Sample post-boundary L2 headers and require each stays Arsia: no EIP-7928
-//	    BlockAccessListHash and no EIP-7843 SlotNumber leaked onto the L2.
-//
-// This flips red if the L2 stalls at the fork moment (either tx fails or never
-// reaches safe), if the two txs do not actually straddle the boundary (origins on
-// the wrong side), or if the L2 adopts an Amsterdam header field as the L1 upgrades.
+// It submits one L2 tx before Amsterdam and one after the L2 origin crosses
+// Amsterdam, then requires both blocks to become safe by hash. The origin checks
+// prove the txs straddle the fork, and header checks ensure the L2 stays Arsia.
 func runL1UpgradeMidFlight(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -61,8 +37,7 @@ func runL1UpgradeMidFlight(gt *testing.T) {
 	recipientPre := common.HexToAddress("0x00000000000000000000000000000000BEEF0001")
 	recipientPost := common.HexToAddress("0x00000000000000000000000000000000BEEF0002")
 
-	// (a) BEFORE Amsterdam. The current L1 head must still be pre-Amsterdam, so the
-	// first L2 tx is genuinely submitted while the L1 has NOT yet upgraded.
+	// (a) Submit the first tx while the current L1 head is still pre-Amsterdam.
 	l1Head := sys.L1EL.BlockRefByLabel(eth.Unsafe)
 	require.Falsef(
 		l1Config.IsAmsterdam(new(big.Int).SetUint64(l1Head.Number), l1Head.Time),
@@ -87,17 +62,14 @@ func runL1UpgradeMidFlight(gt *testing.T) {
 	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
 	t.Log("L1 Amsterdam activated")
 
-	// The L2 sequencer's L1 origin lags the L1 head, so right after activation an L2 tx
-	// can still take a pre-Amsterdam origin. Wait until the L2 unsafe origin itself
-	// crosses Amsterdam so the post-boundary tx lands on a post-Amsterdam L1 origin.
+	// The L2 origin lags the L1 head; wait for the sequencer origin itself to cross.
 	require.Eventually(func() bool {
 		originNum := sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number
 		originRef := sys.L1EL.BlockRefByNumber(originNum)
 		return l1Config.IsAmsterdam(new(big.Int).SetUint64(originNum), originRef.Time)
 	}, 120*time.Second, time.Second, "L2 unsafe origin must cross Amsterdam before the post-boundary tx")
 
-	// (c) AFTER Amsterdam. Submit a second L2 tx from the SAME wallet; it must also
-	// succeed, proving user traffic keeps flowing straight through the upgrade.
+	// (c) Submit a second tx after the L2 origin crosses Amsterdam.
 	postRcpt, err := txplan.NewPlannedTx(txplan.Combine(
 		wallet.Plan(),
 		txplan.WithTo(&recipientPost),
@@ -110,10 +82,7 @@ func runL1UpgradeMidFlight(gt *testing.T) {
 	require.Greater(postBlock, preBlock, "post-upgrade tx must land in a strictly later L2 block")
 	t.Log("post-upgrade L2 tx included", "block", postBlock, "hash", postRcpt.TxHash)
 
-	// (d) BOTH tx blocks must reach the L2 SAFE head via derivation from the L1 — matched by
-	// HASH (ReachedRef), not just height: the pipeline consumed the L1 continuously across the
-	// upgrade and consolidated the byte-identical pre- and post-boundary blocks we submitted. A
-	// divergent re-derivation at either height fails the hash match rather than slipping through.
+	// (d) Both tx blocks must reach safe by hash, not just height.
 	sys.L2CL.ReachedRef(suptypes.CrossSafe, eth.BlockID{Number: preBlock, Hash: preRcpt.BlockHash}, 90)
 	sys.L2CL.ReachedRef(suptypes.CrossSafe, eth.BlockID{Number: postBlock, Hash: postRcpt.BlockHash}, 90)
 

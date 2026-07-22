@@ -18,59 +18,14 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// TestBatcher_CalldataCost_After7976 asserts that the Mantle L2 batcher, pinned to the
-// CALLDATA data-availability path, still successfully lands its batch-inbox submissions on
-// a Glamsterdam (Amsterdam EL) L1 after EIP-7976 raises the L1 calldata floor cost.
+// TestBatcher_CalldataCost_After7976 verifies the calldata DA path across the Amsterdam
+// calldata-floor increase. The batcher is pinned to calldata, the L1 crosses Glamsterdam, and a
+// post-upgrade L2 block must become safe by hash, proving the batch landed and was re-derived.
 //
-// WHY THIS MATTERS. EIP-7976 (Amsterdam) raises the transaction calldata FLOOR: the
-// per-token floor cost goes from 10 to 16 (params.TxCostFloorPerToken ->
-// params.TxCostFloorPerToken7976) and every byte is charged as a non-zero byte, so a
-// calldata tx's minimum gas jumps from `21000 + 40*nonZero + 10*zero` (pre-Amsterdam) to
-// `21000 + 64*len` (Amsterdam). A batcher posting large CALLDATA batches therefore pays
-// strictly more per submission on a Glamsterdam L1. The batcher must adapt its fee/gas
-// estimation and keep landing batches; if it underprices under the raised floor, its
-// inbox tx would be rejected/never mined and the L2 would stop advancing to safe.
-//
-// SETUP. The L1 EL is an external Glamsterdam geth subprocess (helpers.go / init_test.go),
-// Amsterdam activates a few blocks after L1 genesis, and the batcher is pinned to
-// DataAvailabilityType=calldata. So the batcher submits ordinary calldata txs to the
-// batch-inbox on post-Amsterdam L1 blocks, priced under the EIP-7976 floor.
-//
-// FLOW / DISCRIMINATION.
-//  1. Drive the L1 across the Amsterdam boundary (WaitForTime(AmsterdamTime)) and wait for
-//     the L2 sequencer's L1 origin to itself cross Amsterdam.
-//  2. Submit an L2 value transfer, then wait for its EXACT block (number AND hash) to reach
-//     the SAFE head via ReachedRef. Reaching safe-by-hash proves the batcher successfully
-//     posted the CALLDATA batch carrying that block to a post-Amsterdam L1 and op-node
-//     re-derived the byte-identical block from it: end-to-end liveness of the calldata DA
-//     path across the raised floor.
-//  3. Locate the batcher's batch-inbox tx on a post-Amsterdam L1 block and assert it is a
-//     normal CALLDATA tx (not an EIP-4844 blob tx, carries no blob hashes, has calldata).
-//  4. Fetch that L1 tx's receipt and assert receipt.Status == Successful: the raised 7976
-//     floor did not make the submission fail or get mined as a revert.
-//  5. Ask the L1 to estimate that exact submission (same sender, inbox, calldata) and require the
-//     batcher's committed gas limit to COVER the L1's own estimate. Under-committing is the
-//     direction that breaks submission: the L1 rejects with ErrFloorDataGas and the batch stalls
-//     until a resubmission re-estimates. Letting the L1 do the estimating keeps this correct
-//     across future repricings without hardcoding an EIP-7623/7976 constant here.
-//  6. Log the mined receipt.GasUsed next to the floor recomputed under Amsterdam (EIP-7976) and
-//     pre-Amsterdam (EIP-7623) rules for visibility. We deliberately do NOT assert GasUsed against
-//     those floors: they are computed with the pinned Mantle op-geth's FloorDataGas, while the L1
-//     is a SEPARATE vanilla-geth build whose exact byte tokenization / floor charging can differ.
-//
-// WHAT IS NOT ASSERTED, AND WHY. The batcher deliberately biases its gas limit HIGH: it does not
-// use the L1's estimate at all but sets the limit to a locally computed data floor under the
-// newest rules (op-batcher/batcher/driver.go). That over-reservation costs nothing — a sender pays
-// gasUsed, not the limit — and it is what keeps a batch crafted just before a fork boundary from
-// being rejected by the raised floor after it. How far above the true cost that lands is a
-// function of batch size (a near-empty devnet channel over-reserves a large fraction, a
-// production-sized batch a negligible one), so it is not a stable signal and this test does not
-// bound it.
-//
-// DISCRIMINATION is therefore LIVENESS + DA-path + gas-coverage. This flips red if: the batcher
-// can't get its calldata batch onto a Glamsterdam L1 so the L2 tx never reaches safe (ReachedRef
-// by hash); the inbox tx is a blob tx (wrong DA path); the inbox tx's L1 receipt reverted/failed;
-// or the batcher commits less gas than the Glamsterdam L1 itself requires for that submission.
+// The test then checks the mined inbox tx is calldata, succeeded on L1, and had a gas limit at
+// least as high as the Glamsterdam L1's own estimate for the same submission. It deliberately does
+// not bound over-reservation: the batcher biases high by design, and senders pay gas used rather
+// than the limit.
 func TestBatcher_CalldataCost_After7976(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)

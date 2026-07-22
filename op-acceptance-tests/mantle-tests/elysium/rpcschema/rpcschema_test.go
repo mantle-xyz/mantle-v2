@@ -11,35 +11,13 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-// arsiaBlockKeys is the EXACT top-level key set op-geth's RPCMarshalBlock (which
-// wraps RPCMarshalHeader) emits for a Mantle Arsia L2 block fetched via
-// eth_getBlockByNumber(_, false). Derived directly from Mantle op-geth
-// internal/ethapi/api.go (RPCMarshalHeader @L1295, RPCMarshalBlock @L1341):
+// arsiaBlockKeys is the top-level key set op-geth's RPCMarshalBlock emits for a Mantle Arsia L2
+// block via eth_getBlockByNumber(_, false). It is intentionally strict: if an op-geth dependency
+// bump legitimately changes the Arsia schema, update this list with that bump; otherwise any extra
+// key is an external-schema regression.
 //
-//   - RPCMarshalHeader, unconditional (16 keys): number..receiptsRoot below.
-//   - RPCMarshalHeader, conditional keys that ARE populated on an Arsia
-//     (Canyon..Isthmus) L2 header — verified in op-geth beacon/engine/types.go
-//     ExecutableDataToBlock / miner/worker.go:
-//     baseFeePerGas (BaseFee != nil, L2 is always EIP-1559),
-//     withdrawalsRoot (WithdrawalsHash != nil since Canyon; Isthmus storage root),
-//     blobGasUsed + excessBlobGas + parentBeaconBlockRoot (Ecotone/Cancun),
-//     requestsHash (Isthmus/Skadi → CalcRequestsHash([]) == EmptyRequestsHash).
-//     slotNumber is the ONLY conditional key that stays nil on Arsia → omitted.
-//   - RPCMarshalBlock additions: size, transactions, uncles, withdrawals
-//     (block.Withdrawals() != nil since Canyon).
-//
-// MAINTENANCE CONTRACT. This list is a hand-copied SNAPSHOT of op-geth's marshalling code, so it
-// goes stale by design whenever op-geth changes what it emits — and the test cannot tell a real
-// schema regression from a legitimate op-geth upgrade. When it fails, triage in this order:
-//
-//  1. Did the Mantle op-geth dependency change? Re-read RPCMarshalHeader / RPCMarshalBlock at the
-//     new version. If the new/removed key is legitimately emitted on the ARSIA path, update this
-//     list AND the line references above — that is a dependency-bump chore, not a bug.
-//  2. Otherwise the L2 really did change its external schema, which is what this guard exists to
-//     catch. Do NOT "fix" it by adding the key here.
-//
-// Amsterdam keys (blockAccessListHash, slotNumber) never belong in this list under either branch:
-// the L2 stays on Arsia, so their appearance is always case 2.
+// Amsterdam keys such as blockAccessListHash and slotNumber do not belong here because the L2
+// remains on Arsia rules.
 var arsiaBlockKeys = []string{
 	// RPCMarshalHeader, unconditional.
 	"number", "hash", "parentHash", "nonce", "mixHash", "sha3Uncles",
@@ -52,27 +30,9 @@ var arsiaBlockKeys = []string{
 	"size", "transactions", "uncles", "withdrawals",
 }
 
-// TestExternal_L2RPCSchemaStable is an L2-only external-schema regression guard:
-// it pins the Mantle L2's eth_getBlockByNumber(_, false) response to the EXACT
-// Arsia top-level key set, so an external SDK/indexer reading L2 blocks sees a
-// stable schema.
-//
-// This asserts an L2-Arsia property, not an L1 discriminator — every assertion
-// below would pass under ANY L1. The test drives the L1 across the Amsterdam
-// (Glamsterdam EL) boundary only to make the environment realistic (the L2 block
-// is genuinely produced while consuming a Glamsterdam L1); the L1 is the
-// environment, not the discriminator. The Amsterdam header keys stay off the L2
-// schema for L2-internal reasons, not because of the L1: op-geth's
-// RPCMarshalHeader has NO branch that emits blockAccessListHash (EIP-7928) at
-// all, and it emits slotNumber (EIP-7843) only when head.SlotNumber != nil,
-// which an Arsia L2 never sets — so slotNumber-nil is an L2-fork property.
-//
-// Two complementary assertions pin the decoded top-level key SET exactly:
-//
-//	(a) COMPLETE: every expected Arsia key is present (none missing).
-//	(b) EXACT: NO key outside the known Arsia set may appear, so ANY future
-//	    Amsterdam/Glamsterdam top-level key that ever leaked onto the L2 schema
-//	    (blockAccessListHash, slotNumber, or anything new) trips the test.
+// TestExternal_L2RPCSchemaStable pins the external L2 block JSON schema while the L1 runs
+// Glamsterdam. It asserts the decoded top-level key set is complete for Arsia and has no extras,
+// so any leaked Amsterdam key or other schema drift trips the test.
 func TestExternal_L2RPCSchemaStable(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)

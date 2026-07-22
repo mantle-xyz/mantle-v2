@@ -15,29 +15,12 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
-// TestL1Glamsterdam_BatcherSubmissionE2E asserts the Mantle L2 batcher still lands batches on a
-// Glamsterdam (Amsterdam EL) L1 while Mantle L2 stays on Arsia.
+// TestL1Glamsterdam_BatcherSubmissionE2E asserts the batcher still lands batches
+// on a Glamsterdam L1 while the Mantle L2 stays on Arsia.
 //
-// This package runs against an external real-CL devnet, so the batcher's DA mode comes from the
-// devnet descriptor rather than this test body. The test therefore validates the payload invariant
-// of the DA path that was actually used: blob txs must carry blob hashes, and non-blob inbox txs
-// must carry calldata. Path-specific sysgo coverage lives in elysium/derivblob and
-// elysium/batchercalldata.
-//
-// FLOW / DISCRIMINATION.
-//  1. Drive the L1 across the Amsterdam boundary and wait for the L2 sequencer's L1 origin to
-//     itself cross Amsterdam, so the batch below is posted to a post-Amsterdam L1 block.
-//  2. Submit an L2 value transfer and wait for its EXACT block (number AND hash) to reach the SAFE
-//     head via ReachedRef - op-node re-derived the byte-identical block only by pulling the
-//     batcher's batch back out of the Glamsterdam L1, so the submission provably landed.
-//  3. Locate the batcher's batch-inbox tx on a post-Amsterdam L1 block and assert it carries a
-//     real payload on its DA path: an EIP-4844 blob tx must carry blob versioned hashes, any
-//     other tx type must carry non-empty calldata. An inbox tx with neither is a broken batcher.
-//  4. Fetch that L1 tx's receipt and assert receipt.Status == Successful.
-//
-// Flips red if: the batcher can't get its batch onto a Glamsterdam L1 so the L2 tx never reaches
-// safe (ReachedRef by hash times out); the inbox tx carries no payload on either DA path; or its
-// L1 receipt reverted/failed.
+// The real-CL devnet chooses the DA mode, so the test validates the path that was
+// actually used: blob inbox txs must carry blob hashes, non-blob inbox txs must
+// carry calldata, and the L2 tx block must reach safe by exact hash.
 func runBatcherSubmission(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -49,8 +32,7 @@ func runBatcherSubmission(gt *testing.T) {
 	require.True(sys.L2Chain.IsMantleForkActive(opforks.MantleElysium), "L2 must run with Mantle Elysium active")
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 
-	// 1) Drive the L1 across the Glamsterdam (Amsterdam) boundary and wait for the L2 origin to
-	//    cross it too, so the batch carrying our tx is posted to a post-Amsterdam L1 block.
+	// 1) Cross Amsterdam and wait until the L2 origin is post-Amsterdam too.
 	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
 	t.Log("L1 Amsterdam activated")
 	require.Eventually(func() bool {
@@ -76,8 +58,7 @@ func runBatcherSubmission(gt *testing.T) {
 	sys.L2CL.ReachedRef(suptypes.CrossSafe, eth.BlockID{Number: l2TxBlock, Hash: receipt.BlockHash}, 60)
 	t.Log("L2 tx block reached safe head - batcher landed its batch on the Glamsterdam L1")
 
-	// 3) Locate the batcher's batch-inbox tx on a post-Amsterdam L1 block. The batch that made our
-	//    L2 tx safe is such a tx, so one is guaranteed to be present.
+	// 3) Locate a batch-inbox tx on a post-Amsterdam L1 block.
 	batchInbox := rollupCfg.BatchInboxAddress
 	l1Eth := sys.L1EL.EthClient()
 	var (

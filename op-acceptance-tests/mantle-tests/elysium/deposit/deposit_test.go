@@ -3,6 +3,7 @@ package deposit
 import (
 	"testing"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/testhelpers"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
@@ -29,7 +30,7 @@ func TestDeposit_AcrossL1Upgrade(gt *testing.T) {
 	depositAmount := eth.GWei(1_000_000)
 	l1User := sys.FunderL1.NewFundedEOA(eth.OneTenthEther)
 	l2User := l1User.AsEL(sys.L2EL)
-	fundL1MNT(t, sys, l1User, depositAmount)
+	testhelpers.FundL1MNT(t, sys, l1User, depositAmount)
 
 	// MantleBridge.DepositMNT pulls MNT via the L1 StandardBridge, so the depositor
 	// must approve it first.

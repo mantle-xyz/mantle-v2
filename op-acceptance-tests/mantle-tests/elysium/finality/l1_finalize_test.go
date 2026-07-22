@@ -13,39 +13,10 @@ import (
 	"github.com/ethereum/go-ethereum"
 )
 
-// TestL1Finalize_PostUpgrade proves that the L1 finality signal propagates into
-// L2 finality across the L1 Glamsterdam (Amsterdam EL) upgrade: an L1 FINALIZED
-// head that is genuinely post-Amsterdam drives the L2 FinalizedL2 head forward,
-// and the L2 finalized head is gated by (never runs ahead of) L1 finality.
-//
-// The Mantle L2 runs its Mantle fork (Elysium at genesis) while the L1 upgrades
-// to Glamsterdam. fakepos finalizes L1 blocks at head-20, so once the L1 head is
-// far enough past the Amsterdam activation block the L1 FINALIZED label points at
-// a real Amsterdam block. This test:
-//
-//  1. waits for the L1 to activate Amsterdam;
-//  2. records the L2 FinalizedL2 head at that boundary as a baseline;
-//  3. waits until the L1 FINALIZED head is itself a post-Amsterdam block, and
-//     asserts that finalized L1 header carries the Amsterdam header fields
-//     (EIP-7928 BlockAccessListHash + EIP-7843 SlotNumber) — i.e. L1 is
-//     finalizing genuinely Glamsterdam blocks, not just pre-fork ones;
-//  4. waits until the L2 FinalizedL2 head has advanced past the baseline AND its
-//     L1 origin is a post-Amsterdam L1 block, then asserts:
-//     (a) the L1 origin of the finalized L2 block is post-Amsterdam (fetched
-//     and re-checked with IsAmsterdam + Amsterdam header fields), proving
-//     op-node finalized L2 blocks derived from Glamsterdam L1 data;
-//     (b) FinalizedL2.L1Origin.Number <= the current L1 FINALIZED head number,
-//     proving L2 finality is genuinely gated by L1 finality and never runs
-//     ahead of it.
-//
-// Discriminating: L2 finality must track L1 finality of post-Glamsterdam blocks.
-//   - A stall at the boundary (op-node unable to consume Amsterdam L1 headers for
-//     finality) would leave FinalizedL2 stuck at/behind the baseline with a
-//     pre-Amsterdam origin -> step (4) never completes and the test fails.
-//   - A regression that finalized L2 blocks ahead of the L1 finalized head
-//     (finality not actually gated by L1) would fail assertion (4b).
-//   - A regression where the L1 itself fails to finalize post-Amsterdam blocks
-//     would fail step (3).
+// TestL1Finalize_PostUpgrade verifies that L1 finality over post-Amsterdam blocks propagates into
+// L2 finality. The L1 finalized head must itself carry the Amsterdam header fields, the L2
+// finalized head must advance past the boundary, and its L1 origin must never run ahead of the
+// current L1 finalized head.
 func TestL1Finalize_PostUpgrade(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)

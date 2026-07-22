@@ -13,31 +13,13 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/retry"
 )
 
-// TestL1Glamsterdam_AfterRestart is the STEADY-STATE restart variant: it drives the Mantle
-// L2 (Arsia) forward while the Glamsterdam (Amsterdam EL) L1 is ALREADY well past the
-// Amsterdam boundary on BOTH sides of the restart, restarts the L2 op-node, and asserts the
-// L2 fully recovers: the node comes back up, re-syncs to at least the safe head it had before
-// the restart (with that block unchanged — no data loss/reorg), and keeps producing AND
-// deriving new blocks past the recorded heads.
+// TestL1Glamsterdam_AfterRestart covers steady-state restart recovery after the
+// L1 is already post-Amsterdam.
 //
-// What this actually discriminates (honest scope):
-//   - The load-bearing assertions are the RESTART-RECOVERY ones: after the op-node's derivation
-//     pipeline is torn down and rebuilt from scratch, it must re-sync to the identical
-//     pre-restart safe block (no reorg / no data loss) and resume production + derivation — all
-//     while the fresh pipeline re-reads a Glamsterdam L1. A recovery that wedged (e.g. because the
-//     rebuilt pipeline could not re-consume the Amsterdam L1 headers) would fail here.
-//   - The L1 has ALREADY crossed the Amsterdam boundary before the restart and stays past it
-//     after, so this does NOT exercise re-deriving THROUGH the fork activation from a fresh
-//     pipeline. The harder cross-boundary case — op-node stopped pre-Amsterdam, the L1 crosses
-//     the boundary while op-node is DOWN, first Amsterdam headers read only after the restart —
-//     is covered by the sibling package boundaryrestart.
-//   - originIsAmsterdam only pins the L1 origin to be chronologically post-Amsterdam via a
-//     timestamp/config check; it is NOT a payload-decode proof (see its definition below).
-//
-// Restart control: this real-CL suite relies on the sysext devnet control plane supporting
-// service lifecycle management for the L2 op-node. sys.L2CL.Stop()/Start()
-// (op-devstack/dsl/l2_cl.go) wrap stack.ControlPlane.L2CLNodeState(id, stack.Stop/Start),
-// which sysext maps to the backing devnet's service lifecycle API.
+// The op-node must stop, become unreachable, start again, recover the identical
+// pre-restart safe block, and continue producing/deriving new blocks from the
+// Glamsterdam L1. The harder "L1 crosses while op-node is down" case lives in
+// boundaryrestart.
 func runL1GlamsterdamAfterRestart(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -49,10 +31,7 @@ func runL1GlamsterdamAfterRestart(gt *testing.T) {
 	require.True(sys.L2Chain.IsMantleForkActive(opforks.MantleElysium), "L2 must run with Mantle Elysium active")
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured (L1 must be a Glamsterdam chain)")
 
-	// originIsAmsterdam reports whether the L1 origin of an L2 block ref is chronologically
-	// post-Amsterdam, via a timestamp/config check (l1Config.IsAmsterdam on the origin header's
-	// number + time). This is NOT a payload-decode proof: it confirms the origin block is past the
-	// Amsterdam activation time, not that op-node parsed any Amsterdam-specific payload structure.
+	// originIsAmsterdam is a timestamp/config guard, not a payload-decode proof.
 	originIsAmsterdam := func(ref eth.L2BlockRef) bool {
 		if ref.Number == 0 {
 			return false

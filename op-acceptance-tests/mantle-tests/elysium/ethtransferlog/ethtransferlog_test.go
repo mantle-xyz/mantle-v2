@@ -12,56 +12,27 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// TestExternal_NoEIP7708Log is an L2-fork isolation test: the Mantle L2,
-// which runs Arsia at genesis with AmsterdamTime left nil, must NOT emit an
-// EIP-7708 system Transfer log for an ordinary ETH value transfer. This is a
-// purely L2-internal fork property — the EIP-7708 log gate reads the L2's own
-// chain rules, so the L1 fork state cannot influence it. The L1 running
-// Glamsterdam (Amsterdam EL) is the environment these tests execute in, not the
-// discriminator; no assertion here is L1-sensitive.
+// TestExternal_NoEIP7708Log verifies the Mantle L2 stays on Arsia log rules while
+// consuming a Glamsterdam L1. An ordinary EOA value transfer should emit no
+// EIP-7708 system Transfer log because that log is gated by the L2 Amsterdam fork.
 //
-// MECHANISM. EIP-7708's log is gated on rules.IsAmsterdam in op-geth Transfer():
-//
-//	op-geth core/evm.go:151-152
-//	    if rules.IsAmsterdam && !amount.IsZero() && sender != recipient {
-//	        db.AddLog(types.EthTransferLog(sender, recipient, amount))
-//
-// rules.IsAmsterdam is derived from the L2 chain config, which sets MantleArsiaTime
-// (params/config.go:522, IsMantleArsia) but leaves AmsterdamTime nil (params/config.go:497,
-// IsAmsterdam) — the two fork gates are INDEPENDENT (params/config.go:1010-1011 vs
-// 1082-1083). So on the Arsia L2, rules.IsAmsterdam == false and the value transfer emits
-// NO system log, whereas an L2 that had (wrongly) adopted Amsterdam would emit exactly one
-// Transfer log with:
-//   - Address    = params.SystemAddress (0xffff...fffe)          (log.go:73)
-//   - Topics[0]  = params.EthTransferLogEvent
-//     = keccak256("Transfer(address,address,uint256)")
-//     = 0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef  (log.go:74-75, protocol_params.go:243)
-//
-// DISCRIMINATION. A plain value transfer to a code-less EOA runs no contract code,
-// so on Arsia its receipt carries ZERO logs. The Amsterdam value would be ONE 7708
-// Transfer log at the system address. The assertion below scans the receipt for any
-// log bearing that exact (address, topic0) signature and requires none — it flips
-// red the instant the L2 starts producing Amsterdam 7708 logs.
+// The assertion scans for the exact system-address/topic signature and also
+// requires the EOA transfer receipt to have zero logs, so an accidental L2
+// Amsterdam adoption fails immediately.
 func TestExternal_NoEIP7708Log(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()
 
-	// Establish the environment this test CLAIMS to run in. Every assertion below is
-	// L1-independent (the 7708 gate reads the L2's own chain rules), so this does not make the
-	// test discriminating — but the doc comment states the L2 is consuming a Glamsterdam L1, and
-	// an unenforced environment claim is worth no more than the paper it is written on. The
-	// sibling external/output cases (rpcschema, rpcheader, l2output) all wait the same way;
-	// init_test.go's amsterdamOffset is 6s, so this costs essentially nothing.
+	// Establish the Glamsterdam L1 environment; the 7708 discriminator itself is
+	// still the L2 fork gate.
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
 
 	wallet := sys.FunderL2.NewFundedEOA(eth.OneEther)
 
-	// A code-less EOA recipient (well above the precompile range, not a Mantle
-	// 0x42.. predeploy): a value transfer to it runs no code, so any log in the
-	// receipt could only be a protocol-level system log such as EIP-7708's.
+	// A code-less EOA recipient makes any receipt log protocol-generated.
 	recipient := common.HexToAddress("0x00000000000000000000000000000000C0FFEE07")
 
 	receipt, err := txplan.NewPlannedTx(txplan.Combine(

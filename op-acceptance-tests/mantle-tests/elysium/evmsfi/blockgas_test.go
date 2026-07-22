@@ -22,48 +22,12 @@ import (
 // 4800, so the full 4800 refund is applied uncapped.
 const eip3529ClearRefund = uint64(4800)
 
-// TestL2BlockGas_RefundReducesBlockGasUsed verifies an L2-internal Arsia property:
-// the Mantle L2 keeps pre-Amsterdam block-level gas accounting and has NOT adopted
-// EIP-7778 "block-level gas accounting". This accounting is gated on the *L2* fork
-// (Arsia vs Amsterdam) in op-geth core/state_transition.go — it is not L1-sensitive
-// and would hold under any L1. The L1 runs Glamsterdam here only as the surrounding
-// environment, not as the discriminator.
+// TestL2BlockGas_RefundReducesBlockGasUsed verifies an L2-internal Arsia property: storage-clear
+// refunds are still credited back to the block gas pool while the L1 runs Glamsterdam.
 //
-// WHAT EIP-7778 CHANGES (verified in op-geth, sibling clone, branch mantle-elysium):
-//   - The whole feature is the fork-gated branch in core/state_transition.go:991-997.
-//     Pre-Amsterdam (Arsia) returns `st.gasRemaining.RegularGas` to the block gas
-//     pool — and that value has the refund folded in (the refund was added to
-//     gasRemaining at core/state_transition.go:960 via st.gasRemaining.Refund).
-//     Post-Amsterdam (EIP-7778) returns `st.initialBudget.RegularGas - peakGasUsed`,
-//     where peakGasUsed (core/state_transition.go:955) EXCLUDES the refund.
-//   - core/gaspool.go documents the two regimes on ReturnGas (gaspool.go:52-69):
-//     pre-Amsterdam `returned = purchased - remaining` (refund included),
-//     post-Amsterdam `returned = purchased - gasUsed` (refund excluded).
-//   - The block header GasUsed is gp.Used() (= initial - remaining),
-//     core/state_processor.go:137. The receipt CumulativeGasUsed is
-//     gp.CumulativeUsed() (= sum of per-tx gasUsed, refund-reduced in BOTH forks),
-//     core/state_processor.go:207 + gaspool.go:64.
-//
-// THE L2-FORK DISCRIMINATOR:
-//   - Arsia (what the L2 keeps): the refund is credited back to the block gas
-//     pool, so gp.Used() == gp.CumulativeUsed(). Observably, for the block that
-//     contains a refunding transaction:
-//     block.header.GasUsed == last-receipt.CumulativeGasUsed   (EXACTLY EQUAL).
-//   - EIP-7778 (Amsterdam, what the L2 has NOT adopted): the refund is NOT credited
-//     to the pool, so the block gas used is HIGHER by the total refund:
-//     block.header.GasUsed == last-receipt.CumulativeGasUsed + totalRefund.
-//     With our single-slot clear the gap is exactly eip3529ClearRefund = 4800.
-//
-// So the assertion `blockGasUsed == cumulative` PASSES on an Arsia L2 and FAILS on
-// an EIP-7778 L2 (it would be short by 4800) — the L2 fork is the discriminator,
-// not the L1. This identity is refund-independent in magnitude — it holds for the
-// whole block regardless of tx count — but it only *discriminates* when the block
-// actually contains a refund, which we guarantee by construction and confirm by
-// observing the storage slot go 1 -> 0.
-//
-// COVERAGE: this is the EIP-7778 block-level gas accounting sub-case. The other gas
-// sub-cases live in sibling packages: EIP-7976 calldata floor (evmgas), EIP-7981
-// access-list repricing (evmaccesslist), EIP-8024 opcodes (evmopcodes).
+// The probe creates a real EIP-3529 refund by clearing one non-zero storage slot. On Arsia,
+// block GasUsed equals the block's cumulative receipt gas. Under EIP-7778 block-level accounting,
+// the refund would be excluded from the pool and block GasUsed would be higher by 4800.
 func runBlockGasRefundCredited(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)

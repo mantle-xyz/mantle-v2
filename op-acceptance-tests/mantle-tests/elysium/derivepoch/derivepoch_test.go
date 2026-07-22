@@ -11,42 +11,19 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 )
 
-// minCrossedEpochs is how many ADDITIONAL consecutive post-Amsterdam L1 origins the
-// L2 safe chain must derive across after the Glamsterdam activation boundary.
-//
-// In OP-Stack derivation one L1 block == one L2 sequencing epoch: op-node fetches an
-// L1 origin's receipts only when the L1 origin changes (attributes.go: the first block
-// of an epoch is where l2Parent.L1Origin.Number != epoch.Number), and it advances the
-// origin one block at a time — SafeL2.L1Origin.Number therefore increases by exactly 0
-// or 1 from one L2 safe block to the next, never skipping an L1 block. Requiring the
-// safe head's L1Origin.Number to advance by >= 4 proves the derivation window keeps
-// stepping forward across MANY post-Glamsterdam L1 epochs rather than stalling at the
-// boundary.
+// minCrossedEpochs is the number of additional post-Amsterdam L1 origins the
+// safe chain must derive across. OP-Stack derivation advances origins one L1
+// block at a time, so this catches boundary stalls and skipped epochs.
 const minCrossedEpochs = uint64(4)
 
 // TestDerivation_L1EpochCross_PostUpgrade proves the Mantle L2 keeps deriving
-// correctly across the L1 Glamsterdam (Amsterdam EL) boundary. L1 is a vanilla
-// subprocess Amsterdam geth (DEVSTACK_L1EL_KIND=geth) driven by auto-FakePoS; the L2
-// stays on its own Mantle fork rules (Elysium, which implies Arsia is active).
+// correctly across multiple post-Amsterdam L1 origins while the L2 stays on
+// Mantle Elysium/Arsia rules.
 //
-// After L1 Amsterdam activates, the test waits (no manual L1/sequencer driving) until
-// the L2 SAFE head's L1 origin has crossed >= minCrossedEpochs consecutive
-// post-Amsterdam L1 blocks, then walks the safe chain block-by-block and asserts:
-//
-//   - No derivation gap on the L1 axis: consecutive L2 safe blocks advance their
-//     L1Origin.Number by exactly 0 or 1 (op-node consumes L1 epochs one at a time and
-//     never skips an L1 block).
-//   - No gap on the L2 axis: safe block numbers are contiguous and hash-linked
-//     (parentHash chains), i.e. the safe chain advances monotonically with no hole.
-//   - Every L1 origin in the crossed window [startOrigin, endOrigin] is post-Amsterdam
-//     via l1Config.IsAmsterdam AND matches the canonical L1 block hash at that height,
-//     so the L2 tracked the real post-Glamsterdam L1 chain.
-//   - Every integer origin in the window actually appears on the safe chain — a real
-//     "cross" of many epochs, not a single jump that silently skipped epochs.
-//
-// Discriminating: a boundary-stall (derivation wedged at the first Amsterdam origin),
-// a skipped L1 epoch, or an L2 safe-chain hole all fail here; only a pipeline that
-// derives every consecutive post-Glamsterdam L1 epoch in order passes.
+// After activation it waits for the safe head to cross several consecutive L1
+// origins, then walks the safe chain to prove the L1 origin axis advances by 0
+// or 1, L2 blocks are contiguous and hash-linked, and every origin in the window
+// matches the canonical post-Amsterdam L1 block.
 func TestDerivation_L1EpochCross_PostUpgrade(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -88,8 +65,7 @@ func TestDerivation_L1EpochCross_PostUpgrade(gt *testing.T) {
 	startOrigin := startSafe.L1Origin.Number
 	targetOrigin := startOrigin + minCrossedEpochs
 
-	// Step 2: wait until the safe head has crossed >= minCrossedEpochs more consecutive
-	// post-Amsterdam origins (SafeL2.L1Origin.Number advanced by >= minCrossedEpochs).
+	// Step 2: wait until the safe head has crossed several post-Amsterdam origins.
 	var endSafe eth.L2BlockRef
 	require.Eventually(func() bool {
 		endSafe = sys.L2CL.SyncStatus().SafeL2
@@ -105,8 +81,7 @@ func TestDerivation_L1EpochCross_PostUpgrade(gt *testing.T) {
 	require.GreaterOrEqual(endOrigin-startOrigin, minCrossedEpochs,
 		"L2 safe head must cross >= 4 post-Amsterdam L1 origins")
 
-	// Walk the L2 safe chain block-by-block across the crossed window and prove no gap
-	// on either axis, and that every crossed L1 origin is a real post-Amsterdam block.
+	// Walk the safe chain and prove no L1-origin or L2-block gap.
 	seenOrigins := make(map[uint64]bool)
 	prev := startSafe
 	seenOrigins[prev.L1Origin.Number] = true

@@ -30,45 +30,14 @@ import (
 // frames come out is the per-frame cap chosen in buildChannel.
 const channelTargetSize = uint64(100_000)
 
-// TestDerivation_ChannelTimeout_PostUpgrade pins the L1 -> L2 derivation channel-timeout
-// deadline across the L1 Glamsterdam (Amsterdam EL) boundary: BOTH the block count and the
-// accept/drop behaviour at that count must be unchanged by the upgrade.
+// TestDerivation_ChannelTimeout_PostUpgrade pins channel-timeout behaviour across the L1
+// Glamsterdam boundary. The test stops the real batcher, posts frames from the batcher's key, and
+// advances L1 one block at a time so every frame lands at a known height.
 //
-// THE DEADLINE. op-node's channel bank stamps a channel with the L1 block that carried its
-// FIRST frame (OpenBlockNumber) and ignores any later frame once
-// `OpenBlockNumber + ChannelTimeout < origin.Number` (channel_bank.go IngestFrame/Read).
-// Post-Granite ChannelTimeout is the protocol constant 50 (params.ChannelTimeoutGranite,
-// returned by ChainSpec.ChannelTimeout) — it is NOT configurable, so the deadline can only be
-// exercised by genuinely spreading a channel's frames across 50+ L1 blocks.
-//
-// WHY THIS IS AN ON-CHAIN TEST AND NOT A CONSTANT CHECK. Asserting `ChannelTimeout(preT) ==
-// ChannelTimeout(postT)` would be a tautology: the function only branches on Granite, so it
-// cannot observe Amsterdam. The only way for the L1 upgrade to move this deadline is through
-// what actually happens in the pipeline, so the test drives real frames onto a real L1 that
-// crosses the fork and observes derivation's verdict.
-//
-// SETUP. The real op-batcher is STOPPED, so every byte of batch data on L1 is posted by this
-// test, from the batcher's own key (derivation only accepts inbox txs from that address).
-// L1 is produced one block at a time via the TestSequencer, so each frame lands in an exact,
-// known L1 block.
-//
-// THE DISCRIMINATING PAIR — two channels built and posted identically, differing ONLY by one
-// L1 block of spread:
-//
-//	CHANNEL A (deadline-exact, straddles the upgrade): first frame in L1 block N (PRE-Amsterdam),
-//	remaining frames in block N+50 (POST-Amsterdam). N+50 is the last block that satisfies
-//	`open+timeout >= origin`, so the channel must be ACCEPTED and its L2 blocks must reach the
-//	safe head — matched BY HASH, so it proves those exact blocks were reconstructed from these
-//	frames and not merely that the safe height moved.
-//
-//	CHANNEL B (one block late, entirely post-upgrade): first frame in block M, remaining frames
-//	in block M+51. That is one past the deadline, so the channel must be DROPPED and its L2
-//	blocks must NOT become safe.
-//
-// A single test asserting only A would pass on a system that never times out anything; one
-// asserting only B would pass on a system where derivation is simply broken. Together they pin
-// the deadline to the exact block: accepted at +50, dropped at +51, with the Glamsterdam
-// activation sitting inside channel A's window.
+// Two otherwise-identical channels discriminate the deadline: one has its final frame exactly at
+// open+timeout and must become safe by hash; the other is one L1 block late and must not become
+// safe. This covers the pipeline behaviour directly instead of re-checking the ChannelTimeout
+// constant.
 func TestDerivation_ChannelTimeout_PostUpgrade(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleSingleChainMultiNodeWithTestSeq(t)

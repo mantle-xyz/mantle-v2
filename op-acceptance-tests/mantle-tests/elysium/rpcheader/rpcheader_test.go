@@ -4,44 +4,21 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/testhelpers"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-// TestL2RPCHeader_OmitsNewFields verifies an L2-Arsia header property: the Mantle
-// L2 header never carries the Amsterdam/Glamsterdam fields "blockAccessListHash"
-// (EIP-7928) and "slotNumber" (EIP-7843). This is a property of the L2 staying on
-// Arsia rules, NOT of the L1 fork. The L1 runs Glamsterdam here only as the
-// environment the L2 is produced against, not as the thing being defended against:
-// every assertion below would pass under any L1, so the L1 is the environment, not
-// the discriminator.
+// TestL2RPCHeader_OmitsNewFields verifies that the L2 RPC header stays on Arsia schema while the
+// L1 runs Glamsterdam. The L1 control proves this run really exposes Amsterdam fields; the L2
+// checks then require slotNumber to be absent from raw JSON and both Amsterdam fields to be nil on
+// the typed header.
 //
-// The two fields are NOT guarded equally well, and it is worth being precise about which
-// assertion actually carries which one:
-//
-//   - slotNumber is genuinely falsifiable from the L2 side. op-geth's RPCMarshalHeader emits
-//     the key iff head.SlotNumber != nil, so both the raw-JSON NotContains and the typed
-//     nil-check would go red if the L2 ever set it.
-//
-//   - blockAccessListHash is NOT falsifiable from the L2 side by either check. op-geth's
-//     RPCMarshalHeader has no branch for that key at any value, and the typed value is
-//     PARSED FROM THAT SAME JSON (sources.RPCHeader -> CreateGethHeader), so a set field
-//     would be invisible to both. An earlier version of this comment called the typed check
-//     "the ONLY way to catch EIP-7928 adoption"; that was wrong for exactly this reason —
-//     the typed check inherits the serializer's blindness rather than escaping it.
-//     What would actually catch a BAL-bearing L2 header is the eth client's blockhash
-//     verification: TrustRPC is false, so the header is re-hashed from its RLP preimage,
-//     which DOES include the BAL field, and the fetch itself fails.
-//
-// So the nil-checks alone would stay green in a stack that never implements these fields.
-// requireGlamsterdamL1Control below is what rules that out: it requires the L1 in this same
-// run, read through this same client path, to show both fields NON-nil.
-//
-// (Marshaling a *types.Header with json.Marshal is NOT a substitute for the raw check:
-// the generated tags carry no `omitempty`, so a nil field serializes as `...:null` and
-// would spuriously "contain" the keys.)
+// blockAccessListHash is not raw-JSON-falsifiable because op-geth's RPCMarshalHeader has no branch
+// for that key. If it leaked into the block preimage, the untrusted eth client path should fail
+// hash verification while fetching the typed header.
 func TestL2RPCHeader_OmitsNewFields(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -53,7 +30,7 @@ func TestL2RPCHeader_OmitsNewFields(gt *testing.T) {
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 	l1Ref := sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
-	requireGlamsterdamL1Control(t, sys, l1Ref)
+	testhelpers.RequireGlamsterdamL1Control(t, sys, l1Ref)
 
 	// Advance the L2 a couple of blocks past the Amsterdam boundary so "latest"
 	// resolves to a block whose production overlapped a live Glamsterdam L1.

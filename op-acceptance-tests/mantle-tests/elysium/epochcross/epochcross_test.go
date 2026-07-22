@@ -11,28 +11,13 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 )
 
-// TestBoundary_ActivationAtL1EpochBoundary verifies the L2 derives correctly across the Amsterdam
-// (Glamsterdam) activation L1 block, in the environment where that activation block also starts a
-// beacon EPOCH. OP-Stack derivation advances its L1 origin one block at a time and does not branch
-// on beacon-epoch position, so nothing epoch-specific is EXPECTED here. The epoch boundary is the
-// environment, not the discriminator: this is a derive-across-activation check that runs at a
-// boundary, and its value over TestBoundary_L1ActivationBlock is precisely that environment.
+// TestBoundary_ActivationAtL1EpochBoundary verifies derivation across the
+// Amsterdam activation block when that L1 block also starts a beacon epoch.
 //
-// Because the environment IS the point, the environment is asserted rather than assumed: the
-// activation block's own EIP-7843 SlotNumber must be a multiple of SLOTS_PER_EPOCH. init_test.go
-// gets there by arithmetic (192s offset / 6s L1 block time = block 32 = the first slot of epoch 1),
-// and that arithmetic silently breaks if the L1 block time changes or a slot is missed — at which
-// point this test would degrade into a duplicate of TestBoundary_L1ActivationBlock while still
-// passing. The slot assertion makes that degradation loud.
-//
-//   - the activation L1 block is genuinely Glamsterdam (its header carries BAL + SlotNumber);
-//   - that block starts a beacon epoch (SlotNumber % 32 == 0);
-//   - the L2 opens an epoch anchored at that activation block, and that opener is SAFE and anchors
-//     to the genuine activation block BY L1-ORIGIN HASH — op-node derived it from the real
-//     activation block, not from a same-height namesake on a discarded branch.
-//
-// Flips red if derivation stalls or diverges across the activation block, or if the activation
-// block is no longer on an epoch boundary (the environment this case exists to cover).
+// The test asserts the environment instead of trusting offset arithmetic:
+// the activation header must carry BAL/SlotNumber, SlotNumber must be divisible
+// by SLOTS_PER_EPOCH, and the safe L2 epoch opener must anchor to that exact L1
+// block by hash.
 func TestBoundary_ActivationAtL1EpochBoundary(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -62,10 +47,8 @@ func TestBoundary_ActivationAtL1EpochBoundary(gt *testing.T) {
 	require.NotNil(aInfo.Header().BlockAccessListHash, "epoch-boundary activation block must carry a BAL hash")
 	require.NotNil(aInfo.Header().SlotNumber, "epoch-boundary activation block must carry a SlotNumber")
 
-	// ENVIRONMENT GUARD. This case only differs from TestBoundary_L1ActivationBlock by running at a
-	// beacon-epoch boundary, so assert that it actually is one instead of trusting init_test.go's
-	// seconds-to-blocks arithmetic. The block's own EIP-7843 SlotNumber is the authoritative slot,
-	// so this survives an L1 block-time change; it fails on a missed slot, which is the point.
+	// This case only differs from TestBoundary_L1ActivationBlock if activation
+	// really lands on a beacon-epoch boundary.
 	const slotsPerEpoch = 32 // beacon SLOTS_PER_EPOCH
 	activationSlot := *aInfo.Header().SlotNumber
 	require.Zerof(activationSlot%slotsPerEpoch,
@@ -97,9 +80,7 @@ func TestBoundary_ActivationAtL1EpochBoundary(gt *testing.T) {
 	require.Equal(aInfo.Hash(), opener.L1Origin.Hash,
 		"the epoch opener must anchor to the genuine activation L1 block by hash")
 
-	// NOTE: no "opener.Number <= safe head" assertion here. The scan above starts AT the safe head
-	// and walks down, so the opener is at or below it by construction and the safe head only ever
-	// advances — such a check is true unconditionally and proves nothing. The opener's safety comes
-	// from where it was found; its correctness comes from the L1-origin hash equality above.
+	// The reverse scan starts from the safe head, so the opener's safety comes
+	// from where it was found; the L1-origin hash proves correctness.
 	t.Log("L2 derived across an epoch-boundary activation", "activation", activation, "epochOpenerL2", opener.Number)
 }

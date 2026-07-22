@@ -23,47 +23,14 @@ import (
 // blobSink is an arbitrary destination for the probe blob txs this test submits itself.
 var blobSink = common.HexToAddress("0x00000000000000000000000000000000CE110001")
 
-// TestDerivation_BlobCellProofs proves that the blob DA path still round-trips into byte-identical
-// safe L2 blocks when the blobs are wrapped in EIP-7594 CELL PROOFS (BlobTxSidecar Version1, 128
-// proofs per blob) on a Glamsterdam (Amsterdam EL) L1.
+// TestDerivation_BlobCellProofs verifies the blob DA path when txmgr builds EIP-7594 cell-proof
+// sidecars. Unlike TestDerivation_BlobPathIntact, this package sets CellProofTime=0 so the batcher
+// uses the Version1 sidecar path a Fusaka+ network expects.
 //
-// WHY THIS IS NOT A DUPLICATE OF TestDerivation_BlobPathIntact.
-// That suite leaves the txmgr cell-proof switch at its default (math.MaxUint64 = never), so its
-// batcher crafts LEGACY Version0 sidecars. This suite sets CellProofTime=0, so every batcher blob
-// tx is built through txmgr's cell-proof branch — the sidecar shape a Fusaka+ network produces.
-//
-// WHAT IS ASSERTED, AND WHAT THE L1 CAN AND CANNOT TELL US.
-// Sidecars are stripped from a blob tx once mined, and geth normalizes a Version0 sidecar into a
-// Version1 one on ingress (core/types.BlobTxSidecar.ToV1 recomputes the cell proofs), so a mined
-// blob tx cannot tell us which version its sender built — post-Osaka this L1 accepts BOTH, which
-// is exactly why the default-configured batcher works today. So the test does not pretend to read
-// the batcher's version off-chain. It asserts the two halves that are genuinely observable:
-//
-//	CELL-PROOF SIDECARS ARE WELL-FORMED AND ACCEPTED BY A GLAMSTERDAM L1
-//	 1. Osaka is active on the L1 — cell proofs only exist post-Osaka.
-//	 2. txmgr.MakeSidecar(blobs, cellProofs=true), the exact call the batcher makes under
-//	    CellProofTime=0, yields Version1 with exactly 128 proofs per blob (not a legacy proof
-//	    relabelled).
-//	 3. That exact sidecar, submitted as a real blob tx, is mined SUCCESSFULLY in a post-Amsterdam
-//	    L1 block. The EL verifies every cell proof before inclusion, so acceptance is proof the
-//	    Glamsterdam L1 still validates EIP-7594 sidecars.
-//	 4. A legacy Version0 sidecar is ALSO still accepted (geth's ToV1 conversion). This pins the
-//	    tolerance the default batcher config silently relies on: if a future L1 starts rejecting
-//	    legacy sidecars, this flips red and Mantle must ship --txmgr.cell-proof-time.
-//
-//	THE BATCHER'S CELL-PROOF BLOBS STILL DECODE INTO SAFE L2 BLOCKS
-//	 5. The BATCHER's own tx (To == BatchInboxAddress) appears on a post-Amsterdam L1 block as a
-//	    type-3 blob tx carrying versioned hashes, with a successful L1 receipt.
-//	 6. A specific L2 block (number AND hash) whose L1 origin is at/after that block reaches the
-//	    SAFE head. The batcher posts ONLY blobs, so that block can become safe solely by fetching
-//	    those blobs, checking commitments against the versioned hashes and decoding the batches;
-//	    matching the HASH proves the reconstruction is byte-identical, not just that the safe
-//	    height moved (a divergent re-derivation would satisfy a height-only wait).
-//	 7. The L1 origin the safe block references is itself post-Amsterdam and carries the
-//	    Amsterdam-only header fields, so the round trip genuinely spanned Glamsterdam.
-//
-// Meanwhile the L2 stays on its own Mantle fork rules (asserted via IsMantleForkActive) — it
-// consumes a Glamsterdam L1 without adopting Amsterdam.
+// The L1 cannot reveal the sender's original sidecar version after mining, so the test checks only
+// observable facts: locally built Version1 sidecars have 128 proofs per blob and are accepted by
+// the Glamsterdam L1; legacy Version0 sidecars remain accepted; and the batcher's own blob batch
+// still re-derives a specific L2 block to the safe head by number and hash.
 func TestDerivation_BlobCellProofs(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)

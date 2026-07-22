@@ -29,42 +29,14 @@ const postBoundaryMargin = uint64(8)
 //     the L2 epoch this L1 block opened, forcing a re-derivation).
 const reorgDepth = uint64(4)
 
-// TestL1Reorg_AtEpochBoundary_PostUpgrade drives the L1 WELL PAST the Amsterdam activation
-// while keeping the L2 in step, then reorgs a recent POST-Amsterdam L1 block that opens an
-// L2 sequencing epoch. In OP-Stack derivation each L1 block opens a new L2 epoch (the first
-// L2 block whose L1Origin advances to that L1 block), so any post-Amsterdam L1 block above
-// the finalized horizon is a valid epoch-boundary reorg target.
+// TestL1Reorg_AtEpochBoundary_PostUpgrade reorgs a recent post-Amsterdam L1 block that opened an
+// L2 sequencing epoch. The fork point and replacement block are both post-upgrade, so this
+// complements the reorg package's boundary-straddling case.
 //
-// SCOPE / HONESTY: the behavior actually verified here — L1-reorg detection, epoch
-// re-derivation onto the new canonical L1, sequencer non-wedge, and verifier convergence — is
-// L1-fork-INDEPENDENT: it would hold identically whether the L1 runs Glamsterdam or an earlier
-// fork. The Amsterdam L1 is the ENVIRONMENT, not the discriminator. The IsAmsterdam(...) guards
-// below only confirm the reorg lands in post-Amsterdam territory; none of them exercise a
-// Glamsterdam-specific derivation code path, so this test does not "defend against" a
-// Glamsterdam L1 in the way its assertions read. The sibling reorg/ package is the stronger,
-// more Glamsterdam-specific case: its divergence STRADDLES the activation block (a pre-Amsterdam
-// parent forking to a post-Amsterdam child), so it re-derives the fork transition itself. This
-// package's complementary, unique angle is a reorg that lands entirely inside post-Amsterdam
-// territory: target AND fork point both well past the boundary, so the re-derivation never
-// re-crosses the fork transition. (Independent verifier convergence is asserted here too, but
-// it is NOT unique to this package — reorg/ asserts it as well.)
-//
-// The reorg is injected by building a competing chain on the target's POST-Amsterdam parent,
-// so both the old and the new chain around the fork point are entirely post-Amsterdam. It
-// asserts the L1 reorgs at the target height (old and new target block are both Amsterdam),
-// the epoch anchored at that L1 block re-derives onto the NEW canonical L1, the sequencer L2 —
-// which had already derived past the boundary — reorgs its own chain, re-converges onto the
-// new L1, and keeps advancing (no wedge), AND the independent verifier re-derives the same
-// post-reorg safe chain from L1 (same safe block, height and hash).
-//
-// Discriminating (all L1-fork-independent): BOTH nodes must re-derive an L1 epoch across the
-// reorg — the sequencer without wedging and without keeping a stale pre-reorg L1 origin, and
-// the verifier independently converging onto the sequencer's re-derived safe block. A sequencer
-// that forked off alone or kept a stale L1 origin, or a verifier that never re-derived, would
-// fail these checks.
-//
-// This test takes exclusive control of L1 production, so it is the only test in this
-// package: two L1-driving tests cannot share one devstack system.
+// The assertions are L1-fork-independent but important: the sequencer must re-derive the epoch
+// onto the new canonical L1 without wedging or keeping a stale origin, and the verifier must
+// independently converge on the same safe L2 block by height and hash. This package has one test
+// because it takes exclusive control of L1 production.
 func TestL1Reorg_AtEpochBoundary_PostUpgrade(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleSingleChainMultiNodeWithTestSeq(t)

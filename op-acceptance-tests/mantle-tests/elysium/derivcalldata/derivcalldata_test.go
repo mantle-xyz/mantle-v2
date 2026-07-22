@@ -15,44 +15,12 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
-// TestDerivation_CalldataPathIntact is the calldata-DA discriminating test: the Mantle L2's
-// CALLDATA data-availability derivation path must keep working across the L1 Glamsterdam
-// (Amsterdam EL) upgrade.
+// TestDerivation_CalldataPathIntact verifies the calldata DA path while the L1 runs
+// Glamsterdam. The batcher is pinned to calldata, a post-upgrade L2 transfer must become safe by
+// number and hash, and the matching L1 inbox tx must be a non-blob calldata submission.
 //
-// NOTE. This is effectively a SUBSET of batchercalldata's TestBatcher_CalldataCost_After7976
-// and shares a near-identical setup (same external-Glamsterdam-geth L1, same calldata-pinned
-// batcher via init_test.go, same cross-Amsterdam value transfer + ReachedRef-by-hash). This
-// test stops at re-derivation liveness of the calldata DA path; the batchercalldata test goes
-// further by also fetching the inbox tx's L1 receipt to assert it was mined successfully under
-// the raised EIP-7976 floor. Kept as a focused derivation-path check alongside derivblob.
-//
-// SETUP. The L1 EL is an external Glamsterdam geth subprocess (see helpers.go /
-// init_test.go), Amsterdam activates a few blocks after L1 genesis, and the batcher is
-// pinned to DataAvailabilityType=calldata (init_test.go). So the batcher posts its
-// batches as ordinary calldata transactions to the batch-inbox, and op-node must derive
-// the L2 chain from those calldata txs while consuming post-Amsterdam L1 blocks.
-//
-// FLOW / DISCRIMINATION.
-//  1. Drive the L1 across the Amsterdam boundary (WaitForTime(AmsterdamTime)).
-//  2. Submit an L2 value transfer AFTER the boundary, so the L2 block that includes it
-//     is built on a post-Amsterdam L1 origin.
-//  3. Wait for that exact L2 block — matched by NUMBER AND HASH — to reach the SAFE head.
-//     Reaching safe by hash means op-node re-derived the byte-identical block from the
-//     batch the batcher posted to L1 as calldata and re-executed it to the same state
-//     root: a full reconstruction round-trip through the calldata DA path off a
-//     Glamsterdam L1 (a divergent re-derivation at that height fails the hash match).
-//  4. Assert the safe L2 tx block's L1 origin is genuinely post-Amsterdam
-//     (l1Config.IsAmsterdam), so derivation provably advanced past the upgrade.
-//  5. Assert the DA path is genuinely CALLDATA: a recent post-Amsterdam L1 block carries
-//     the batcher's batch-inbox tx as a normal calldata tx — NOT an EIP-4844 (type-3)
-//     blob tx and carrying no blob versioned hashes.
-//
-// This flips red if: the L2 stops advancing to safe after the boundary (derivation
-// broke on a Glamsterdam L1), the re-derived block at that height differs from the one we
-// submitted (reconstruction diverged — caught by the hash match, not just the height), the
-// safe block's L1 origin never crosses Amsterdam, or the batcher's inbox tx is a blob tx
-// rather than calldata (wrong DA path). It is the calldata counterpart to derivblob's
-// blob-DA test.
+// This is the focused derivation counterpart to batchercalldata, which additionally checks L1
+// receipt success and gas coverage under the EIP-7976 calldata floor.
 func TestDerivation_CalldataPathIntact(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
