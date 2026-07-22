@@ -27,6 +27,19 @@ import (
 //     slotNumber is the ONLY conditional key that stays nil on Arsia → omitted.
 //   - RPCMarshalBlock additions: size, transactions, uncles, withdrawals
 //     (block.Withdrawals() != nil since Canyon).
+//
+// MAINTENANCE CONTRACT. This list is a hand-copied SNAPSHOT of op-geth's marshalling code, so it
+// goes stale by design whenever op-geth changes what it emits — and the test cannot tell a real
+// schema regression from a legitimate op-geth upgrade. When it fails, triage in this order:
+//
+//  1. Did the Mantle op-geth dependency change? Re-read RPCMarshalHeader / RPCMarshalBlock at the
+//     new version. If the new/removed key is legitimately emitted on the ARSIA path, update this
+//     list AND the line references above — that is a dependency-bump chore, not a bug.
+//  2. Otherwise the L2 really did change its external schema, which is what this guard exists to
+//     catch. Do NOT "fix" it by adding the key here.
+//
+// Amsterdam keys (blockAccessListHash, slotNumber) never belong in this list under either branch:
+// the L2 stays on Arsia, so their appearance is always case 2.
 var arsiaBlockKeys = []string{
 	// RPCMarshalHeader, unconditional.
 	"number", "hash", "parentHash", "nonce", "mixHash", "sha3Uncles",

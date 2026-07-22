@@ -1,6 +1,7 @@
 package batchercalldata
 
 import (
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/devstackenv"
 	"testing"
 
 	bss "github.com/ethereum-optimism/optimism/op-batcher/batcher"
@@ -18,7 +19,7 @@ import (
 const amsterdamOffset = uint64(30)
 
 func TestMain(m *testing.M) {
-	resetEnvVars := configureDevstackEnvVars()
+	resetEnvVars := devstackenv.Configure()
 	defer resetEnvVars()
 
 	presets.DoMain(m, stack.MakeCommon(stack.Combine[*sysgo.Orchestrator](

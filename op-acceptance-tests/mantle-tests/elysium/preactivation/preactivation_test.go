@@ -159,8 +159,9 @@ func TestBoundary_L1PreActivationBlock(gt *testing.T) {
 		"the located L2 block's L1 origin must be the pre-activation block number")
 	require.Equal(preHash, l2AtPre.L1Origin.Hash,
 		"the located L2 block's L1 origin hash must be the pre-activation block hash (same block, not a namesake)")
-	require.LessOrEqual(l2AtPre.Number, safeHead.Number,
-		"the pre-activation-origin L2 block must be safe (at or below the safe head)")
+	// NOTE: no "l2AtPre.Number <= safeHead.Number" assertion. The scan above starts AT the safe head
+	// and walks down, so that holds by construction and would pass unconditionally. The block's
+	// safety comes from where it was found, not from re-checking the bound.
 	t.Log("L2 block derived from the pre-Amsterdam L1 origin",
 		"l2", l2AtPre.Number, "l1Origin", l2AtPre.L1Origin.Number)
 }

@@ -1,6 +1,7 @@
 package derivepoch
 
 import (
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/devstackenv"
 	"testing"
 
 	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
@@ -11,7 +12,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	resetEnvVars := configureDevstackEnvVars()
+	resetEnvVars := devstackenv.Configure()
 	defer resetEnvVars()
 
 	// Amsterdam activates a few seconds into the L1 chain (offset is SECONDS, not

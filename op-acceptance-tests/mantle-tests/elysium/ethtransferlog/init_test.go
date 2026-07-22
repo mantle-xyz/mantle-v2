@@ -1,6 +1,7 @@
 package ethtransferlog
 
 import (
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/devstackenv"
 	"testing"
 
 	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
@@ -16,7 +17,7 @@ import (
 const amsterdamOffset = uint64(6)
 
 func TestMain(m *testing.M) {
-	resetEnvVars := configureDevstackEnvVars()
+	resetEnvVars := devstackenv.Configure()
 	defer resetEnvVars()
 
 	presets.DoMain(m, stack.MakeCommon(stack.Combine[*sysgo.Orchestrator](

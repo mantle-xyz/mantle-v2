@@ -31,12 +31,12 @@ import (
 //     finalizing genuinely Glamsterdam blocks, not just pre-fork ones;
 //  4. waits until the L2 FinalizedL2 head has advanced past the baseline AND its
 //     L1 origin is a post-Amsterdam L1 block, then asserts:
-//       (a) the L1 origin of the finalized L2 block is post-Amsterdam (fetched
-//           and re-checked with IsAmsterdam + Amsterdam header fields), proving
-//           op-node finalized L2 blocks derived from Glamsterdam L1 data;
-//       (b) FinalizedL2.L1Origin.Number <= the current L1 FINALIZED head number,
-//           proving L2 finality is genuinely gated by L1 finality and never runs
-//           ahead of it.
+//     (a) the L1 origin of the finalized L2 block is post-Amsterdam (fetched
+//     and re-checked with IsAmsterdam + Amsterdam header fields), proving
+//     op-node finalized L2 blocks derived from Glamsterdam L1 data;
+//     (b) FinalizedL2.L1Origin.Number <= the current L1 FINALIZED head number,
+//     proving L2 finality is genuinely gated by L1 finality and never runs
+//     ahead of it.
 //
 // Discriminating: L2 finality must track L1 finality of post-Glamsterdam blocks.
 //   - A stall at the boundary (op-node unable to consume Amsterdam L1 headers for

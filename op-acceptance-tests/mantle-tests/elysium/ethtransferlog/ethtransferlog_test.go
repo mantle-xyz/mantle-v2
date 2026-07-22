@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// TestL2EVM_NoEIP7708TransferLog is an L2-fork isolation test: the Mantle L2,
+// TestExternal_NoEIP7708Log is an L2-fork isolation test: the Mantle L2,
 // which runs Arsia at genesis with AmsterdamTime left nil, must NOT emit an
 // EIP-7708 system Transfer log for an ordinary ETH value transfer. This is a
 // purely L2-internal fork property — the EIP-7708 log gate reads the L2's own
@@ -42,10 +42,20 @@ import (
 // Transfer log at the system address. The assertion below scans the receipt for any
 // log bearing that exact (address, topic0) signature and requires none — it flips
 // red the instant the L2 starts producing Amsterdam 7708 logs.
-func TestL2EVM_NoEIP7708TransferLog(gt *testing.T) {
+func TestExternal_NoEIP7708Log(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()
+
+	// Establish the environment this test CLAIMS to run in. Every assertion below is
+	// L1-independent (the 7708 gate reads the L2's own chain rules), so this does not make the
+	// test discriminating — but the doc comment states the L2 is consuming a Glamsterdam L1, and
+	// an unenforced environment claim is worth no more than the paper it is written on. The
+	// sibling external/output cases (rpcschema, rpcheader, l2output) all wait the same way;
+	// init_test.go's amsterdamOffset is 6s, so this costs essentially nothing.
+	l1Config := sys.L1Network.Escape().ChainConfig()
+	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
+	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
 
 	wallet := sys.FunderL2.NewFundedEOA(eth.OneEther)
 
