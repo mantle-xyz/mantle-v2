@@ -5,6 +5,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
@@ -43,7 +44,7 @@ func TestExternal_L2RPCSchemaStable(gt *testing.T) {
 	// we inspect is genuinely produced while consuming a Glamsterdam L1.
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 
 	// Advance the L2 a couple blocks past the boundary so "latest" resolves to a
 	// block whose production overlapped a live Glamsterdam L1.

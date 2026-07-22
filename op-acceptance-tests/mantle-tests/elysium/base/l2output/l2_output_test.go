@@ -18,8 +18,7 @@ import (
 func l2BlockUnderGlamsterdamL1(t devtest.T, sys *presets.MantleMinimal) eth.BlockInfo {
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	t.Require().NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
-	l1Ref := sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
-	testhelpers.RequireGlamsterdamL1Control(t, sys, l1Ref)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 
 	start := sys.L2EL.BlockRefByLabel(eth.Unsafe).Number
 	return sys.L2EL.WaitForUnsafe(func(bi eth.BlockInfo) (bool, error) {

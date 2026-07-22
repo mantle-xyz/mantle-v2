@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
@@ -34,7 +35,7 @@ func TestBoundary_L1ActivationBlock(gt *testing.T) {
 
 	// Wait for the L1 to reach/cross the Amsterdam activation time.
 	t.Log("Waiting for L1 Amsterdam to activate")
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 	t.Log("L1 Amsterdam activated")
 
 	// Find the first block for which IsAmsterdam(num, time) holds.

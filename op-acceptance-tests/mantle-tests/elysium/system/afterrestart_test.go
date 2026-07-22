@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
@@ -44,7 +45,7 @@ func runL1GlamsterdamAfterRestart(gt *testing.T) {
 	}
 
 	// 1) Wait for the L1 to activate Amsterdam (Glamsterdam EL).
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 	logger.Info("L1 Amsterdam activated")
 
 	// 2) Let the L2 genuinely derive across the boundary: wait for a non-genesis safe head

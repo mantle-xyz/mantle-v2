@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
@@ -37,7 +38,7 @@ func TestBoundary_SequencerActiveAcrossUpgrade(gt *testing.T) {
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 
 	// 1) Cross Amsterdam and locate the activation L1 block A (first post-Amsterdam L1 block).
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 	l1Head := sys.L1EL.BlockRefByLabel(eth.Unsafe).Number
 	var activation uint64
 	for n := uint64(1); n <= l1Head; n++ {

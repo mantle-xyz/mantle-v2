@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
@@ -31,7 +32,7 @@ func TestDerivation_LegalNewFieldHeader_NoAttributePollution(gt *testing.T) {
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 
 	// Cross Amsterdam and wait for the L2 unsafe origin to cross it too, then build a few more.
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 	require.Eventually(func() bool {
 		o := sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number
 		r := sys.L1EL.BlockRefByNumber(o)

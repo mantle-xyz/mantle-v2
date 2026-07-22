@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
@@ -23,7 +24,7 @@ func TestDerivation_AcrossL1Upgrade(gt *testing.T) {
 	t.Require().NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 
 	t.Log("Waiting for L1 Amsterdam to activate")
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 	t.Log("L1 Amsterdam activated")
 
 	l2BlockTime := time.Duration(rollupCfg.BlockTime) * time.Second

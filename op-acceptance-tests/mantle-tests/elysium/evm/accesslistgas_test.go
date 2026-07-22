@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/dsl"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
@@ -45,7 +46,7 @@ func runAccessListGasStaysArsia(gt *testing.T) {
 	// Establish the Glamsterdam L1 environment; pricing is still gated by the L2 fork.
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 
 	wallet := sys.FunderL2.NewFundedEOA(eth.OneEther)
 

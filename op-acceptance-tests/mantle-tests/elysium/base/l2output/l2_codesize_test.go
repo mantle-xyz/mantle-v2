@@ -3,6 +3,7 @@ package l2output
 import (
 	"testing"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
@@ -43,7 +44,7 @@ func TestL2CodeSizeStillOldLimit(gt *testing.T) {
 
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 
 	wallet := sys.FunderL2.NewFundedEOA(eth.OneEther)
 

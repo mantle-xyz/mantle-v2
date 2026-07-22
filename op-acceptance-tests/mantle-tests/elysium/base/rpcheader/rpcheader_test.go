@@ -29,8 +29,7 @@ func TestL2RPCHeader_OmitsNewFields(gt *testing.T) {
 	// inspect is genuinely produced while consuming a Glamsterdam L1.
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
-	l1Ref := sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
-	testhelpers.RequireGlamsterdamL1Control(t, sys, l1Ref)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 
 	// Advance the L2 a couple of blocks past the Amsterdam boundary so "latest"
 	// resolves to a block whose production overlapped a live Glamsterdam L1.

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	"github.com/ethereum-optimism/optimism/op-chain-ops/devkeys"
 	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
@@ -50,7 +51,7 @@ func runProposerOutputRootSubmission(gt *testing.T) {
 	t.Log("proposer L1 address", "addr", proposerAddr)
 
 	// 1) Drive the L1 across the Glamsterdam (Amsterdam) boundary.
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 	t.Log("L1 Amsterdam activated")
 
 	// 2) Let the L2 advance well past the boundary so the proposer has post-Amsterdam L2 blocks to

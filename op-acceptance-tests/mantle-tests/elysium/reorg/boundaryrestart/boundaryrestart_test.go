@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
@@ -58,7 +59,7 @@ func TestBoundary_L2RestartDuringL1Upgrade(gt *testing.T) {
 	}
 
 	// 3) Let L1 cross Amsterdam while op-node is down.
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 	logger.Info("L1 crossed Amsterdam while op-node was down")
 
 	// The activation L1 block (first Amsterdam block).

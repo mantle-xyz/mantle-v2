@@ -23,7 +23,7 @@ func TestDeposit_AcrossL1Upgrade(gt *testing.T) {
 	// derived while the L1 genuinely runs Glamsterdam.
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 
 	// The depositor is an L1 EOA that holds native ETH for gas and L1 MNT to bridge.
 	// The same key addresses the depositor's L2 native (MNT) balance.

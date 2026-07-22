@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
@@ -33,7 +34,7 @@ func runBatcherSubmission(gt *testing.T) {
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 
 	// 1) Cross Amsterdam and wait until the L2 origin is post-Amsterdam too.
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 	t.Log("L1 Amsterdam activated")
 	require.Eventually(func() bool {
 		originNum := sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number

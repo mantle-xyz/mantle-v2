@@ -3,6 +3,7 @@ package system
 import (
 	"testing"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
@@ -25,7 +26,7 @@ func runL1GlamsterdamL2ArsiaSmoke(gt *testing.T) {
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.True(sys.L2Chain.IsMantleForkActive(opforks.MantleElysium), "L2 must run with Mantle Elysium active")
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 	t.Log("L1 Amsterdam activated")
 
 	// (2) Record the L2 unsafe/safe heads at the boundary.

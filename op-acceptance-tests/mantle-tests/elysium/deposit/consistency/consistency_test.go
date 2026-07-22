@@ -24,7 +24,7 @@ func TestDeposit_SeqVerifierConsistency_AcrossL1Upgrade(gt *testing.T) {
 	// the L1 genuinely runs Glamsterdam.
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 
 	// Bridge MNT from the Glamsterdam L1 to L2 (same flow as the single-node deposit test).
 	depositAmount := eth.GWei(1_000_000)

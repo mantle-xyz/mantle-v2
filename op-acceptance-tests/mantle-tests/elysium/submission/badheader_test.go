@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
@@ -125,7 +126,7 @@ func TestDerivation_MaliciousL1Header_Rejected(gt *testing.T) {
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 
 	// Cross Amsterdam so the header op-node validates is a genuine Glamsterdam header.
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 	require.Eventually(func() bool {
 		h := sys.L1EL.BlockRefByLabel(eth.Unsafe)
 		if h.Number < 3 {

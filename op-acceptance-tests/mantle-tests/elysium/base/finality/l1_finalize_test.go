@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
@@ -36,7 +37,7 @@ func TestL1Finalize_PostUpgrade(gt *testing.T) {
 
 	// (1) Wait for the L1 to activate Amsterdam (Glamsterdam EL).
 	t.Log("Waiting for L1 Amsterdam to activate")
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 	t.Log("L1 Amsterdam activated")
 
 	// (2) Record the L2 finalized head at the boundary as a baseline.
