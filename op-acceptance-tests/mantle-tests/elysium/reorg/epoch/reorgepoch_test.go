@@ -5,13 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/l1drive"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
-	"github.com/ethereum-optimism/optimism/op-devstack/stack"
-	"github.com/ethereum-optimism/optimism/op-devstack/stack/match"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
-	"github.com/ethereum-optimism/optimism/op-test-sequencer/sequencer/seqtypes"
-	"github.com/ethereum/go-ethereum/common"
 )
 
 // postBoundaryMargin keeps the target and fork parent comfortably post-Amsterdam.
@@ -31,51 +28,11 @@ func TestL1Reorg_AtEpochBoundary_PostUpgrade(gt *testing.T) {
 	sys := presets.NewMantleSingleChainMultiNodeWithTestSeq(t)
 	require := t.Require()
 	logger := t.Logger()
-	ctx := t.Ctx()
 
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 
-	ts := sys.TestSequencer.Escape().ControlAPI(sys.L1Network.ChainID())
-	cl := sys.L1Network.Escape().L1CLNode(match.FirstL1CL)
-
-	sys.L1Network.WaitForBlock()
-
-	// Manual L1 production lets the L2 origin catch up between produced blocks.
-	sys.ControlPlane.FakePoSState(cl.ID(), stack.Stop)
-
-	// require.NoError inside Eventually would fail only the polling goroutine.
-	// Record production errors here and assert them from the test goroutine.
-	var driveErr error
-
-	// driveL1InStep produces one L1 block, then advances the clock until the L2 unsafe
-	// origin catches up to the new L1 head. Only call this from the test goroutine.
-	driveL1InStep := func() {
-		require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: common.Hash{}}))
-		require.NoError(ts.Next(ctx))
-		require.Eventually(func() bool {
-			sys.AdvanceTime(2 * time.Second)
-			l1head := sys.L1EL.BlockRefByLabel(eth.Unsafe).Number
-			l2origin := sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number
-			return l1head-l2origin <= 2
-		}, 60*time.Second, 200*time.Millisecond)
-	}
-
-	// findEpochOpener returns the first L2 block of the epoch anchored at l1Num.
-	findEpochOpener := func(fromL2 uint64, l1Num uint64) (eth.L2BlockRef, bool) {
-		var opener eth.L2BlockRef
-		found := false
-		for n := fromL2; n > 0; n-- {
-			b := sys.L2EL.BlockRefByNumber(n)
-			if b.L1Origin.Number == l1Num {
-				opener = b
-				found = true
-			} else if found && b.L1Origin.Number < l1Num {
-				break
-			}
-		}
-		return opener, found
-	}
+	drive := l1drive.New(t, sys)
 
 	// Drive far enough past Amsterdam that the target and fork parent are post-Amsterdam.
 	expectedBoundary := amsterdamOffset / uint64(l1BlockTime/time.Second)
@@ -87,7 +44,7 @@ func TestL1Reorg_AtEpochBoundary_PostUpgrade(gt *testing.T) {
 		require.Lessf(i, maxDriveIters,
 			"L2 origin never got %d epochs past the Amsterdam boundary (block %d) after %d L1 blocks",
 			postBoundaryMargin, expectedBoundary, maxDriveIters)
-		driveL1InStep()
+		drive.InStep()
 		l1head := sys.L1EL.BlockRefByLabel(eth.Unsafe).Number
 		l2origin := sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number
 		logger.Info("in-step progress", "l1", l1head, "l2Origin", l2origin, "lag", l1head-l2origin)
@@ -115,7 +72,7 @@ func TestL1Reorg_AtEpochBoundary_PostUpgrade(gt *testing.T) {
 		"L2 must have derived past the reorg target before the reorg (so the target's epoch exists on L2)")
 
 	// Locate the L2 epoch opener so the same epoch can be checked after the reorg.
-	epochOpener, ok := findEpochOpener(l2BeforeReorg.Number, l1Height)
+	epochOpener, ok := drive.EpochOpener(l2BeforeReorg.Number, l1Height)
 	require.True(ok, "the target L1 block must open an L2 epoch before the reorg")
 	require.Equal(l1Height, epochOpener.L1Origin.Number, "epoch opener must reference the target L1 block")
 	require.Equal(l1Before.Hash, epochOpener.L1Origin.Hash,
@@ -123,23 +80,8 @@ func TestL1Reorg_AtEpochBoundary_PostUpgrade(gt *testing.T) {
 	logger.Info("reorg target = recent post-Amsterdam L1 epoch boundary",
 		"l1Height", l1Height, "l1Head", oldHead, "epochOpenerL2", epochOpener.Number, "l2Unsafe", l2BeforeReorg.Number)
 
-	// produceL1 mines one block without requiring the L2 origin to keep pace.
-	produceL1 := func() {
-		if driveErr != nil {
-			return
-		}
-		if err := ts.New(ctx, seqtypes.BuildOpts{Parent: common.Hash{}}); err != nil {
-			driveErr = err
-			return
-		}
-		if err := ts.Next(ctx); err != nil {
-			driveErr = err
-		}
-	}
-
 	// Build a competing chain from the post-Amsterdam parent and extend it past the old head.
-	require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: l1Before.ParentHash}))
-	require.NoError(ts.Next(ctx))
+	drive.Fork(l1Before.ParentHash)
 	require.Eventually(func() bool {
 		sys.AdvanceTime(2 * time.Second)
 		return sys.L1EL.BlockRefByLabel(eth.Unsafe).Number >= l1Height
@@ -149,8 +91,8 @@ func TestL1Reorg_AtEpochBoundary_PostUpgrade(gt *testing.T) {
 		require.Lessf(uint64(i), reorgDepth+16,
 			"competing chain never overtook the old head %d (L1 head stuck at %d)",
 			oldHead, sys.L1EL.BlockRefByLabel(eth.Unsafe).Number)
-		produceL1()
-		require.NoError(driveErr, "L1 block production failed while extending the competing chain")
+		drive.Produce()
+		require.NoError(drive.Err(), "L1 block production failed while extending the competing chain")
 	}
 
 	l1After := sys.L1EL.BlockRefByNumber(l1Height)
@@ -161,19 +103,19 @@ func TestL1Reorg_AtEpochBoundary_PostUpgrade(gt *testing.T) {
 
 	// The L2 must reorg the old target-era block and keep advancing.
 	require.Eventually(func() bool {
-		if driveErr != nil {
+		if drive.Err() != nil {
 			return true // bail out of polling; the error is asserted below
 		}
 		sys.AdvanceTime(2 * time.Second)
 		l2origin := sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number
 		if l2origin+2 >= sys.L1EL.BlockRefByLabel(eth.Unsafe).Number {
-			produceL1()
+			drive.Produce()
 		}
 		l2At := sys.L2EL.BlockRefByNumber(l2BeforeReorg.Number)
 		l2Head := sys.L2EL.BlockRefByLabel(eth.Unsafe)
 		return l2At.Hash != l2BeforeReorg.Hash && l2Head.Number > l2BeforeReorg.Number
 	}, 240*time.Second, 300*time.Millisecond)
-	require.NoError(driveErr, "L1 block production failed while waiting for the L2 to reorg")
+	require.NoError(drive.Err(), "L1 block production failed while waiting for the L2 to reorg")
 
 	l2At := sys.L2EL.BlockRefByNumber(l2BeforeReorg.Number)
 	require.NotEqual(l2At.Hash, l2BeforeReorg.Hash,
@@ -188,29 +130,15 @@ func TestL1Reorg_AtEpochBoundary_PostUpgrade(gt *testing.T) {
 	require.True(l1Config.IsAmsterdam(new(big.Int).SetUint64(canonOrigin.Number), canonOrigin.Time),
 		"the re-derived L2 block's L1 origin must still be post-Amsterdam after the reorg")
 
-	driveWhile := func(cond func() bool, timeout time.Duration, msg string) {
-		require.Eventually(func() bool {
-			if driveErr != nil {
-				return true // bail out of polling; the error is asserted below
-			}
-			sys.AdvanceTime(2 * time.Second)
-			if sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number+2 >= sys.L1EL.BlockRefByLabel(eth.Unsafe).Number {
-				produceL1()
-			}
-			return cond()
-		}, timeout, 300*time.Millisecond, msg)
-		require.NoErrorf(driveErr, "L1 block production failed while waiting: %s", msg)
-	}
-
 	// Drive the sequencer safe head past the reorged L1 block.
-	driveWhile(func() bool {
+	drive.While(func() bool {
 		return sys.L2EL.BlockRefByLabel(eth.Safe).L1Origin.Number > l1Height
 	}, 240*time.Second, "sequencer safe head must derive past the reorged L1 block")
 	seqSafe := sys.L2EL.BlockRefByLabel(eth.Safe)
 	require.Greater(seqSafe.Number, uint64(0), "sequencer must have a post-reorg safe head")
 
 	// The verifier must reach the same safe block by height and hash.
-	driveWhile(func() bool {
+	drive.While(func() bool {
 		vSafe := sys.L2ELB.BlockRefByLabel(eth.Safe)
 		return vSafe.Number >= seqSafe.Number && sys.L2ELB.BlockRefByNumber(seqSafe.Number).Hash == seqSafe.Hash
 	}, 300*time.Second, "verifier must independently re-derive the sequencer's post-reorg safe block")
@@ -220,7 +148,7 @@ func TestL1Reorg_AtEpochBoundary_PostUpgrade(gt *testing.T) {
 		"safeHeight", seqSafe.Number, "safeHash", seqSafe.Hash, "safeOrigin", seqSafe.L1Origin.Number)
 
 	// Re-scan because the epoch opener's L2 number may shift across the reorg.
-	reOpener, ok := findEpochOpener(sys.L2EL.BlockRefByLabel(eth.Unsafe).Number, l1Height)
+	reOpener, ok := drive.EpochOpener(sys.L2EL.BlockRefByLabel(eth.Unsafe).Number, l1Height)
 	require.True(ok, "the reorged L1 block must re-open its L2 epoch after re-derivation")
 	require.Equal(l1After.Hash, reOpener.L1Origin.Hash,
 		"the epoch anchored at the reorged L1 boundary must re-derive onto the NEW canonical L1 block")
