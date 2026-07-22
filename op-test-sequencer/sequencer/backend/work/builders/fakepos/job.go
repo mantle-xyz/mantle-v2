@@ -266,12 +266,21 @@ func (j *Job) Seal(ctx context.Context) (work.Block, error) {
 
 	j.logger.Info("about to insert payload into the chain", "envelope-hash", envelope.ExecutionPayload.BlockHash, "txs", len(envelope.ExecutionPayload.Transactions))
 
+	// Forward the EIP-7685 execution requests the payload actually committed to. The block's
+	// RequestsHash is derived from them, so substituting an empty list makes geth recompute a
+	// different hash, mismatch data.BlockHash and reject the block as INVALID the moment the
+	// chain produces any deposit, withdrawal or consolidation request.
+	executionRequests := make([]hexutil.Bytes, len(envelope.Requests))
+	for i, req := range envelope.Requests {
+		executionRequests[i] = req
+	}
+
 	var payloadStatus engine.PayloadStatusV1
 	var err error
 	if j.isAmsterdam {
-		payloadStatus, err = j.b.engine.NewPayloadV5(ctx, *envelope.ExecutionPayload, blobHashes, &j.parentBeaconBlockRoot, make([]hexutil.Bytes, 0))
+		payloadStatus, err = j.b.engine.NewPayloadV5(ctx, *envelope.ExecutionPayload, blobHashes, &j.parentBeaconBlockRoot, executionRequests)
 	} else if j.isPrague {
-		payloadStatus, err = j.b.engine.NewPayloadV4(ctx, *envelope.ExecutionPayload, blobHashes, &j.parentBeaconBlockRoot, make([]hexutil.Bytes, 0))
+		payloadStatus, err = j.b.engine.NewPayloadV4(ctx, *envelope.ExecutionPayload, blobHashes, &j.parentBeaconBlockRoot, executionRequests)
 	} else if j.isCancun {
 		payloadStatus, err = j.b.engine.NewPayloadV3(ctx, *envelope.ExecutionPayload, blobHashes, &j.parentBeaconBlockRoot)
 	} else {

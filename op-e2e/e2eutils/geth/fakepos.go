@@ -253,11 +253,19 @@ func (f *FakePoS) Start() error {
 					}
 				}
 
+				// Forward the EIP-7685 execution requests the payload committed to: the block's
+				// RequestsHash is derived from them, so an empty list makes geth recompute a
+				// different hash and reject the block once any request is produced.
+				executionRequests := make([]hexutil.Bytes, len(envelope.Requests))
+				for i, req := range envelope.Requests {
+					executionRequests[i] = req
+				}
+
 				var payloadStatus engine.PayloadStatusV1
 				if isAmsterdam {
-					payloadStatus, err = f.engineAPI.NewPayloadV5(context.Background(), *envelope.ExecutionPayload, blobHashes, &parentBeaconBlockRoot, make([]hexutil.Bytes, 0))
+					payloadStatus, err = f.engineAPI.NewPayloadV5(context.Background(), *envelope.ExecutionPayload, blobHashes, &parentBeaconBlockRoot, executionRequests)
 				} else if isPrague {
-					payloadStatus, err = f.engineAPI.NewPayloadV4(context.Background(), *envelope.ExecutionPayload, blobHashes, &parentBeaconBlockRoot, make([]hexutil.Bytes, 0))
+					payloadStatus, err = f.engineAPI.NewPayloadV4(context.Background(), *envelope.ExecutionPayload, blobHashes, &parentBeaconBlockRoot, executionRequests)
 				} else if isCancun {
 					payloadStatus, err = f.engineAPI.NewPayloadV3(context.Background(), *envelope.ExecutionPayload, blobHashes, &parentBeaconBlockRoot)
 				} else {
