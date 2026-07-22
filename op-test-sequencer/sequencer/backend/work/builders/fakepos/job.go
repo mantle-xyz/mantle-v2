@@ -135,7 +135,17 @@ func (j *Job) Open(ctx context.Context) error {
 	if !rebuilt || j.isAmsterdam {
 		feeRecipient := j.head.Coinbase
 		if rebuilt {
-			feeRecipient = testutils.RandomAddress(rand.New(rand.NewSource(int64(newBlockTime))))
+			// The seed MUST vary per rebuild, not just per parent. Seeding on
+			// newBlockTime alone (= parent.Time + blockTime) is constant for a given
+			// parent, so the 2nd and 3rd competing blocks at the same height would get
+			// the SAME fee recipient. With the timestamp, parent, and prevRandao also
+			// identical, the only remaining source of divergence would be
+			// randomWithdrawals -- which returns an EMPTY list 1 time in 4, so two
+			// successive rebuilds would produce a byte-identical block roughly 1 time
+			// in 16 and the "reorg" would silently not fork. Mixing in a monotonic
+			// rebuild counter makes each competing block distinct by construction.
+			j.b.rebuilds++
+			feeRecipient = testutils.RandomAddress(rand.New(rand.NewSource(int64(newBlockTime) + int64(j.b.rebuilds))))
 		}
 
 		attrs := &engine.PayloadAttributes{

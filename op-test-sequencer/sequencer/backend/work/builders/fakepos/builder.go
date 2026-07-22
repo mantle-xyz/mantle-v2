@@ -42,6 +42,12 @@ type Builder struct {
 
 	envelopes map[common.Hash]*engine.ExecutionPayloadEnvelope
 
+	// rebuilds counts how many times a block has been rebuilt on an already-built
+	// parent. It only ever increases, and is mixed into the fee recipient of each
+	// rebuild so that successive competing blocks for the SAME parent differ from
+	// one another — not merely from the original. See Job.Open.
+	rebuilds uint64
+
 	withdrawalsIndex  uint64
 	finalizedDistance uint64
 	safeDistance      uint64
