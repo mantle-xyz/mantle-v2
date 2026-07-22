@@ -40,6 +40,12 @@ const (
 	// eip7981GasPerAddress is the raised per-address cost the L2 must NOT adopt.
 	// 2400 (base) + 20*16*4 (EIP-7981 extra, = 1280) = 3680.
 	eip7981GasPerAddress = 3680
+
+	// arsiaGasPerStorageKey is the Mantle-Arsia per-access-list-storage-key cost.
+	arsiaGasPerStorageKey = 1900 // params.TxAccessListStorageKeyGas
+	// eip7981GasPerStorageKey is the raised per-storage-key cost the L2 must NOT adopt.
+	// 1900 (base) + 32*16*4 (EIP-7981 extra, = 2048) = 3948.
+	eip7981GasPerStorageKey = 3948
 )
 
 // TestL2EVM_AccessListGasStaysArsia verifies an L2-internal Arsia property: the
@@ -92,8 +98,8 @@ func TestL2EVM_AccessListGasStaysArsia(gt *testing.T) {
 		largeAddrs = 15
 	)
 
-	smallGas := sendWithAccessListAddresses(t, wallet, recipient, smallAddrs)
-	largeGas := sendWithAccessListAddresses(t, wallet, recipient, largeAddrs)
+	smallGas := sendWithAccessList(t, wallet, recipient, smallAddrs, 0)
+	largeGas := sendWithAccessList(t, wallet, recipient, largeAddrs, 0)
 
 	// Exact per-tx cost for a value-less EOA call carrying only access-list
 	// addresses: 21000 + N*2400 on Arsia.
@@ -114,6 +120,25 @@ func TestL2EVM_AccessListGasStaysArsia(gt *testing.T) {
 		"L2 must price access-list addresses at the Arsia rate (2400 gas/address), "+
 			"not EIP-7981's raised 3680 gas/address")
 
+	// EIP-7981 reprices BOTH halves of an access list, so measuring only the per-address rate
+	// would leave the storage-key half unguarded: an L2 could adopt the raised 3948 gas/key
+	// while still charging 2400/address and everything above would stay green.
+	//
+	// Hold the address count fixed at smallAddrs and add storage keys, so the difference from
+	// smallGas is attributable to the keys alone.
+	const keysPerAddr = 4
+	totalKeys := uint64(smallAddrs * keysPerAddr)
+	keyedGas := sendWithAccessList(t, wallet, recipient, smallAddrs, keysPerAddr)
+
+	require.EqualValues(txBaseGas+arsiaGasPerAddress*smallAddrs+arsiaGasPerStorageKey*int(totalKeys), keyedGas,
+		"access-list tx with storage keys must match Arsia pricing (2400 gas/address + 1900 gas/key)")
+
+	deltaKeyGas := keyedGas - smallGas
+	require.Zero(deltaKeyGas%totalKeys, "marginal gas should be a whole number of gas per storage key")
+	require.EqualValues(arsiaGasPerStorageKey, deltaKeyGas/totalKeys,
+		"L2 must price access-list storage keys at the Arsia rate (%d gas/key), not EIP-7981's "+
+			"raised %d gas/key", arsiaGasPerStorageKey, eip7981GasPerStorageKey)
+
 	t.Log("Access-list gas stays on Arsia pricing while L1 runs Glamsterdam",
 		"smallGas", smallGas,
 		"largeGas", largeGas,
@@ -122,18 +147,29 @@ func TestL2EVM_AccessListGasStaysArsia(gt *testing.T) {
 		"eip7981Rejected", eip7981GasPerAddress)
 }
 
-// sendWithAccessListAddresses sends a value-less EIP-2930 (type 0x01) L2 tx to
-// recipient carrying an access list of n distinct addresses, each with zero
-// storage keys, and returns the receipt's GasUsed. The listed addresses are
-// deterministic and unrelated to the sender or recipient, so no opcode ever
-// touches them and their only effect is the flat per-address access-list charge.
-func sendWithAccessListAddresses(t devtest.T, wallet *dsl.EOA, recipient common.Address, n int) uint64 {
+// sendWithAccessList sends a value-less L2 tx to recipient carrying an access list of n
+// distinct addresses, each with keysPerAddr distinct storage keys, and returns the receipt's
+// GasUsed. The listed addresses and keys are deterministic and unrelated to the sender or
+// recipient, so no opcode ever touches them and their only effect is the flat per-address and
+// per-storage-key access-list charge.
+//
+// The tx itself is the wallet's default DynamicFee (EIP-1559, type 0x02) — NOT type 0x01. The
+// access list rides on it either way, and EIP-7981 modifies the shared IntrinsicGas
+// access-list branch (state_transition.go:132-159) regardless of tx type, so the pricing under
+// test is the same. (An earlier version of this comment claimed a type-0x01 tx, which did not
+// match what the code sends.)
+func sendWithAccessList(t devtest.T, wallet *dsl.EOA, recipient common.Address, n, keysPerAddr int) uint64 {
 	al := make(types.AccessList, n)
 	for i := 0; i < n; i++ {
+		keys := make([]common.Hash, keysPerAddr)
+		for k := range keys {
+			// 0x5107..<addr><key> — distinct per (address, key), never touched by execution.
+			keys[k] = common.HexToHash(fmt.Sprintf("0x5107%060d", (i+1)*1000+k+1))
+		}
 		al[i] = types.AccessTuple{
 			// 0xAC..0001, 0xAC..0002, ... — distinct, never touched by execution.
 			Address:     common.HexToAddress(fmt.Sprintf("0xAC00000000000000000000000000000000%06d", i+1)),
-			StorageKeys: nil,
+			StorageKeys: keys,
 		}
 	}
 	receipt, err := txplan.NewPlannedTx(txplan.Combine(

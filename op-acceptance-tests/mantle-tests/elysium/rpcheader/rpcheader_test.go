@@ -18,16 +18,26 @@ import (
 // every assertion below would pass under any L1, so the L1 is the environment, not
 // the discriminator.
 //
-// The real guard is the TYPED nil-check on the L2 header:
-//   - require.Nil(hdr.BlockAccessListHash) is the ONLY way to catch EIP-7928 adoption.
-//     op-geth's RPCMarshalHeader has no branch that ever emits a "blockAccessListHash"
-//     key, so a raw-JSON key check could never observe a set field — that is why the
-//     raw "blockAccessListHash" NotContains was removed as vacuous (it can never fail).
-//   - require.Nil(hdr.SlotNumber) catches EIP-7843 adoption.
+// The two fields are NOT guarded equally well, and it is worth being precise about which
+// assertion actually carries which one:
 //
-// The raw eth_getBlockByNumber "slotNumber" NotContains is a secondary corroboration
-// on the external RPC surface: RPCMarshalHeader emits "slotNumber" iff head.SlotNumber
-// != nil, so its absence confirms the same property from the user-facing JSON.
+//   - slotNumber is genuinely falsifiable from the L2 side. op-geth's RPCMarshalHeader emits
+//     the key iff head.SlotNumber != nil, so both the raw-JSON NotContains and the typed
+//     nil-check would go red if the L2 ever set it.
+//
+//   - blockAccessListHash is NOT falsifiable from the L2 side by either check. op-geth's
+//     RPCMarshalHeader has no branch for that key at any value, and the typed value is
+//     PARSED FROM THAT SAME JSON (sources.RPCHeader -> CreateGethHeader), so a set field
+//     would be invisible to both. An earlier version of this comment called the typed check
+//     "the ONLY way to catch EIP-7928 adoption"; that was wrong for exactly this reason —
+//     the typed check inherits the serializer's blindness rather than escaping it.
+//     What would actually catch a BAL-bearing L2 header is the eth client's blockhash
+//     verification: TrustRPC is false, so the header is re-hashed from its RLP preimage,
+//     which DOES include the BAL field, and the fetch itself fails.
+//
+// So the nil-checks alone would stay green in a stack that never implements these fields.
+// requireGlamsterdamL1Control below is what rules that out: it requires the L1 in this same
+// run, read through this same client path, to show both fields NON-nil.
 //
 // (Marshaling a *types.Header with json.Marshal is NOT a substitute for the raw check:
 // the generated tags carry no `omitempty`, so a nil field serializes as `...:null` and
@@ -42,7 +52,8 @@ func TestL2RPCHeader_OmitsNewFields(gt *testing.T) {
 	// inspect is genuinely produced while consuming a Glamsterdam L1.
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
-	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	l1Ref := sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
+	requireGlamsterdamL1Control(t, sys, l1Ref)
 
 	// Advance the L2 a couple of blocks past the Amsterdam boundary so "latest"
 	// resolves to a block whose production overlapped a live Glamsterdam L1.

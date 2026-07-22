@@ -70,11 +70,20 @@ func TestL2EVM_NoNewOpcodes(gt *testing.T) {
 	}
 
 	for _, tc := range newOpcodes {
-		// runtime = PUSH1 0 ; PUSH1 0 ; <newopcode> ; STOP
-		// The two PUSHes give the opcode stack operands to consume; on Arsia the
-		// interpreter rejects the undefined opcode before it matters, and if it
-		// were somehow defined the STOP would let a well-formed run finish cleanly.
-		runtime := []byte{0x60, 0x00, 0x60, 0x00, tc.op, 0x00}
+		// runtime = PUSH1 0 x4 ; <newopcode> ; <immediate 0x00> ; STOP
+		//
+		// The stack depth and the trailing immediate both matter for the assertion to
+		// DISCRIMINATE rather than merely fail. EIP-8024's opcodes take an immediate operand
+		// from the byte that follows them, and with immediate 0x00 they address: DUPN the 1st
+		// stack item, SWAPN the 1st and 2nd, EXCHANGE the 2nd and 3rd. Four PUSHes therefore
+		// leave every one of them with enough operands to run cleanly IF the opcode is
+		// implemented, so the call would SUCCEED on an EIP-8024 EVM and the ReceiptStatusFailed
+		// assertion below would go red.
+		//
+		// An earlier version pushed only two values. That was enough for DUPN and SWAPN but not
+		// for EXCHANGE, which would have stack-underflowed — and therefore reverted — even on an
+		// EIP-8024 EVM, making that third sub-case pass for the wrong reason.
+		runtime := []byte{0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, tc.op, 0x00, 0x00}
 
 		// Deploy the probe contract. Creation must succeed: the init code only
 		// RETURNs the runtime blob, it does not run the new opcode.
@@ -89,13 +98,24 @@ func TestL2EVM_NoNewOpcodes(gt *testing.T) {
 
 		// Call the deployed contract. Explicit gas is set because an invalid
 		// opcode consumes all supplied gas; the call must revert on Arsia.
+		const callGasLimit = uint64(1_000_000)
 		addr := deploy.ContractAddress
 		call, err := txplan.NewPlannedTx(txplan.Combine(
 			wallet.Plan(),
 			txplan.WithTo(&addr),
-			txplan.WithGasLimit(1_000_000),
+			txplan.WithGasLimit(callGasLimit),
 		)).Included.Eval(ctx)
 		require.NoError(err, "call tx for %s must be included even though it reverts", tc.name)
 		require.Equal(types.ReceiptStatusFailed, call.Status, "calling %s (0x%x) must revert on Arsia — the opcode is not supported", tc.name, tc.op)
+
+		// Status alone does not say WHY the call failed — a plain REVERT, an out-of-gas, or a
+		// bad deployment would satisfy it equally. An undefined opcode is specifically an
+		// ErrInvalidOpCode, which consumes the entire gas allowance rather than refunding the
+		// unused remainder, so requiring the full limit to be burnt pins the failure to the
+		// opcode itself. The probe is 11 bytes and cannot plausibly consume 1M gas any other way.
+		require.EqualValuesf(callGasLimit, call.GasUsed,
+			"calling %s (0x%x) must fail as an invalid opcode, which consumes the whole gas "+
+				"allowance; a partial burn of %d/%d means it failed for some other reason",
+			tc.name, tc.op, call.GasUsed, callGasLimit)
 	}
 }
