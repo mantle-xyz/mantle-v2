@@ -28,21 +28,10 @@ const depositGasLimit uint32 = 300_000
 // bvmETHAddr is the Mantle L2 BVM_ETH predeploy that an L1 ETH deposit mints into.
 var bvmETHAddr = common.HexToAddress("0xdEAddEaDdeadDEadDEADDEAddEADDEAddead1111")
 
-// TestDeposit_AcrossL1Upgrade_ThreePositions lands three L1->L2 ETH deposits in three
-// L1 blocks spanning the Glamsterdam activation boundary — one BEFORE the activation block,
-// one AT it, one AFTER — and asserts:
-//   - each is credited as BVM_ETH on the Mantle L2 by BOTH the sequencer and an independent
-//     verifier (the "sequencer 与 verifier 对同一 L1 块还原出一致的 deposit" requirement);
-//   - the two post-Amsterdam deposit L1 receipts carry a real EIP-7708 system Transfer log
-//     (DepositETH moves native L1 ETH, so post-Amsterdam L1 emits one), yet op-node's ACTUAL
-//     derivation output — the deposit transactions it produces into the L2 — contains exactly
-//     ONE user deposit per L1 block, equal to the real deposit and never a spurious one from the
-//     7708 log (its address+topic0 filter neither mis-takes the 7708 log nor drops the deposit).
-//
-// Deposits are placed in exact L1 blocks by taking manual control of L1 production via the
-// TestSequencer: each deposit tx is submitted to the L1 mempool (non-blocking) and then a
-// single L1 block is produced to include it. This test drives L1 exclusively, so it is the
-// only test in this package.
+// TestDeposit_AcrossL1Upgrade_ThreePositions places deposits before, at, and
+// after L1 Amsterdam activation. It checks BVM_ETH crediting on sequencer and
+// verifier, and confirms EIP-7708 system Transfer logs do not produce spurious
+// L2 deposits.
 func TestDeposit_AcrossL1Upgrade_ThreePositions(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleSingleChainMultiNodeWithTestSeq(t)
@@ -58,9 +47,7 @@ func TestDeposit_AcrossL1Upgrade_ThreePositions(gt *testing.T) {
 
 	sys.L1Network.WaitForBlock()
 
-	// Fund three distinct L1 depositors (so their L1 nonces and L2 BVM_ETH balances are
-	// independent) WHILE the auto-FakePoS is still producing L1 blocks — funding needs blocks.
-	// Only after they are funded do we take manual control of L1 production.
+	// Fund before stopping FakePoS; funding needs L1 blocks.
 	userBefore := sys.FunderL1.NewFundedEOA(eth.OneTenthEther)
 	userAt := sys.FunderL1.NewFundedEOA(eth.OneTenthEther)
 	userAfter := sys.FunderL1.NewFundedEOA(eth.OneTenthEther)
@@ -101,21 +88,18 @@ func TestDeposit_AcrossL1Upgrade_ThreePositions(gt *testing.T) {
 		return tx
 	}
 
-	// 前: land a deposit in the last pre-Amsterdam block (boundary-1).
+	// Land a deposit in the last pre-Amsterdam block.
 	driveL1To(expectedBoundary - 2)
 	txBefore := submitDeposit(userBefore)
 	produceL1Block() // block boundary-1 (pre-Amsterdam)
-	// 当块: land a deposit in the activation block itself.
+	// Land a deposit in the activation block.
 	txAt := submitDeposit(userAt)
 	produceL1Block() // block boundary (first Amsterdam)
-	// 后: land a deposit in the first post-activation block.
+	// Land a deposit in the first post-activation block.
 	txAfter := submitDeposit(userAfter)
 	produceL1Block() // block boundary+1 (post-Amsterdam)
 
-	// checkL1 verifies the INPUT side on L1: the deposit landed at the intended boundary position,
-	// its receipt carries exactly one real portal deposit log, and (post-Amsterdam) also a real
-	// EIP-7708 system Transfer log. It returns the L1 block number and the L2 deposit tx hash that
-	// op-node MUST derive from the real deposit log — checked against op-node's actual output below.
+	// checkL1 verifies the receipt and returns the L2 deposit tx hash op-node must derive.
 	checkL1 := func(name string, tx *txplan.PlannedTx, wantAmsterdam bool) (uint64, common.Hash) {
 		r, err := tx.Included.Eval(ctx)
 		require.NoErrorf(err, "%s: L1 deposit must be included", name)
@@ -155,18 +139,12 @@ func TestDeposit_AcrossL1Upgrade_ThreePositions(gt *testing.T) {
 	seqBefore, verBefore := userBefore.AsEL(sys.L2EL), userBefore.AsEL(sys.L2ELB)
 	seqAt, verAt := userAt.AsEL(sys.L2EL), userAt.AsEL(sys.L2ELB)
 	seqAfter, verAfter := userAfter.AsEL(sys.L2EL), userAfter.AsEL(sys.L2ELB)
-	// Each depositor is a fresh EOA making exactly one deposit, so a correct derivation credits
-	// EXACTLY depositAmount of BVM_ETH — never more. Using == (not >=) means a double-count
-	// (e.g. op-node fooled into taking the 7708 system Transfer log as a second deposit) would
-	// over-credit and fail here — closing the "must not mis-take" half of the requirement that
-	// a >= check silently lets through.
+	// Equality catches double-crediting from a misinterpreted EIP-7708 log.
 	credited := func(l2User *dsl.EOA) bool {
 		return l2User.GetTokenBalance(bvmETHAddr).ToBig().Cmp(depositAmount.ToBig()) == 0
 	}
 
-	// Drive the L2 (by advancing the clock, keeping the L1 a little ahead so derivation always
-	// has blocks) until all three deposits are credited as BVM_ETH on BOTH the sequencer and
-	// the independent verifier — proving both derive the same deposits from the same L1 blocks.
+	// Wait until sequencer and verifier both credit all three BVM_ETH deposits.
 	require.Eventually(func() bool {
 		sys.AdvanceTime(2 * time.Second)
 		l2origin := sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number
@@ -177,13 +155,7 @@ func TestDeposit_AcrossL1Upgrade_ThreePositions(gt *testing.T) {
 			credited(verBefore) && credited(verAt) && credited(verAfter)
 	}, 240*time.Second, 300*time.Millisecond)
 
-	// --- OUTPUT side: OBSERVE op-node's ACTUAL derivation, not a receipt-side replica ----------
-	// For each deposit's L1 block, find the L2 epoch-opening block (the first L2 block whose L1
-	// origin IS that block — it carries that L1 block's deposits) and inspect the deposit
-	// transactions op-node ACTUALLY produced. Besides the single L1-attributes deposit that opens
-	// every L2 block, there must be EXACTLY ONE user deposit, and it must be OUR reconstructed
-	// deposit tx — proving op-node neither dropped the real deposit nor minted a spurious one from
-	// the EIP-7708 system Transfer log.
+	// Inspect op-node's derived L2 epoch block, not a receipt-side reconstruction.
 	assertDerived := func(name string, l1BlockNum uint64, wantL2DepositHash common.Hash) {
 		head := sys.L2EL.BlockRefByLabel(eth.Unsafe).Number
 		var epochHash common.Hash
@@ -211,8 +183,7 @@ func TestDeposit_AcrossL1Upgrade_ThreePositions(gt *testing.T) {
 				ourFound = true
 			}
 		}
-		// The epoch-opening L2 block carries the L1-attributes deposit (always index 0) plus the
-		// user deposits from that L1 block; we placed exactly ONE user deposit there.
+		// The epoch-opening block has one L1-attributes deposit plus our one user deposit.
 		require.Equalf(2, depositTxs,
 			"%s: op-node must derive exactly 1 user deposit (+1 L1-attributes) from L1 block %d — a 7708-fooled op-node would add a spurious deposit", name, l1BlockNum)
 		require.Truef(ourFound,

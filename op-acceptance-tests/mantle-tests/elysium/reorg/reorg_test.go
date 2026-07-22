@@ -14,20 +14,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-// TestL1Reorg_AtUpgradeActivation drives the L1 a few blocks past the Amsterdam
-// activation while keeping the L2 in step, then reorgs the ACTIVATION BLOCK itself:
-// it builds a competing chain on the activation block's PRE-Amsterdam parent, so the
-// reorg fork point is exactly the Glamsterdam activation boundary (pre-Amsterdam ->
-// post-Amsterdam). It asserts the L1 reorgs at the activation height (and the new
-// first-Amsterdam block is still Amsterdam), and that the L2 — which had already derived
-// past the boundary — reorgs its own chain and keeps advancing (no wedge).
-//
-// This is deliberately stronger than reorging a post-Amsterdam block: the divergence
-// straddles the fork transition, exercising the L2's ability to re-derive the activation
-// boundary rather than just a post-upgrade block.
-//
-// This test takes exclusive control of L1 production, so it is the only test in this
-// package: two L1-driving tests cannot share one devstack system.
+// TestL1Reorg_AtUpgradeActivation reorgs the Amsterdam activation block by
+// building on its pre-Amsterdam parent. This exercises re-derivation across the
+// fork boundary, not just post-upgrade reorg handling.
 func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleSingleChainMultiNodeWithTestSeq(t)
@@ -43,20 +32,11 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 
 	sys.L1Network.WaitForBlock()
 
-	// Take manual control of L1 production. With the auto-FakePoS stopped, advancing the
-	// (time-travel) clock moves only the real-time-bound L2 sequencer, not the L1 — so we
-	// can let the L2 origin catch up between manually-produced L1 blocks, keeping the reorg
-	// target (the activation block) above the finalized horizon and within max reorg depth.
+	// Manual L1 production lets the L2 origin catch up between produced blocks.
 	sys.ControlPlane.FakePoSState(cl.ID(), stack.Stop)
 
-	// driveErr records the first L1-production error that happens INSIDE a polled condition.
-	//
-	// testify runs an Eventually condition in its own goroutine (assert.Eventually:
-	// `go func() { ch <- condition() }()`). require.NoError there calls FailNow ->
-	// runtime.Goexit, which kills only that goroutine: nothing is ever sent on the channel,
-	// so Eventually just keeps ticking and finally reports "Condition never satisfied"
-	// minutes later, with the real error lost. Errors are therefore recorded here and
-	// asserted on the test goroutine.
+	// require.NoError inside Eventually would fail only the polling goroutine.
+	// Record production errors here and assert them from the test goroutine.
 	var driveErr error
 
 	// driveL1InStep produces one L1 block, then advances the clock until the L2 unsafe
@@ -72,8 +52,7 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 		}, 60*time.Second, 200*time.Millisecond)
 	}
 
-	// findEpochOpener scans the L2 chain downward from fromL2 for the FIRST (lowest-numbered)
-	// L2 block whose L1 origin is l1Num — the block that OPENS the epoch anchored at that L1 block.
+	// findEpochOpener returns the first L2 block of the epoch anchored at l1Num.
 	findEpochOpener := func(fromL2 uint64, l1Num uint64) (eth.L2BlockRef, bool) {
 		var opener eth.L2BlockRef
 		found := false
@@ -89,19 +68,11 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 		return opener, found
 	}
 
-	// Drive a few blocks PAST the activation so the L2 has genuinely derived across the
-	// Amsterdam boundary before we reorg it back to the activation block.
-	// Amsterdam activates amsterdamOffset SECONDS after L1 genesis; with 6s L1 blocks that
-	// is L1 block expectedBoundary, leaving earlier blocks pre-Amsterdam to fork from.
+	// Drive past activation so L2 has derived across the boundary before the reorg.
 	expectedBoundary := amsterdamOffset / uint64(l1BlockTime/time.Second)
 	require.GreaterOrEqual(expectedBoundary, uint64(2), "offset must leave pre-Amsterdam blocks above genesis")
 
-	// Drive just past the activation so the L2 has derived across the boundary, while keeping
-	// the activation block within a few of the head (above the finalized horizon, within depth).
-	//
-	// A bounded loop rather than Eventually: each iteration must run on the test goroutine so
-	// driveL1InStep's require.NoError reports the real L1-production error instead of being
-	// swallowed into a timeout (see driveErr).
+	// Keep this loop on the test goroutine so L1-production errors surface directly.
 	const maxDriveIters = 64
 	for i := 0; ; i++ {
 		require.Lessf(i, maxDriveIters,
@@ -115,8 +86,7 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 		}
 	}
 
-	// Find the actual Amsterdam activation block (the first Amsterdam L1 block). Reorging THIS
-	// block (by building on its pre-Amsterdam parent) forks the L1 exactly at the boundary.
+	// Find the first Amsterdam L1 block; reorging it forks exactly at the boundary.
 	oldHead := sys.L1EL.BlockRefByLabel(eth.Unsafe).Number
 	var l1Height uint64
 	for n := uint64(1); n <= oldHead; n++ {
@@ -141,18 +111,13 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 	logger.Info("reorg target = Amsterdam activation block (fork at its pre-Amsterdam parent)",
 		"l1Height", l1Height, "l1Head", oldHead, "l2Unsafe", l2BeforeReorg.Number)
 
-	// Locate the L2 block that OPENS the epoch anchored at the activation block, and confirm it
-	// currently derives from the OLD canonical activation block — so we can later prove that exact
-	// epoch re-derives onto the NEW canonical L1.
+	// Locate the L2 epoch opener so the same epoch can be checked after the reorg.
 	epochOpener, ok := findEpochOpener(l2BeforeReorg.Number, l1Height)
 	require.True(ok, "the activation L1 block must open an L2 epoch before the reorg")
 	require.Equal(l1Before.Hash, epochOpener.L1Origin.Hash,
 		"before the reorg the epoch opener must derive from the OLD canonical activation block")
 
-	// produceL1 makes one L1 block WITHOUT requiring the L2 to keep pace — during a deep reorg
-	// the L2 origin legitimately falls behind, so the strict in-step catch-up cannot hold here.
-	// It is called from inside polled conditions, so it records into driveErr rather than
-	// asserting; every caller checks driveErr on the test goroutine.
+	// produceL1 mines one block without requiring the L2 origin to keep pace.
 	produceL1 := func() {
 		if driveErr != nil {
 			return
@@ -166,18 +131,14 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 		}
 	}
 
-	// Inject the L1 reorg: build a competing block on the PRE-Amsterdam parent of the
-	// activation block (the TestSequencer forces it canonical), then extend the competing
-	// chain past the old head so it wins.
+	// Build a competing chain from the pre-Amsterdam parent and extend it past the old head.
 	require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: l1Before.ParentHash}))
 	require.NoError(ts.Next(ctx))
 	require.Eventually(func() bool {
 		sys.AdvanceTime(2 * time.Second)
 		return sys.L1EL.BlockRefByLabel(eth.Unsafe).Number >= l1Height
 	}, 30*time.Second, 200*time.Millisecond)
-	// Extend the competing chain past the old head so it wins. Bounded: without a limit a
-	// competing chain that never becomes canonical would spin here until the whole test
-	// times out, instead of failing with a usable message.
+	// Bound the loop so a stuck competing chain fails with context.
 	for i := 0; sys.L1EL.BlockRefByLabel(eth.Unsafe).Number <= oldHead+1; i++ {
 		require.Lessf(uint64(i), (oldHead-l1Height)+16,
 			"competing chain never overtook the old head %d (L1 head stuck at %d)",
@@ -192,11 +153,7 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 		"the reorged activation block must still be the first Amsterdam block (reorg re-crosses the boundary)")
 	logger.Info("L1 reorged across the activation boundary", "height", l1Height, "old", l1Before.Hash, "new", l1After.Hash)
 
-	// The L2 must detect the L1 reorg and reorg its own chain: the L2 block that derived from
-	// the old activation-era L1 must change, and the chain must keep advancing (no wedge). This
-	// is a deep reorg (fork at the activation boundary), so give it a generous window: advance
-	// the clock so derivation re-runs, keeping the L1 a little ahead of the L2 origin so there
-	// is always L1 to consume, without the strict in-step catch-up used before the reorg.
+	// The L2 must reorg the old activation-era block and keep advancing.
 	require.Eventually(func() bool {
 		if driveErr != nil {
 			return true // bail out of polling; the error is asserted below
@@ -218,24 +175,13 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 	logger.Info("L2 reorged and kept advancing after L1 reorg across the Amsterdam activation boundary",
 		"l2Head", sys.L2EL.BlockRefByLabel(eth.Unsafe).Number)
 
-	// Convergence is more than "the sequencer reorged and kept moving": the L2 must re-derive
-	// onto the NEW canonical L1, the INDEPENDENT verifier must reach the same re-derived safe
-	// block, and the epoch anchored at the reorged activation block must re-open onto the new
-	// canonical block. Without these, a sequencer that forked off alone or kept a stale L1 origin
-	// would still pass the checks above.
-
-	// (a) The re-derived L2 block's L1 origin must be a block on the NEW canonical L1 chain
-	// (hash-matched), and still post-Amsterdam — it tracked the reorged L1, not a stale origin.
+	// The re-derived L2 block must track the new canonical L1.
 	canonOrigin := sys.L1EL.BlockRefByNumber(l2At.L1Origin.Number)
 	require.Equal(l2At.L1Origin.Hash, canonOrigin.Hash,
 		"reorged L2 block must derive from the NEW canonical L1 (not a stale pre-reorg origin)")
 	require.True(l1Config.IsAmsterdam(new(big.Int).SetUint64(canonOrigin.Number), canonOrigin.Time),
 		"the re-derived L2 block's L1 origin must still be post-Amsterdam after the reorg")
 
-	// (b) INDEPENDENT verifier convergence. Both the sequencer and the verifier derive their SAFE
-	// chain from L1 alone (not by gossiping unsafe blocks), so after the reorg the verifier must
-	// independently re-derive the SAME post-reorg safe chain. A deep reorg makes the verifier's
-	// pipeline lag, so the window is generous and we keep the clock and L1 moving while it catches up.
 	driveWhile := func(cond func() bool, timeout time.Duration, msg string) {
 		require.Eventually(func() bool {
 			if driveErr != nil {
@@ -250,17 +196,14 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 		require.NoErrorf(driveErr, "L1 block production failed while waiting: %s", msg)
 	}
 
-	// (b-i) Drive the SEQUENCER's safe head PAST the reorged activation block, so its safe chain
-	// provably contains the re-derived epoch (not just unsafe blocks that never went through L1).
+	// Drive the sequencer safe head past the reorged activation block.
 	driveWhile(func() bool {
 		return sys.L2EL.BlockRefByLabel(eth.Safe).L1Origin.Number > l1Height
 	}, 240*time.Second, "sequencer safe head must derive past the reorged activation block")
 	seqSafe := sys.L2EL.BlockRefByLabel(eth.Safe)
 	require.Greater(seqSafe.Number, uint64(0), "sequencer must have a post-reorg safe head")
 
-	// (b-ii) The verifier must INDEPENDENTLY reach that exact safe block — same height AND hash.
-	// Waiting on the hash (not just the height) tolerates the verifier briefly sitting at that
-	// height on the stale pre-reorg chain before its pipeline unwinds and re-derives.
+	// The verifier must reach the same safe block by height and hash.
 	driveWhile(func() bool {
 		vSafe := sys.L2ELB.BlockRefByLabel(eth.Safe)
 		return vSafe.Number >= seqSafe.Number && sys.L2ELB.BlockRefByNumber(seqSafe.Number).Hash == seqSafe.Hash
@@ -270,10 +213,7 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 	logger.Info("independent verifier re-derived the sequencer's post-reorg safe chain",
 		"safeHeight", seqSafe.Number, "safeHash", seqSafe.Hash)
 
-	// (c) Epoch-boundary re-derivation: the epoch anchored at the reorged activation block must
-	// re-open on L2 and derive from the NEW canonical activation block — not the stale pre-reorg
-	// one. The epoch opener's L2 number may shift across the reorg, so re-scan from the current
-	// unsafe head (the chain is converged by now).
+	// Re-scan because the epoch opener's L2 number may shift across the reorg.
 	reOpener, ok := findEpochOpener(sys.L2EL.BlockRefByLabel(eth.Unsafe).Number, l1Height)
 	require.True(ok, "the reorged activation L1 block must re-open its L2 epoch after re-derivation")
 	require.Equal(l1After.Hash, reOpener.L1Origin.Hash,

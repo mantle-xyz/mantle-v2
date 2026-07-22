@@ -11,22 +11,10 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 )
 
-// TestDeposit_SeqVerifierConsistency_AcrossL1Upgrade covers cross-node derivation
-// consistency that the single-node deposit/derivation tests structurally cannot: it runs a
-// second L2 node (a verifier) alongside the sequencer and asserts both end up with the same
-// L2 state after an L1->L2 deposit submitted while the L1 runs Glamsterdam (Amsterdam).
-//
-// The multinode preset wires P2P between the two L2 nodes, so the verifier receives the
-// sequencer's UNSAFE blocks by gossip — the nodes are not deriving in isolation. Gossip only
-// feeds the unsafe chain, though: each op-node advances its own SAFE head by running the
-// derivation pipeline over the L1 batch data. Two facts are asserted:
-//  1. Both the sequencer and the verifier credit the deposited MNT to the depositor's L2
-//     native balance (WaitForBalance on each node's EL). The verifier may reach this via the
-//     gossiped unsafe block, so this alone is not proof of independent derivation.
-//  2. At a height whose L1 origin is already post-Amsterdam, the two nodes' SAFE blocks are
-//     byte-identical (equal block hash). Because each node applies the SAFE label from its own
-//     L1 derivation, equal safe hashes over a Glamsterdam L1 origin show both pipelines derived
-//     the same block from the same post-upgrade L1 data — the regression this test defends.
+// TestDeposit_SeqVerifierConsistency_AcrossL1Upgrade checks that sequencer and
+// verifier agree after a deposit derived while L1 runs Glamsterdam. Balance
+// crediting proves both nodes see the deposit; matching safe hashes prove both
+// derivation pipelines converge on the same post-upgrade L1 data.
 func TestDeposit_SeqVerifierConsistency_AcrossL1Upgrade(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleSingleChainMultiNode(t)
@@ -54,15 +42,11 @@ func TestDeposit_SeqVerifierConsistency_AcrossL1Upgrade(gt *testing.T) {
 	bridge := sys.MantleBridge()
 	bridge.DepositMNT(depositAmount, l1User)
 
-	// (1) Both nodes must credit the deposit. The verifier may see it first via a gossiped
-	// unsafe block; either way both ELs must settle on the same credited balance.
+	// Both nodes must settle on the credited balance.
 	l2UserSeq.WaitForBalance(expected)
 	l2UserVerifier.WaitForBalance(expected)
 
-	// (2) The safe-hash equality is only a Glamsterdam-derivation check if the compared block
-	// was derived from a post-Amsterdam L1 origin. Wait until the sequencer's SAFE head anchors
-	// to an L1 origin that already runs Amsterdam, so a broken cross-L1-upgrade derivation on
-	// either node would surface as a diverging safe hash.
+	// Compare only after the safe head anchors to a post-Amsterdam L1 origin.
 	require.Eventually(func() bool {
 		safe := sys.L2EL.BlockRefByLabel(eth.Safe)
 		if safe.Number == 0 {

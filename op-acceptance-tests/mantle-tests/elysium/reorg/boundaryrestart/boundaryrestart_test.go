@@ -12,15 +12,9 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/retry"
 )
 
-// TestBoundary_L2RestartDuringL1Upgrade restarts the L2 op-node ACROSS the Glamsterdam (Amsterdam)
-// activation: op-node is stopped while the L1 is still pre-Amsterdam, the L1 crosses the boundary
-// while op-node is DOWN, and then op-node is restarted — so it must derive across the fork
-// boundary from a freshly-rebuilt pipeline, reading the first Amsterdam L1 headers only AFTER the
-// restart. This is distinct from a steady-state restart (which restarts well past the boundary,
-// the crossing already done); here the crossing happens entirely after the restart.
-//
-// Flips red if the freshly-started op-node cannot consume the first Amsterdam L1 headers (its safe
-// head never crosses to a post-Amsterdam origin), or the pre-restart safe block is lost/reorged.
+// TestBoundary_L2RestartDuringL1Upgrade restarts op-node while L1 crosses the
+// Amsterdam boundary. The restarted pipeline must consume the first Amsterdam
+// headers without losing the pre-restart safe block.
 func TestBoundary_L2RestartDuringL1Upgrade(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -40,8 +34,7 @@ func TestBoundary_L2RestartDuringL1Upgrade(gt *testing.T) {
 		return l1Config.IsAmsterdam(new(big.Int).SetUint64(ref.L1Origin.Number), l1.Time)
 	}
 
-	// 1) Wait for the L2 to derive a non-genesis, still PRE-Amsterdam safe head. We stop op-node
-	// here, while the L1 has not yet crossed the boundary.
+	// 1) Stop op-node after it has a non-genesis pre-Amsterdam safe head.
 	require.Eventually(func() bool {
 		ss := sys.L2CL.SyncStatus()
 		return ss.SafeL2.Number > 0 && !originIsAmsterdam(ss.SafeL2)
@@ -64,8 +57,7 @@ func TestBoundary_L2RestartDuringL1Upgrade(gt *testing.T) {
 		require.Error(err, "op-node must be unreachable while stopped")
 	}
 
-	// 3) Let the L1 cross the Glamsterdam (Amsterdam) boundary WHILE op-node is down, so the fork
-	// transition is derived only after the restart.
+	// 3) Let L1 cross Amsterdam while op-node is down.
 	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
 	logger.Info("L1 crossed Amsterdam while op-node was down")
 
@@ -95,8 +87,7 @@ func TestBoundary_L2RestartDuringL1Upgrade(gt *testing.T) {
 	}, 60*time.Second, 500*time.Millisecond, "op-node must come back online after restart")
 	logger.Info("op-node back online after the boundary")
 
-	// 5) The freshly-started op-node must re-derive ACROSS the boundary: its safe head must reach a
-	// POST-Amsterdam L1 origin — it consumed the first Amsterdam L1 headers from a rebuilt pipeline.
+	// 5) The restarted op-node must re-derive past the activation block.
 	require.Eventually(func() bool {
 		return sys.L2CL.SyncStatus().SafeL2.L1Origin.Number > activation
 	}, 180*time.Second, 1*time.Second,
@@ -108,8 +99,7 @@ func TestBoundary_L2RestartDuringL1Upgrade(gt *testing.T) {
 	require.Equal(before.SafeL2.Hash, got.Hash,
 		"the pre-restart safe block must survive the restart unchanged (no data loss / reorg)")
 
-	// 7) The crossed L1 origin is a genuine Glamsterdam block (carries the new header fields) — so
-	// op-node really ingested post-Amsterdam headers after the restart, not just advanced a count.
+	// 7) The crossed L1 origin must carry the new Amsterdam header fields.
 	l1Info, _, err := sys.L1EL.EthClient().InfoAndTxsByHash(ctx, final.SafeL2.L1Origin.Hash)
 	require.NoError(err, "must read the crossed L1 origin")
 	require.True(l1Config.IsAmsterdam(new(big.Int).SetUint64(l1Info.NumberU64()), l1Info.Time()),

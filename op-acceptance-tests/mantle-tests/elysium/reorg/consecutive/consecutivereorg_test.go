@@ -15,38 +15,18 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-// postBoundaryMargin is how many L2-origin epochs past the Amsterdam activation we drive before
-// the first reorg, so every reorg target (and its fork parent) is comfortably post-Amsterdam.
+// postBoundaryMargin keeps every reorg target and fork parent post-Amsterdam.
 const postBoundaryMargin = uint64(8)
 
-// reorgDepth is how many blocks below the current L1 head each reorg target sits: shallow enough
-// to stay above the finalized horizon and inside geth's max reorg depth, deep enough that the L2
-// has already derived past it (so the reorg actually invalidates an L2 epoch).
+// reorgDepth keeps each target recent, non-finalized, and already consumed by L2.
 const reorgDepth = uint64(4)
 
-// numReorgs is how many reorgs are injected back-to-back. Two consecutive full re-derivations are
-// enough to prove the pipeline resets cleanly between reorgs and does not accumulate stale state.
+// numReorgs is enough to prove the pipeline resets between reorgs.
 const numReorgs = 2
 
-// TestL1Reorg_Consecutive_PostUpgrade injects SEVERAL post-Amsterdam L1 reorgs back-to-back and
-// asserts the L2 survives every one: after each reorg the sequencer re-derives onto the new
-// canonical L1 without wedging, the independent verifier converges onto the same re-derived safe
-// block, and the next reorg starts from that converged state. After the last reorg the L2 must
-// still be advancing.
-//
-// HONEST SCOPE NOTE: the reorg re-derivation core exercised here is L1-fork-independent. The
-// sequencer/verifier re-derivation and convergence behave identically under any L1 fork, and no
-// assertion in this test is sensitive to whether the L1 runs Glamsterdam — the IsAmsterdam checks
-// only confirm the reorg targets land in the post-Amsterdam environment (guarding the setup), they
-// do not discriminate a Glamsterdam-specific regression. The single-reorg-across-the-boundary case
-// is already covered by the reorg/ package, whose TestL1Reorg_AtUpgradeActivation reorgs the
-// Amsterdam ACTIVATION block itself (forking at its pre-Amsterdam parent) and is the stronger case
-// for L1-fork sensitivity. This test's UNIQUE value is orthogonal to the L1 fork: surviving TWO
-// consecutive reorgs with no stale pipeline state carried between them — a later reorg failing to
-// converge, or the L2 wedging after two in a row, fails this test even though one reorg alone
-// passes.
-//
-// This test takes exclusive control of L1 production, so it is the only test in this package.
+// TestL1Reorg_Consecutive_PostUpgrade injects post-Amsterdam L1 reorgs
+// back-to-back and requires the sequencer and verifier to converge after each
+// round. The activation-boundary case is covered by reorg/.
 func TestL1Reorg_Consecutive_PostUpgrade(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleSingleChainMultiNodeWithTestSeq(t)
@@ -62,24 +42,14 @@ func TestL1Reorg_Consecutive_PostUpgrade(gt *testing.T) {
 
 	sys.L1Network.WaitForBlock()
 
-	// Take manual control of L1 production: with auto-FakePoS stopped, advancing the (time-travel)
-	// clock moves only the real-time-bound L2 sequencer, not the L1, so the L2 origin can catch up
-	// between manually-produced L1 blocks and each reorg target stays above the finalized horizon.
+	// Manual L1 production lets the L2 origin catch up between produced blocks.
 	sys.ControlPlane.FakePoSState(cl.ID(), stack.Stop)
 
-	// driveErr records the first L1-production error that happens INSIDE a polled condition.
-	//
-	// testify runs an Eventually condition in its own goroutine (assert.Eventually:
-	// `go func() { ch <- condition() }()`). require.NoError there calls FailNow ->
-	// runtime.Goexit, which kills only that goroutine: nothing is ever sent on the channel,
-	// so Eventually just keeps ticking and finally reports "Condition never satisfied"
-	// minutes later, with the real error lost. Errors are therefore recorded here and
-	// asserted on the test goroutine.
+	// require.NoError inside Eventually would fail only the polling goroutine.
+	// Record production errors here and assert them from the test goroutine.
 	var driveErr error
 
-	// driveL1InStep produces one L1 block, then advances the clock until the L2 unsafe origin
-	// catches up to the new L1 head (strict in-step, used only before the first reorg).
-	// Only call this from the test goroutine.
+	// driveL1InStep produces one L1 block, then waits for the L2 origin to catch up.
 	driveL1InStep := func() {
 		require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: common.Hash{}}))
 		require.NoError(ts.Next(ctx))
@@ -91,10 +61,7 @@ func TestL1Reorg_Consecutive_PostUpgrade(gt *testing.T) {
 		}, 60*time.Second, 200*time.Millisecond)
 	}
 
-	// produceL1 makes one L1 block WITHOUT requiring the L2 to keep pace — during a reorg the L2
-	// origin legitimately falls behind, so the strict in-step catch-up cannot hold.
-	// It is called from inside polled conditions, so it records into driveErr rather than
-	// asserting; every caller checks driveErr on the test goroutine.
+	// produceL1 mines one block without requiring the L2 origin to keep pace.
 	produceL1 := func() {
 		if driveErr != nil {
 			return
@@ -108,8 +75,7 @@ func TestL1Reorg_Consecutive_PostUpgrade(gt *testing.T) {
 		}
 	}
 
-	// driveWhile advances the clock and keeps a little L1 ahead of the L2 origin (so there is
-	// always L1 to consume) until cond holds — used while derivation re-runs after a reorg.
+	// driveWhile keeps L1 slightly ahead while derivation reruns after a reorg.
 	driveWhile := func(cond func() bool, timeout time.Duration, msg string) {
 		require.Eventually(func() bool {
 			if driveErr != nil {
@@ -124,15 +90,11 @@ func TestL1Reorg_Consecutive_PostUpgrade(gt *testing.T) {
 		require.NoErrorf(driveErr, "L1 block production failed while waiting: %s", msg)
 	}
 
-	// Drive WELL PAST the Amsterdam activation so every reorg target is post-Amsterdam. Amsterdam
-	// activates amsterdamOffset SECONDS after L1 genesis; with 6s L1 blocks that is L1 block
-	// expectedBoundary.
+	// Drive far enough past Amsterdam that every reorg target is post-Amsterdam.
 	expectedBoundary := amsterdamOffset / uint64(l1BlockTime/time.Second)
 	require.GreaterOrEqual(expectedBoundary, uint64(2), "offset must leave pre-Amsterdam blocks above genesis")
 
-	// A bounded loop rather than Eventually: each iteration must run on the test goroutine so
-	// driveL1InStep's require.NoError reports the real L1-production error instead of being
-	// swallowed into a timeout (see driveErr).
+	// Keep this loop on the test goroutine so L1-production errors surface directly.
 	const maxDriveIters = 96
 	for i := 0; ; i++ {
 		require.Lessf(i, maxDriveIters,
@@ -147,9 +109,7 @@ func TestL1Reorg_Consecutive_PostUpgrade(gt *testing.T) {
 		"l1", sys.L1EL.BlockRefByLabel(eth.Unsafe).Number,
 		"l2Origin", sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number)
 
-	// reorgOnce injects one shallow post-Amsterdam L1 reorg and drives BOTH nodes to re-converge:
-	// the sequencer re-derives onto the new canonical L1 without wedging, and the independent
-	// verifier reaches the same post-reorg safe block (height AND hash).
+	// reorgOnce injects one post-Amsterdam reorg and waits for both nodes to converge.
 	reorgOnce := func(round int) {
 		oldHead := sys.L1EL.BlockRefByLabel(eth.Unsafe).Number
 		require.Greaterf(oldHead, reorgDepth+1, "round %d: need enough L1 history for a reorg target", round)
@@ -167,16 +127,14 @@ func TestL1Reorg_Consecutive_PostUpgrade(gt *testing.T) {
 		require.Greaterf(l2BeforeReorg.L1Origin.Number, l1Height,
 			"round %d: L2 must have derived past the reorg target before the reorg", round)
 
-		// Inject the reorg: build a competing block on the target's post-Amsterdam parent (the
-		// TestSequencer forces it canonical), then extend past the old head so it wins.
+		// Build a competing chain from the target's parent and extend it past the old head.
 		require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: l1Before.ParentHash}))
 		require.NoError(ts.Next(ctx))
 		require.Eventually(func() bool {
 			sys.AdvanceTime(2 * time.Second)
 			return sys.L1EL.BlockRefByLabel(eth.Unsafe).Number >= l1Height
 		}, 30*time.Second, 200*time.Millisecond)
-		// Bounded: without a limit a competing chain that never becomes canonical would spin
-		// here until the whole test times out, instead of failing with a usable message.
+		// Bound the loop so a stuck competing chain fails with context.
 		for i := 0; sys.L1EL.BlockRefByLabel(eth.Unsafe).Number <= oldHead+1; i++ {
 			require.Lessf(uint64(i), reorgDepth+16,
 				"round %d: competing chain never overtook the old head %d (L1 head stuck at %d)",
@@ -191,16 +149,14 @@ func TestL1Reorg_Consecutive_PostUpgrade(gt *testing.T) {
 			"round %d: the reorged target must still be post-Amsterdam", round)
 		logger.Info("L1 reorged", "round", round, "height", l1Height, "old", l1Before.Hash, "new", l1After.Hash)
 
-		// The L2 must reorg its own chain (the block that derived from the old L1 must change) and
-		// keep advancing — no wedge.
+		// The L2 must reorg the old block and keep advancing.
 		driveWhile(func() bool {
 			l2At := sys.L2EL.BlockRefByNumber(l2BeforeReorg.Number)
 			l2Head := sys.L2EL.BlockRefByLabel(eth.Unsafe)
 			return l2At.Hash != l2BeforeReorg.Hash && l2Head.Number > l2BeforeReorg.Number
 		}, 240*time.Second, fmt.Sprintf("round %d: L2 must reorg and keep advancing", round))
 
-		// The sequencer's SAFE head must derive past the reorged L1 block onto the NEW canonical L1
-		// (hash-matched) — not a stale pre-reorg origin.
+		// The sequencer safe head must derive from the new canonical L1.
 		driveWhile(func() bool {
 			return sys.L2EL.BlockRefByLabel(eth.Safe).L1Origin.Number > l1Height
 		}, 240*time.Second, fmt.Sprintf("round %d: sequencer safe head must derive past the reorged block", round))
@@ -209,7 +165,7 @@ func TestL1Reorg_Consecutive_PostUpgrade(gt *testing.T) {
 		require.Equalf(seqSafe.L1Origin.Hash, canonOrigin.Hash,
 			"round %d: sequencer safe head must derive from the new canonical L1, not a stale origin", round)
 
-		// The INDEPENDENT verifier must re-derive the same post-reorg safe block — height AND hash.
+		// The verifier must reach the same post-reorg safe block by height and hash.
 		driveWhile(func() bool {
 			vSafe := sys.L2ELB.BlockRefByLabel(eth.Safe)
 			return vSafe.Number >= seqSafe.Number && sys.L2ELB.BlockRefByNumber(seqSafe.Number).Hash == seqSafe.Hash

@@ -19,7 +19,7 @@ import (
 // submitSink is an arbitrary destination for the probe txs these tests submit.
 var submitSink = common.HexToAddress("0x000000000000000000000000000000005B117E77")
 
-// underEstimatingBackend makes the FIRST gas estimate come back too low, then reports the truth.
+// underEstimatingBackend underestimates once, then reports the real gas need.
 // This reproduces "the gas limit we committed to was not enough" — the failure EIP-7976 makes
 // newly plausible by raising the calldata floor cost — without needing to catch the L1 mid-repricing.
 type underEstimatingBackend struct {
@@ -42,7 +42,7 @@ func (b *underEstimatingBackend) EstimateGas(ctx context.Context, msg ethereum.C
 	return real, nil
 }
 
-// underPricingBackend makes the FIRST fee estimate come back near-zero, then reports the truth.
+// underPricingBackend underprices once, then reports the real fee data.
 // A tx crafted from it cannot be mined at the prevailing base fee, which is the "stuck in the
 // mempool" condition the fee-bump path exists to recover from.
 type underPricingBackend struct {

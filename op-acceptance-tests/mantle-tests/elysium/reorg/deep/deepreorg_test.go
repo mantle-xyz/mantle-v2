@@ -14,44 +14,19 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-// reorgDepth is how many L1 blocks the reorg discards. The design doc calls for "10+ blocks";
-// the value is bounded on both sides:
-//   - it must stay above the finalized horizon (fakepos finalizes head-20) and inside geth's
-//     max reorg depth (32), so a discarded block is never already finalized;
-//   - it must be deep enough that MANY L2 epochs are invalidated at once, which is the whole
-//     point of this case versus the shallow reorgs in reorgepoch/ (depth 4).
+// reorgDepth discards enough L1 history to force a multi-epoch unwind while
+// staying above fakepos finalization and inside geth's max reorg depth.
 const reorgDepth = uint64(12)
 
-// postBoundaryMargin is how many L2-origin epochs past the Amsterdam activation we drive before
-// picking a target. It has to exceed reorgDepth by enough that the target AND its parent are
-// still post-Amsterdam: with Amsterdam at L1 block 5 and a depth of 12, the head must reach at
-// least 18 before `head - 12` clears the boundary. 16 leaves margin on top of that.
+// postBoundaryMargin keeps head-reorgDepth and its parent post-Amsterdam.
 const postBoundaryMargin = uint64(16)
 
-// minInvalidatedBlocks is how many of the discarded L1 blocks must be shown to have actually
-// changed hash. A "deep reorg" that only replaced the fork point and re-mined identical
-// descendants would not exercise a deep pipeline unwind, so the whole discarded RANGE is checked
-// rather than just the target. This count is purely L1-side and does not depend on how far the
-// L2 had derived, so it can be pinned to the design doc's "10+ blocks" directly.
+// minInvalidatedBlocks pins the "10+ discarded blocks" requirement.
 const minInvalidatedBlocks = 10
 
-// TestL1Reorg_DeepReorg_PostUpgrade discards reorgDepth (12) post-Amsterdam L1 blocks in one go
-// and requires the L2 state machine to unwind and re-derive all of them.
-//
-// It is the deep counterpart to reorgepoch/ (depth 4): the distinguishing property is not that a
-// reorg happened — that is already covered — but that a LONG RUN of consecutive L1 blocks, and
-// therefore a long run of L2 epochs, is invalidated in a single step. A pipeline that can unwind
-// one epoch but accumulates stale state across many, or that hits geth's max-reorg-depth or the
-// finalized horizon, fails here while passing the shallow cases.
-//
-// SCOPE / HONESTY: like reorgepoch/, the behaviour verified here is L1-fork-INDEPENDENT. The
-// Amsterdam L1 is the ENVIRONMENT, not the discriminator: the IsAmsterdam guards only confirm the
-// discarded range lies past the boundary, and no assertion below would distinguish a
-// Glamsterdam-specific derivation regression. The Glamsterdam-sensitive case is reorg/, whose
-// divergence STRADDLES the activation block. This package's unique angle is depth.
-//
-// This test takes exclusive control of L1 production, so it is the only test in this package:
-// two L1-driving tests cannot share one devstack system.
+// TestL1Reorg_DeepReorg_PostUpgrade invalidates a post-Amsterdam L1 range and
+// requires every affected L2 epoch to re-derive. The activation-boundary case is
+// covered by reorg/; this case focuses on depth.
 func TestL1Reorg_DeepReorg_PostUpgrade(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleSingleChainMultiNodeWithTestSeq(t)
@@ -67,19 +42,11 @@ func TestL1Reorg_DeepReorg_PostUpgrade(gt *testing.T) {
 
 	sys.L1Network.WaitForBlock()
 
-	// Take manual control of L1 production. With the auto-FakePoS stopped, advancing the
-	// (time-travel) clock moves only the real-time-bound L2 sequencer, not the L1, so the L2
-	// origin can catch up between manually-produced L1 blocks.
+	// Manual L1 production lets the L2 origin catch up between produced blocks.
 	sys.ControlPlane.FakePoSState(cl.ID(), stack.Stop)
 
-	// driveErr records the first L1-production error that happens INSIDE a polled condition.
-	//
-	// testify runs an Eventually condition in its own goroutine (assert.Eventually:
-	// `go func() { ch <- condition() }()`). require.NoError there calls FailNow ->
-	// runtime.Goexit, which kills only that goroutine: nothing is ever sent on the channel, so
-	// Eventually just keeps ticking and finally reports "Condition never satisfied" minutes
-	// later, with the real error lost. Errors are therefore recorded here and asserted on the
-	// test goroutine.
+	// require.NoError inside Eventually would fail only the polling goroutine.
+	// Record production errors here and assert them from the test goroutine.
 	var driveErr error
 
 	// driveL1InStep produces one L1 block, then advances the clock until the L2 unsafe origin
@@ -95,9 +62,7 @@ func TestL1Reorg_DeepReorg_PostUpgrade(gt *testing.T) {
 		}, 60*time.Second, 200*time.Millisecond)
 	}
 
-	// produceL1 makes one L1 block WITHOUT requiring the L2 to keep pace — during a deep reorg
-	// the L2 origin legitimately falls a long way behind. It is called from inside polled
-	// conditions, so it records into driveErr rather than asserting.
+	// produceL1 mines one block without requiring the L2 origin to keep pace.
 	produceL1 := func() {
 		if driveErr != nil {
 			return
@@ -125,8 +90,7 @@ func TestL1Reorg_DeepReorg_PostUpgrade(gt *testing.T) {
 		require.NoErrorf(driveErr, "L1 block production failed while waiting: %s", msg)
 	}
 
-	// findEpochOpener scans the L2 chain downward from fromL2 for the FIRST (lowest-numbered)
-	// L2 block whose L1 origin is l1Num — the block that OPENS the epoch anchored there.
+	// findEpochOpener returns the first L2 block of the epoch anchored at l1Num.
 	findEpochOpener := func(fromL2 uint64, l1Num uint64) (eth.L2BlockRef, bool) {
 		var opener eth.L2BlockRef
 		found := false
@@ -142,15 +106,12 @@ func TestL1Reorg_DeepReorg_PostUpgrade(gt *testing.T) {
 		return opener, found
 	}
 
-	// Drive far enough past Amsterdam that `head - reorgDepth` is still comfortably
-	// post-Amsterdam. Amsterdam activates amsterdamOffset SECONDS after L1 genesis; with 6s
-	// blocks that is L1 block expectedBoundary.
+	// Drive far enough past Amsterdam that head-reorgDepth remains post-Amsterdam.
 	expectedBoundary := amsterdamOffset / uint64(l1BlockTime/time.Second)
 	require.Greater(postBoundaryMargin, reorgDepth,
 		"the margin driven past Amsterdam must exceed the reorg depth, or the target lands pre-Amsterdam")
 
-	// A bounded loop rather than Eventually: each iteration must run on the test goroutine so
-	// driveL1InStep's require.NoError reports the real error instead of a swallowed timeout.
+	// Keep this loop on the test goroutine so L1-production errors surface directly.
 	const maxDriveIters = 128
 	for i := 0; ; i++ {
 		require.Lessf(i, maxDriveIters,
@@ -184,9 +145,7 @@ func TestL1Reorg_DeepReorg_PostUpgrade(gt *testing.T) {
 	require.Greater(l2BeforeReorg.L1Origin.Number, l1Height,
 		"L2 must have derived past the deep-reorg target before the reorg")
 
-	// Snapshot the ENTIRE range about to be discarded, plus the L2 epoch opener anchored at each
-	// of those L1 blocks. Checking the whole range is what makes this a deep-reorg assertion: a
-	// reorg that replaced only the fork point would leave the rest of the range untouched.
+	// Snapshot the whole discarded range and the L2 epoch opener for each L1 block.
 	type epochSnapshot struct {
 		l1Hash     common.Hash
 		openerL2   uint64
@@ -204,16 +163,14 @@ func TestL1Reorg_DeepReorg_PostUpgrade(gt *testing.T) {
 	logger.Info("deep reorg target selected",
 		"l1Height", l1Height, "l1Head", oldHead, "depth", oldHead-l1Height, "l2Unsafe", l2BeforeReorg.Number)
 
-	// Inject the deep reorg: build a competing block on the target's parent (the TestSequencer
-	// forces it canonical), then extend the competing chain past the old head so it wins.
+	// Build a competing chain from the target's parent and extend it past the old head.
 	require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: l1Before.ParentHash}))
 	require.NoError(ts.Next(ctx))
 	require.Eventually(func() bool {
 		sys.AdvanceTime(2 * time.Second)
 		return sys.L1EL.BlockRefByLabel(eth.Unsafe).Number >= l1Height
 	}, 30*time.Second, 200*time.Millisecond)
-	// Bounded: a competing chain that never becomes canonical would otherwise spin here until
-	// the whole test times out instead of failing with a usable message.
+	// Bound the loop so a stuck competing chain fails with context.
 	for i := 0; sys.L1EL.BlockRefByLabel(eth.Unsafe).Number <= oldHead+1; i++ {
 		require.Lessf(uint64(i), reorgDepth+24,
 			"competing chain never overtook the old head %d (L1 head stuck at %d)",
@@ -222,7 +179,7 @@ func TestL1Reorg_DeepReorg_PostUpgrade(gt *testing.T) {
 		require.NoError(driveErr, "L1 block production failed while extending the competing chain")
 	}
 
-	// The whole discarded RANGE must have changed, not just the fork point.
+	// The whole discarded range must change, not just the fork point.
 	changed := uint64(0)
 	for n := l1Height; n <= oldHead; n++ {
 		if sys.L1EL.BlockRefByNumber(n).Hash != before[n].l1Hash {
@@ -259,20 +216,18 @@ func TestL1Reorg_DeepReorg_PostUpgrade(gt *testing.T) {
 	require.NotEqual(l2At.Hash, l2BeforeReorg.Hash,
 		"L2 must have reorged the block that derived from the discarded L1 range")
 
-	// The re-derived L2 block must track the NEW canonical L1, not a stale origin.
+	// The re-derived L2 block must track the new canonical L1.
 	canonOrigin := sys.L1EL.BlockRefByNumber(l2At.L1Origin.Number)
 	require.Equal(l2At.L1Origin.Hash, canonOrigin.Hash,
 		"reorged L2 block must derive from the NEW canonical L1 (not a stale pre-reorg origin)")
 
-	// Drive the sequencer's SAFE head past the whole discarded range, so the re-derived epochs
-	// provably went through L1 rather than being unsafe blocks that never did.
+	// Drive the sequencer safe head past the discarded range.
 	driveWhile(func() bool {
 		return sys.L2EL.BlockRefByLabel(eth.Safe).L1Origin.Number > oldHead
 	}, 300*time.Second, "sequencer safe head must derive past the entire discarded L1 range")
 	seqSafe := sys.L2EL.BlockRefByLabel(eth.Safe)
 
-	// EVERY invalidated L1 height that opened an L2 epoch must now open one on the NEW canonical
-	// block. This is the deep-reorg property: many epochs re-derived, not one.
+	// Every invalidated L1 height that opened an L2 epoch must reopen on the new chain.
 	l2Head := sys.L2EL.BlockRefByLabel(eth.Unsafe).Number
 	hadOpener, reDerived := uint64(0), uint64(0)
 	for n := l1Height; n <= oldHead; n++ {
@@ -290,24 +245,19 @@ func TestL1Reorg_DeepReorg_PostUpgrade(gt *testing.T) {
 		}
 	}
 
-	// Every epoch that existed before the reorg must have re-derived onto a different L1 origin.
-	// This is the strict half and does not depend on how far the L2 had got.
+	// Every pre-reorg epoch in the discarded range must now use a different L1 origin.
 	require.Equalf(hadOpener, reDerived,
 		"all %d L2 epochs anchored in the discarded range must re-derive onto new L1 origins, only %d did",
 		hadOpener, reDerived)
 
-	// How MANY epochs existed at snapshot time is bounded by the L2's lag behind the L1 head: the
-	// last few discarded L1 blocks may not have opened an epoch yet. Allow maxOriginLag of slack
-	// rather than pinning a constant — at depth 12 with a lag of 2 this is 11, and a hard floor of
-	// 10 would sit one block from a spurious failure whenever the lag drifted.
+	// Allow a small lag: the last discarded L1 blocks may not have opened L2 epochs yet.
 	const maxOriginLag = uint64(4)
 	require.GreaterOrEqualf(hadOpener, reorgDepth+1-maxOriginLag,
 		"a deep reorg must invalidate at least %d L2 epochs (depth %d minus up to %d blocks of L2 origin lag), but only %d of the discarded L1 blocks had opened one",
 		reorgDepth+1-maxOriginLag, reorgDepth, maxOriginLag, hadOpener)
 	logger.Info("L2 re-derived the discarded range", "epochs", reDerived, "safeHead", seqSafe.Number)
 
-	// INDEPENDENT verifier convergence: the verifier derives its safe chain from L1 alone, so it
-	// must independently reach the same post-reorg safe block — height AND hash.
+	// Verifier convergence: same post-reorg safe block by height and hash.
 	driveWhile(func() bool {
 		vSafe := sys.L2ELB.BlockRefByLabel(eth.Safe)
 		return vSafe.Number >= seqSafe.Number && sys.L2ELB.BlockRefByNumber(seqSafe.Number).Hash == seqSafe.Hash

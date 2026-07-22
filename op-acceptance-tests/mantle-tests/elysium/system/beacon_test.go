@@ -19,25 +19,14 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
-// The beacon cases below drive op-node's own L1 beacon client against the devnet's REAL
-// consensus layer. They exist because the sysgo suite structurally cannot cover this: its L1 CL
-// is fakebeacon, a fork-agnostic mock, so the post-Gloas beacon-API behaviour these cases are
-// about (blob_kzg_commitments moved out of the block body by ePBS, which makes Prysm's
-// blob_sidecars endpoint 500 and Lighthouse's /blobs and /blob_sidecars 400 for blocks that DO
-// carry blobs) simply does not exist there.
-//
-// Every case is guarded on the sampled block genuinely being post-Gloas. Without that guard a
-// pre-Gloas Deneb/Electra/Fulu beacon would satisfy the blob fetches identically and the case
-// would verify nothing fork-specific at all.
+// These cases drive op-node's L1 beacon client against a real consensus layer.
+// sysgo uses fakebeacon, so it cannot exercise post-Gloas blob API behavior.
+// Each case first proves the sampled blob block is post-Gloas.
 
-// expectedSecondsPerSlotEnv optionally pins SECONDS_PER_SLOT to the value a particular devnet is
-// known to run. It is deliberately opt-in: slot time is a property of the devnet's genesis, not of
-// Glamsterdam, and the environments this suite targets do not agree on it (rde-v4's profiles run
-// 12s, kurtosis devnets run 2s). Hardcoding one would turn a correctly-running chain red.
+// expectedSecondsPerSlotEnv optionally pins a devnet-specific SECONDS_PER_SLOT.
 const expectedSecondsPerSlotEnv = "ELYSIUM_EXPECTED_SECONDS_PER_SLOT"
 
-// l1Beacon bundles the L1 clients the beacon cases share. They come from the devnet descriptor
-// via the node frontends, so these cases need no hand-set endpoint environment variables.
+// l1Beacon bundles the devnet-provided L1 clients used by these cases.
 type l1Beacon struct {
 	sys    *presets.MantleMinimal
 	beacon apis.BeaconClient
@@ -53,9 +42,7 @@ func newL1Beacon(t devtest.T, sys *presets.MantleMinimal) *l1Beacon {
 	}
 }
 
-// forkVersion returns the consensus-layer fork name ("deneb", "electra", "fulu", "gloas", …) the
-// beacon reports for the block at a slot. The top-level "version" field of
-// /eth/v2/beacon/blocks/{slot} is the beacon API's fork discriminator for that block.
+// forkVersion returns the beacon API fork discriminator for a slot.
 func (b *l1Beacon) forkVersion(t devtest.T, slot uint64) string {
 	require := t.Require()
 	resp, err := b.http.Get(t.Ctx(), fmt.Sprintf("/eth/v2/beacon/blocks/%d", slot), nil, nil)
@@ -71,13 +58,9 @@ func (b *l1Beacon) forkVersion(t devtest.T, slot uint64) string {
 	return body.Version
 }
 
-// rawConfigSpec reads /eth/v1/config/spec as its full key/value set. The typed ConfigSpec only
-// models SECONDS_PER_SLOT, so the fork-schedule keys have to come from the raw response.
-//
-// Values are kept as raw JSON rather than strings: the spec is NOT a flat string map. Prysm serves
-// BLOB_SCHEDULE as an array of objects ([{"EPOCH":"0","MAX_BLOBS_PER_BLOCK":"15"}, …]), so decoding
-// into map[string]string fails outright on the whole document — taking the scalar fork-schedule
-// keys this case actually reads down with it.
+// rawConfigSpec keeps the full config/spec response. The typed wrapper only
+// exposes SECONDS_PER_SLOT, and some clients include structured values such as
+// BLOB_SCHEDULE, so callers parse only the scalar keys they need.
 func (b *l1Beacon) rawConfigSpec(t devtest.T) map[string]json.RawMessage {
 	require := t.Require()
 	resp, err := b.http.Get(t.Ctx(), "/eth/v1/config/spec", nil, nil)
@@ -93,8 +76,7 @@ func (b *l1Beacon) rawConfigSpec(t devtest.T) map[string]json.RawMessage {
 	return body.Data
 }
 
-// configSpecUint64 reads a scalar spec key. The beacon API encodes every numeric config value as a
-// JSON string, so the raw value is unquoted before parsing.
+// configSpecUint64 reads a scalar numeric spec key encoded as a JSON string.
 func configSpecUint64(t devtest.T, rawSpec map[string]json.RawMessage, key string) uint64 {
 	require := t.Require()
 	raw, ok := rawSpec[key]
@@ -117,8 +99,7 @@ func (b *l1Beacon) secondsPerSlot(t devtest.T) uint64 {
 	return secondsPerSlot
 }
 
-// slotOf maps an L1 block to its beacon slot exactly as op-node does: genesis time plus
-// SECONDS_PER_SLOT.
+// slotOf maps an L1 block to its beacon slot using genesis time and SECONDS_PER_SLOT.
 func (b *l1Beacon) slotOf(t devtest.T, ref eth.L1BlockRef, secondsPerSlot uint64) uint64 {
 	require := t.Require()
 	genesis, err := b.beacon.BeaconGenesis(t.Ctx())
@@ -161,8 +142,7 @@ func (b *l1Beacon) findBlobBlock(t devtest.T) (eth.L1BlockRef, []eth.IndexedBlob
 	return eth.L1BlockRef{}, nil
 }
 
-// gloasBlobBlock finds a blob-carrying L1 block and requires it to be genuinely post-Gloas,
-// returning it with its blob hashes, mapped slot and the slot time used for the mapping.
+// gloasBlobBlock returns a blob-carrying L1 block that maps to a post-Gloas slot.
 func (b *l1Beacon) gloasBlobBlock(t devtest.T) (eth.L1BlockRef, []eth.IndexedBlobHash, uint64, uint64) {
 	require := t.Require()
 	secondsPerSlot := b.secondsPerSlot(t)
@@ -177,8 +157,7 @@ func (b *l1Beacon) gloasBlobBlock(t devtest.T) (eth.L1BlockRef, []eth.IndexedBlo
 	return ref, hashes, slot, secondsPerSlot
 }
 
-// requireBlobsMatch checks the returned blobs against the requested hashes, in order, by
-// recomputing each KZG commitment — so a reordered or substituted blob fails.
+// requireBlobsMatch pins returned blobs to the requested hashes, in order.
 func requireBlobsMatch(t devtest.T, blobs []*eth.Blob, hashes []eth.IndexedBlobHash) {
 	require := t.Require()
 	require.Len(blobs, len(hashes), "beacon must return every requested blob")
@@ -191,14 +170,8 @@ func requireBlobsMatch(t devtest.T, blobs []*eth.Blob, hashes []eth.IndexedBlobH
 	}
 }
 
-// runL1BeaconConfigSpec checks the consensus-layer configuration path op-node relies on for blob
-// derivation: /eth/v1/config/spec must report a SECONDS_PER_SLOT that agrees with the L1's real
-// block spacing, the Gloas fork must be scheduled, and that same genesis-time + SECONDS_PER_SLOT
-// mapping must locate a known blob block whose blobs the real beacon actually serves.
-//
-// The slot time is checked for CONSISTENCY rather than against a hardcoded number — it is a
-// property of the devnet's genesis, not of Glamsterdam. Set ELYSIUM_EXPECTED_SECONDS_PER_SLOT to
-// additionally pin it for a devnet whose value is known.
+// runL1BeaconConfigSpec checks the config/spec values op-node uses for blob
+// derivation: slot time, Gloas schedule, and blob lookup by mapped slot.
 func runL1BeaconConfigSpec(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -216,9 +189,7 @@ func runL1BeaconConfigSpec(gt *testing.T) {
 		t.Logf("%s unset: not pinning a slot time (beacon reports SECONDS_PER_SLOT=%d)", expectedSecondsPerSlotEnv, secondsPerSlot)
 	}
 
-	// The spec value must describe the chain it came from: sample a window of L1 blocks and
-	// require the spacing rule to hold. A missed slot legitimately widens a gap, so the rule
-	// tolerates multiples but still requires the tightest gap to be exactly one slot.
+	// Sample recent L1 blocks and require the spec slot time to match their spacing.
 	requireSlotTimeMatchesL1(t, sys, secondsPerSlot)
 
 	rawSpec := b.rawConfigSpec(t)
@@ -239,8 +210,7 @@ func runL1BeaconConfigSpec(gt *testing.T) {
 		secondsPerSlot, gloasForkEpoch, slot, len(resp.Data))
 }
 
-// requireSlotTimeMatchesL1 samples a window of recent L1 blocks and applies the slot-spacing rule
-// (beaconslot.SpacingError, unit-tested in that package because this case cannot run in CI).
+// requireSlotTimeMatchesL1 applies the unit-tested slot-spacing rule to recent L1 blocks.
 func requireSlotTimeMatchesL1(t devtest.T, sys *presets.MantleMinimal, secondsPerSlot uint64) {
 	const sampleBlocks = uint64(8)
 	require := t.Require()
@@ -260,13 +230,8 @@ func requireSlotTimeMatchesL1(t devtest.T, sys *presets.MantleMinimal, secondsPe
 		secondsPerSlot, first, head.Number)
 }
 
-// runL1BeaconBlobsFetch points OUR op-node L1BeaconClient — the exact code under test, compiled
-// from this branch — at the devnet's real beacon and requires it to fetch a real L1 block's blobs.
-//
-// This is the isolated operation the post-Gloas beacon-API quirk breaks: with blob_kzg_commitments
-// moved out of the block body, Prysm's blob_sidecars endpoint returns 500 and Lighthouse returns
-// 400 on both endpoints for blocks that DO carry blobs, and op-node's GetBlobs only falls
-// /blobs -> /blob_sidecars, with no data_column_sidecars fallback. If it cannot fetch, this is red.
+// runL1BeaconBlobsFetch requires the branch's op-node client to fetch real
+// post-Gloas blobs from the devnet beacon.
 func runL1BeaconBlobsFetch(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -284,16 +249,6 @@ func runL1BeaconBlobsFetch(gt *testing.T) {
 		len(blobs), len(hashes), ref.Number, slot)
 }
 
-// There is deliberately no main-path-vs-/blob_sidecars-fallback comparison case here.
-//
-// Such a case (TestL1Beacon_BlobOrderConsistency) compared the blobs returned by
-// GET /eth/v1/beacon/blobs against those returned by GET /eth/v1/beacon/blob_sidecars for the same
-// hashes, to catch a fallback that silently reorders or substitutes blobs. The beacon-API spec has
-// since retired that second path: blob_sidecars/{block_id} was DEPRECATED in beacon-APIs v4.0.0
-// (which is where /blobs/{block_id} was introduced to replace it) and REMOVED outright as of
-// v5.0.0-alpha.0, together with the blob_sidecar SSE event. A spec-current beacon therefore has
-// only one path, so the comparison has nothing left to compare and could never pass.
-//
-// The property that case existed to protect — blobs coming back in the requested order — is not
-// lost: requireBlobsMatch recomputes each blob's KZG commitment and pins it to hashes[i] by index,
-// and runL1BeaconBlobsFetch applies it to the real /blobs response.
+// There is no main-path-vs-blob_sidecars comparison here: current beacon APIs
+// removed the old blob_sidecars path. requireBlobsMatch still verifies ordering
+// and identity by KZG commitment.

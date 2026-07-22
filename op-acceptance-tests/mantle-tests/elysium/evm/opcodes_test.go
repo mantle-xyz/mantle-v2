@@ -31,22 +31,15 @@ func deployRuntimeInitCode(runtime []byte) []byte {
 	return append(prefix, runtime...)
 }
 
-// TestL2EVM_NoNewOpcodes asserts the Mantle L2 EVM stays on Arsia rules and does
-// NOT implement the EIP-8024 stack opcodes (DUPN=0xe6, SWAPN=0xe7, EXCHANGE=0xe8).
-// The L2 EVM opcode set is a function of the L2 fork alone: these bytes are
-// undefined pre-Osaka, so on an Arsia L2 they are invalid no matter what the L1
-// runs. The test exercises the property while the L1 runs Glamsterdam (Amsterdam),
-// but the L1 is the environment here, not the discriminator — the same assertion
-// holds under any L1.
+// TestL2EVM_NoNewOpcodes asserts the Mantle L2 EVM stays on Arsia rules and
+// keeps EIP-8024 stack opcodes undefined while the L1 runs Glamsterdam.
 //
 // For each opcode we deploy a probe contract whose runtime code executes that
 // opcode, then call it. Deployment must succeed (the init code only stores the
 // blob), but the subsequent call must revert (Status == Failed) because the EVM
 // hits an invalid/undefined opcode.
 //
-// COVERAGE: this is the EIP-8024 opcode sub-case only. The gas sub-cases live in sibling
-// packages: EIP-7976 calldata floor (evmgas), EIP-7981 access-list (evmaccesslist),
-// EIP-7778 block-level gas accounting (evmblockgas).
+// Gas-rule sub-cases live in sibling evm packages.
 func runNoNewOpcodes(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -70,19 +63,8 @@ func runNoNewOpcodes(gt *testing.T) {
 	}
 
 	for _, tc := range newOpcodes {
-		// runtime = PUSH1 0 x4 ; <newopcode> ; <immediate 0x00> ; STOP
-		//
-		// The stack depth and the trailing immediate both matter for the assertion to
-		// DISCRIMINATE rather than merely fail. EIP-8024's opcodes take an immediate operand
-		// from the byte that follows them, and with immediate 0x00 they address: DUPN the 1st
-		// stack item, SWAPN the 1st and 2nd, EXCHANGE the 2nd and 3rd. Four PUSHes therefore
-		// leave every one of them with enough operands to run cleanly IF the opcode is
-		// implemented, so the call would SUCCEED on an EIP-8024 EVM and the ReceiptStatusFailed
-		// assertion below would go red.
-		//
-		// An earlier version pushed only two values. That was enough for DUPN and SWAPN but not
-		// for EXCHANGE, which would have stack-underflowed — and therefore reverted — even on an
-		// EIP-8024 EVM, making that third sub-case pass for the wrong reason.
+		// Four PUSHes and immediate 0x00 give each EIP-8024 opcode enough stack to
+		// succeed if implemented; on Arsia it must fail as undefined.
 		runtime := []byte{0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, tc.op, 0x00, 0x00}
 
 		// Deploy the probe contract. Creation must succeed: the init code only
@@ -108,11 +90,7 @@ func runNoNewOpcodes(gt *testing.T) {
 		require.NoError(err, "call tx for %s must be included even though it reverts", tc.name)
 		require.Equal(types.ReceiptStatusFailed, call.Status, "calling %s (0x%x) must revert on Arsia — the opcode is not supported", tc.name, tc.op)
 
-		// Status alone does not say WHY the call failed — a plain REVERT, an out-of-gas, or a
-		// bad deployment would satisfy it equally. An undefined opcode is specifically an
-		// ErrInvalidOpCode, which consumes the entire gas allowance rather than refunding the
-		// unused remainder, so requiring the full limit to be burnt pins the failure to the
-		// opcode itself. The probe is 11 bytes and cannot plausibly consume 1M gas any other way.
+		// Invalid opcode burns the full gas allowance; a partial burn would be a different failure.
 		require.EqualValuesf(callGasLimit, call.GasUsed,
 			"calling %s (0x%x) must fail as an invalid opcode, which consumes the whole gas "+
 				"allowance; a partial burn of %d/%d means it failed for some other reason",

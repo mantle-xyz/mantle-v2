@@ -25,19 +25,12 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
-// channelTargetSize is the compressor's target output size — large enough that the handful of
-// L2 blocks this test batches always fit in one channel, so the only thing controlling how many
-// frames come out is the per-frame cap chosen in buildChannel.
+// channelTargetSize keeps each test channel single-channel; buildChannel controls frame count.
 const channelTargetSize = uint64(100_000)
 
-// TestDerivation_ChannelTimeout_PostUpgrade pins channel-timeout behaviour across the L1
-// Glamsterdam boundary. The test stops the real batcher, posts frames from the batcher's key, and
-// advances L1 one block at a time so every frame lands at a known height.
-//
-// Two otherwise-identical channels discriminate the deadline: one has its final frame exactly at
-// open+timeout and must become safe by hash; the other is one L1 block late and must not become
-// safe. This covers the pipeline behaviour directly instead of re-checking the ChannelTimeout
-// constant.
+// TestDerivation_ChannelTimeout_PostUpgrade posts batch frames across L1
+// Amsterdam activation. A channel closing at open+timeout must become safe; the
+// same shape closing one block late must time out.
 func TestDerivation_ChannelTimeout_PostUpgrade(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleSingleChainMultiNodeWithTestSeq(t)
@@ -58,8 +51,7 @@ func TestDerivation_ChannelTimeout_PostUpgrade(gt *testing.T) {
 
 	sys.L1Network.WaitForBlock()
 
-	// Stop the real batcher: from here, every byte of batch data on L1 is posted by this test,
-	// so an L2 block can only become safe through a channel we placed ourselves.
+	// Stop the real batcher so only test-posted channels can make L2 blocks safe.
 	sys.L2Batcher.Stop()
 	t.Cleanup(func() { sys.L2Batcher.Start() })
 
@@ -73,8 +65,7 @@ func TestDerivation_ChannelTimeout_PostUpgrade(gt *testing.T) {
 		require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: common.Hash{}}))
 		require.NoError(ts.Next(ctx))
 	}
-	// driveL1To produces L1 blocks until the head reaches target, nudging the L2 clock so the
-	// sequencer keeps building and its L1 origin follows along.
+	// driveL1To produces L1 blocks while nudging the L2 sequencer forward.
 	driveL1To := func(target uint64) {
 		for sys.L1EL.BlockRefByLabel(eth.Unsafe).Number < target {
 			produceL1Block()
@@ -87,17 +78,14 @@ func TestDerivation_ChannelTimeout_PostUpgrade(gt *testing.T) {
 	batcherEOA := dsl.NewKey(t, batcherPriv).User(sys.L1EL)
 	inbox := rollupCfg.BatchInboxAddress
 
-	// l2Block reconstructs a full block from the L2 EL: the channel encoder needs the
-	// transactions and the L1-info deposit, both carried here.
+	// l2Block reconstructs the header and transactions needed by the channel encoder.
 	l2Block := func(n uint64) *gethtypes.Block {
 		info, txs, err := sys.L2EL.Escape().EthClient().InfoAndTxsByNumber(ctx, n)
 		require.NoErrorf(err, "read L2 block %d", n)
 		return gethtypes.NewBlockWithHeader(info.Header()).WithBody(gethtypes.Body{Transactions: txs})
 	}
 
-	// encodeChannel encodes L2 blocks [from,to] into a closed channel and returns its frames,
-	// each capped at frameSize. This is the batcher's own encoder (span batch + zlib), so the
-	// bytes are exactly what a real batcher would post — only their L1 placement is under test.
+	// encodeChannel uses the batcher's own span-batch encoder; only L1 placement is synthetic.
 	encodeChannel := func(from, to uint64, frameSize uint64) [][]byte {
 		ch, err := derive.NewSpanChannelOut(channelTargetSize, derive.Zlib, chainSpec)
 		require.NoError(err, "create channel")
@@ -120,11 +108,7 @@ func TestDerivation_ChannelTimeout_PostUpgrade(gt *testing.T) {
 		return frames
 	}
 
-	// buildChannel splits a channel into exactly two frames: it first encodes the blocks
-	// whole to measure the payload, then re-encodes with a frame cap of half that size. The
-	// blocks carry little more than their L1-info deposit, so a fixed frame cap would leave
-	// the whole channel in a single frame — and a single frame can only ever land in one L1
-	// block, which is precisely what this test must avoid.
+	// buildChannel forces at least two frames so the last frame can land at the deadline.
 	buildChannel := func(from, to uint64) [][]byte {
 		whole := encodeChannel(from, to, channelTargetSize)
 		require.Lenf(whole, 1, "measuring pass must yield one frame (got %d)", len(whole))
@@ -137,8 +121,7 @@ func TestDerivation_ChannelTimeout_PostUpgrade(gt *testing.T) {
 		return frames
 	}
 
-	// postFrames submits one inbox tx carrying the given frames and mines exactly one L1 block
-	// to include it, returning that block's number.
+	// postFrames submits one inbox tx and mines exactly one L1 block to include it.
 	postFrames := func(what string, frames ...[]byte) uint64 {
 		payload := []byte{derive_params.DerivationVersion0}
 		for _, f := range frames {
@@ -162,9 +145,7 @@ func TestDerivation_ChannelTimeout_PostUpgrade(gt *testing.T) {
 		return l1Config.IsAmsterdam(new(big.Int).SetUint64(n), ref.Time)
 	}
 
-	// nextUnsafeRange returns a contiguous range of L2 blocks above the current safe head that
-	// the channel will carry. They are unsafe-only: with the batcher stopped, nothing else can
-	// make them safe, so "did they become safe" is a clean verdict on our channel alone.
+	// nextUnsafeRange returns unsafe-only L2 blocks that only this test can make safe.
 	const blocksPerChannel = uint64(3)
 	nextUnsafeRange := func(what string) (from, to uint64) {
 		safe := sys.L2CL.SyncStatus().SafeL2.Number
@@ -177,7 +158,7 @@ func TestDerivation_ChannelTimeout_PostUpgrade(gt *testing.T) {
 		return from, to
 	}
 
-	// ---- CHANNEL A: opens PRE-Amsterdam, closes at exactly open+timeout POST-Amsterdam ----
+	// Channel A opens pre-Amsterdam and closes exactly at open+timeout post-Amsterdam.
 
 	amsterdamL1Block := amsterdamOffset / l1BlockTime
 	require.False(isAmsterdam(sys.L1EL.BlockRefByLabel(eth.Unsafe).Number),
@@ -202,12 +183,11 @@ func TestDerivation_ChannelTimeout_PostUpgrade(gt *testing.T) {
 	logger.Info("channel A spans the Glamsterdam boundary at the exact deadline",
 		"open", openA, "close", closedA, "amsterdamAt", amsterdamL1Block, "timeout", channelTimeout)
 
-	// A channel closed exactly ON the deadline is still in time: its blocks must become safe.
-	// Matching the HASH proves those exact L2 blocks were reconstructed from these frames.
+	// Closing exactly on the deadline is valid; match the hash to prove exact reconstruction.
 	sys.L2CL.ReachedRef(suptypes.CrossSafe, eth.BlockID{Number: refA.Number, Hash: refA.Hash}, 120)
 	logger.Info("channel A accepted at open+timeout: its L2 blocks are safe", "l2", refA.Number)
 
-	// ---- CHANNEL B: one L1 block LATE, entirely post-Amsterdam ----
+	// Channel B closes one L1 block late, entirely post-Amsterdam.
 
 	fromB, toB := nextUnsafeRange("channel B")
 	refB := sys.L2EL.BlockRefByNumber(toB)
@@ -222,9 +202,7 @@ func TestDerivation_ChannelTimeout_PostUpgrade(gt *testing.T) {
 	require.Equalf(lateTargetB, closedB, "channel B's last frame must land exactly one block past the deadline")
 	logger.Info("channel B closed one block past the deadline", "open", openB, "close", closedB, "timeout", channelTimeout)
 
-	// The channel timed out, so its frames must be ignored and its L2 blocks must NOT become
-	// safe. Give derivation ample L1 blocks and time to prove the non-advance is settled, not
-	// merely slow — the identical channel A above became safe under the same treatment.
+	// The timed-out channel's L2 blocks must not become safe.
 	driveL1To(closedB + 5)
 	require.Never(func() bool {
 		sys.AdvanceTime(2 * time.Second)
@@ -240,15 +218,7 @@ func TestDerivation_ChannelTimeout_PostUpgrade(gt *testing.T) {
 	logger.Info("channel B dropped at open+timeout+1: its L2 blocks never became safe",
 		"safe", safe.Number, "wouldHaveBeen", refB.Number)
 
-	// ---- CHANNEL C: the SAME L2 blocks B failed to deliver, re-posted inside the deadline ----
-	//
-	// Without this, "B's blocks never became safe" would also be satisfied if B had been
-	// rejected for some reason OTHER than the timeout — a malformed encoding, or an
-	// Amsterdam-specific rejection that has nothing to do with the deadline. Channel C is
-	// identical to B in every respect that could cause such a rejection (same L2 blocks, same
-	// encoder, same poster, both endpoints post-Amsterdam) and differs ONLY in landing its last
-	// frame one block earlier — exactly on the deadline instead of one past it. If C is accepted
-	// and B was not, the single L1 block of spread is provably the whole cause.
+	// Channel C re-posts B's L2 blocks inside the deadline to isolate timeout as the cause.
 	framesC := buildChannel(fromB, toB)
 	openC := postFrames("channel C first frame", framesC[0])
 	require.Truef(isAmsterdam(openC), "channel C must open on a POST-Amsterdam L1 block (opened at %d)", openC)

@@ -86,8 +86,7 @@ func runL1UpgradeMidFlight(gt *testing.T) {
 	sys.L2CL.ReachedRef(suptypes.CrossSafe, eth.BlockID{Number: preBlock, Hash: preRcpt.BlockHash}, 90)
 	sys.L2CL.ReachedRef(suptypes.CrossSafe, eth.BlockID{Number: postBlock, Hash: postRcpt.BlockHash}, 90)
 
-	// The post-boundary tx's safe L2 block must have a genuinely post-Amsterdam L1
-	// origin — derivation advanced PAST the upgrade, it did not stall at it.
+	// The post-boundary tx must derive from a post-Amsterdam L1 origin.
 	postRef := sys.L2EL.BlockRefByNumber(postBlock)
 	postOrigin, _, err := sys.L1EL.EthClient().InfoAndTxsByHash(ctx, postRef.L1Origin.Hash)
 	require.NoError(err, "L1 origin of the post-upgrade safe L2 block must exist on L1")
@@ -97,8 +96,7 @@ func runL1UpgradeMidFlight(gt *testing.T) {
 		postBlock, postOrigin.NumberU64(), postOrigin.Time(),
 	)
 
-	// ...and the pre-boundary tx's safe L2 block must have a PRE-Amsterdam L1 origin,
-	// so the two txs genuinely straddle the boundary (not both post-upgrade).
+	// The pre-boundary tx must still derive from a pre-Amsterdam L1 origin.
 	preRef := sys.L2EL.BlockRefByNumber(preBlock)
 	preOrigin, _, err := sys.L1EL.EthClient().InfoAndTxsByHash(ctx, preRef.L1Origin.Hash)
 	require.NoError(err, "L1 origin of the pre-upgrade safe L2 block must exist on L1")

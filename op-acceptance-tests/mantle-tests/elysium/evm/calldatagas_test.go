@@ -12,13 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-// Calldata gas constants (see op-geth core/state_transition.go FloorDataGas and
-// params/protocol_params.go). Mantle's L2 runs on Arsia rules, which price the
-// EIP-7623 calldata floor at TxCostFloorPerToken = 10 gas per token, where a
-// non-zero byte is worth TxTokenPerNonZeroByte = 4 tokens. A value-less call to a
-// plain EOA runs no code, so the data floor dominates the EIP-2028 standard cost,
-// and the per-non-zero-byte gas is exactly floorPerToken * tokensPerNonZeroByte =
-// 40 gas/byte. This is an L2-fork-internal schedule, independent of the L1 fork.
+// Calldata gas constants for the Mantle-Arsia L2 floor: 10 gas per token and
+// 4 tokens per non-zero byte, or 40 gas/byte.
 const (
 	txBaseGas            = 21_000 // params.TxGas
 	tokensPerNonZeroByte = 4      // params.TxTokenPerNonZeroByte (EIP-7623)
@@ -28,38 +23,22 @@ const (
 	arsiaGasPerNonZeroByte = arsiaFloorPerToken * tokensPerNonZeroByte
 )
 
-// TestL2EVM_CalldataGasStaysArsia verifies an L2-Arsia property: the Mantle L2
-// prices non-zero calldata at the Arsia EIP-7623 floor of 40 gas/byte (10 gas per
-// token * 4 tokens per non-zero byte). This pricing is governed by the L2 fork,
-// not the L1. The test runs while the L1 is on Glamsterdam (Amsterdam), but the
-// L1 is only the environment here, not the discriminator — the assertions pin the
-// L2's own gas schedule and would hold under any L1.
-//
-// It sends two value-less calls to the same plain EOA carrying 1000 and 2000
-// non-zero calldata bytes. Because such a call executes no code, the EIP-7623 data
-// floor governs the cost, so each tx's gas is exactly 21000 + 40 * len. The two
-// exact-value assertions pin both the base and the per-byte floor rate directly.
-//
-// COVERAGE: this covers ONLY the calldata-floor sub-case of the L2 gas schedule.
-// Sibling packages cover the others: access-list repricing (evmaccesslist),
-// block-level gas accounting (evmblockgas), opcodes (evmopcodes).
+// TestL2EVM_CalldataGasStaysArsia checks that non-zero calldata remains priced
+// at the Arsia 40 gas/byte floor while the L1 runs Glamsterdam. Sibling evm
+// packages cover access-list pricing, block-gas accounting, and opcodes.
 func runCalldataGasStaysArsia(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()
 
-	// The L1 is on Glamsterdam (Amsterdam) here — that is the environment the L2
-	// runs in, not what this test discriminates on. Wait for the crossing so the
-	// L2's Arsia pricing is exercised alongside an upgraded L1.
+	// Exercise the L2 gas schedule while consuming an upgraded L1.
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 	sys.L1EL.WaitForTime(*l1Config.AmsterdamTime)
 
 	wallet := sys.FunderL2.NewFundedEOA(eth.OneEther)
 
-	// A plain EOA recipient (no code, well above the precompile range and not a
-	// Mantle 0x42.. predeploy): a value-less call to it runs no code, so the tx's
-	// gas is intrinsic + calldata only and the EIP-7623 data floor governs.
+	// A value-less call to a plain EOA leaves intrinsic calldata cost isolated.
 	recipient := common.HexToAddress("0x00000000000000000000000000000000C0FFEE00")
 
 	const (
@@ -70,9 +49,7 @@ func runCalldataGasStaysArsia(gt *testing.T) {
 	smallGas := sendNonZeroCalldata(t, wallet, recipient, smallLen)
 	largeGas := sendNonZeroCalldata(t, wallet, recipient, largeLen)
 
-	// Exact per-tx cost for a value-less EOA call: 21000 base + 40 gas/non-zero byte
-	// (the Arsia EIP-7623 calldata floor). Pinning both lengths fixes the base and
-	// the per-byte floor rate exactly.
+	// Exact Arsia cost: 21000 base + 40 gas per non-zero byte.
 	require.EqualValues(txBaseGas+arsiaGasPerNonZeroByte*smallLen, smallGas,
 		"small-calldata tx gas must match Arsia floor pricing (40 gas/non-zero byte)")
 	require.EqualValues(txBaseGas+arsiaGasPerNonZeroByte*largeLen, largeGas,

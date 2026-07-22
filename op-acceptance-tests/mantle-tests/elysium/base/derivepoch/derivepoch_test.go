@@ -50,7 +50,7 @@ func TestDerivation_L1EpochCross_PostUpgrade(gt *testing.T) {
 
 	l2BlockTime := time.Duration(rollupCfg.BlockTime) * time.Second
 
-	// Step 1: wait until the L2 SAFE head references its first post-Amsterdam L1 origin.
+	// Step 1: wait until the L2 safe head references its first post-Amsterdam L1 origin.
 	var startSafe eth.L2BlockRef
 	require.Eventually(func() bool {
 		startSafe = sys.L2CL.SyncStatus().SafeL2

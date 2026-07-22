@@ -81,19 +81,8 @@ func TestL1Finalize_PostUpgrade(gt *testing.T) {
 					require.NotNil(originHeader.SlotNumber,
 						"L2 finalized head's L1 origin (post-Amsterdam) must carry an EIP-7843 SlotNumber")
 
-					// (4b) L2 finality is gated by L1 finality: the finalized L2
-					// block's L1 origin must be at or before the current L1
-					// FINALIZED head.
-					//
-					// The L1 finalized head is read AFTER the L2 one, so it can only
-					// be equal or newer. Note that this makes the bound LOOSER, not
-					// tighter: a larger right-hand side is easier to satisfy, so an
-					// L2 that finalized slightly ahead of L1 could be masked if L1
-					// finality advanced in between. The ordering is deliberate — the
-					// tighter alternative (reading L1 first) would report a failure
-					// whenever L1 finality advanced between the two reads, which is a
-					// property of the sampling, not of the node. The check therefore
-					// catches sustained violations rather than sub-second ones.
+					// L2 finality is gated by the L1 finalized head. Read L1 second
+					// to avoid false failures when L1 finality advances between samples.
 					l1FinalizedNow := sys.L1EL.BlockRefByLabel(eth.Finalized)
 					require.LessOrEqual(fin.L1Origin.Number, l1FinalizedNow.Number,
 						"L2 finalized head's L1 origin (%d) must not run ahead of the L1 finalized head (%d)",

@@ -114,7 +114,7 @@ func runBatcherSubmission(gt *testing.T) {
 		"l1Block", batchL1Block, "batchInbox", batchInbox, "txHash", batchTx.Hash(),
 		"daPath", daPath, "txType", batchTx.Type(), "blobs", len(batchTx.BlobHashes()), "calldata", len(batchTx.Data()))
 
-	// 4) The submission must have SUCCEEDED on-chain.
+	// 4) The submission must have succeeded on-chain.
 	batchReceipt, err := l1Eth.TransactionReceipt(ctx, batchTx.Hash())
 	require.NoError(err, "batcher inbox tx must have an L1 receipt")
 	require.Equalf(gethtypes.ReceiptStatusSuccessful, batchReceipt.Status,

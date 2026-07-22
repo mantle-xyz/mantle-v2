@@ -14,7 +14,7 @@ import (
 // ingesting L1 headers in real time across the L1 Glamsterdam (Amsterdam) activation, without
 // stalling at the exact upgrade instant. The Mantle L2 stays on Arsia.
 //
-// The discriminating signal is the sequencer's UNSAFE L1 origin: a sequencer that choked on the
+// The discriminating signal is the sequencer's unsafe L1 origin: a sequencer that choked on the
 // first Amsterdam header would keep sealing unsafe blocks pinned to a stale pre-Amsterdam origin
 // and its origin would never advance past the activation block. This asserts the opposite:
 //
@@ -52,7 +52,7 @@ func TestBoundary_SequencerActiveAcrossUpgrade(gt *testing.T) {
 
 	preHead := sys.L2EL.BlockRefByLabel(eth.Unsafe)
 
-	// 2) DISCRIMINATING: the sequencer's unsafe L1 origin must advance PAST the activation block.
+	// 2) The sequencer's unsafe L1 origin must advance past the activation block.
 	//    A stall on the first Amsterdam header would pin the origin below it and this would time out.
 	crossed := sys.L2EL.WaitForUnsafe(func(bi eth.BlockInfo) (bool, error) {
 		return sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number > activation, nil

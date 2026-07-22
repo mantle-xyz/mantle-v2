@@ -102,7 +102,7 @@ func TestBoundary_L1ActivationBlock(gt *testing.T) {
 		}
 	}
 
-	// A SAFE L2 block whose L1 origin is exactly the activation block exists.
+	// A safe L2 block whose L1 origin is exactly the activation block exists.
 	require.True(foundL2,
 		"a safe L2 block whose L1 origin is the Amsterdam activation block must exist — derivation must not choke at the exact boundary")
 	require.Equal(activation, l2AtActivation.L1Origin.Number,

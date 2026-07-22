@@ -63,7 +63,7 @@ func TestBoundary_ActivationAtL1EpochBoundary(gt *testing.T) {
 		return sys.L2CL.SyncStatus().SafeL2.L1Origin.Number > activation
 	}, 240*time.Second, 2*time.Second, "L2 safe head must derive past the epoch-boundary activation block")
 
-	// Find the SAFE L2 block that opened the epoch anchored at the activation block.
+	// Find the safe L2 block that opened the epoch anchored at the activation block.
 	safeHead := sys.L2CL.SyncStatus().SafeL2.Number
 	var opener eth.L2BlockRef
 	found := false
