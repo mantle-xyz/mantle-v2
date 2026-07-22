@@ -517,6 +517,21 @@ jobs:
         timeout-minutes: 60
         run: LOG_LEVEL=info just acceptance-test "" "mantle-base"
 
+      - name: Check Glamsterdam geth for mantle-elysium
+        run: |
+          set -euo pipefail
+          mise install geth
+          GETH_PATH="$(mise which geth)"
+          test -n "$GETH_PATH"
+          echo "DEVSTACK_L1EL_KIND=geth" >> "$GITHUB_ENV"
+          echo "SYSGO_GETH_EXEC_PATH=$GETH_PATH" >> "$GITHUB_ENV"
+          "$GETH_PATH" version
+
+      - name: Run mantle-elysium acceptance tests (sysgo)
+        working-directory: op-acceptance-tests
+        timeout-minutes: 60
+        run: LOG_LEVEL=info just acceptance-test "" "mantle-elysium"
+
       - name: Print results (summary)
         if: always()
         working-directory: op-acceptance-tests
