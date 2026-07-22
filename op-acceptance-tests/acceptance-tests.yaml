@@ -136,11 +136,17 @@ gates:
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/base/withdrawal
         timeout: 20m
 
-  # Split in two so the PR path does not pay for the slow cases. Cost here is dominated by
-  # devnet cold starts plus each package's Amsterdam activation offset (a floor the test
-  # must wait out before its first assertion), NOT by the assertions themselves.
-  - id: mantle-elysium-fast
-    description: "Mantle Elysium PR gate: L1-fork-independent L2 assertions plus the activation-boundary derivation cases."
+  # One gate, deliberately. Splitting a fast subset out for the PR path was tried and
+  # reverted: it moved the reorg suites off the PR path, and those are the highest-value
+  # cases here (the fakepos rebuild-divergence bug lived in exactly that coverage). It also
+  # left no mechanism to decide which gate a NEW package belongs in, so tests would silently
+  # accumulate in the half that never runs on PRs. Wall-clock is handled by running this in
+  # its own parallel CI job instead, so the cost is max() against mantle-base, not sum().
+  #
+  # The system package is intentionally absent: it needs a real-CL sysext devnet (Kurtosis or
+  # a persistent network) that a PR runner cannot stand up. Run it against a real devnet.
+  - id: mantle-elysium
+    description: "Mantle Elysium tests for an Arsia L2 consuming a Glamsterdam (Amsterdam) L1."
     tests:
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/beaconslot
         timeout: 1m
@@ -178,15 +184,6 @@ gates:
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/submission
         timeout: 10m
-
-  # Everything above plus the slow cases: high activation offsets (epochcross 192s,
-  # channeltimeout 120s, boundaryrestart 90s, crossing 60s) and the reorg suites, which
-  # drive L1 manually through the TestSequencer. Run on push/nightly, not per PR.
-  - id: mantle-elysium
-    description: "Full Mantle Elysium suite for an Arsia L2 consuming a Glamsterdam (Amsterdam) L1."
-    inherits:
-      - mantle-elysium-fast
-    tests:
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/epochcross
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/da/cellproof
