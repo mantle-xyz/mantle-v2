@@ -527,10 +527,16 @@ jobs:
           echo "SYSGO_GETH_EXEC_PATH=$GETH_PATH" >> "$GITHUB_ENV"
           "$GETH_PATH" version
 
+      # Pull requests run the fast gate; push to main and manual dispatch run the full
+      # suite. The slow half (epochcross 192s / channeltimeout 120s / boundaryrestart 90s
+      # activation offsets, plus the TestSequencer-driven reorg suites) roughly doubles the
+      # wall clock, which is not worth paying on every PR that touches op-node or op-service.
       - name: Run mantle-elysium acceptance tests (sysgo)
         working-directory: op-acceptance-tests
         timeout-minutes: 60
-        run: LOG_LEVEL=info just acceptance-test "" "mantle-elysium"
+        env:
+          ELYSIUM_GATE: ${{ github.event_name == 'pull_request' && 'mantle-elysium-fast' || 'mantle-elysium' }}
+        run: LOG_LEVEL=info just acceptance-test "" "$ELYSIUM_GATE"
 
       - name: Print results (summary)
         if: always()

@@ -16,7 +16,19 @@ import (
 	"github.com/ethereum/go-ethereum/params/forks"
 )
 
+// DefaultAmsterdamOffset is the activation offset for cases that genuinely exercise the L1 fork
+// transition -- deriving across the activation block, ingesting the first Amsterdam headers, and
+// so on. It leaves a comfortable pre-Amsterdam window for a test to observe before the boundary.
 const DefaultAmsterdamOffset = uint64(30)
+
+// FastAmsterdamOffset is for cases whose assertions are L1-fork-INDEPENDENT: they check a property
+// of the Arsia L2 itself (RPC schema, header fields, EVM gas rules, code-size limit) and would
+// hold under any L1. Those tests still cross Amsterdam so the L2 is genuinely running against a
+// Glamsterdam L1, but the pre-boundary window buys them nothing -- it is pure CI wall-clock. Every
+// package on this offset waits the whole thing before its first assertion, so keep it small.
+//
+// Use DefaultAmsterdamOffset instead whenever a test observes anything BEFORE the boundary.
+const FastAmsterdamOffset = uint64(6)
 
 type Option func(*config)
 

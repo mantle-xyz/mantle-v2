@@ -7,5 +7,5 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	testmain.RunMultiNode(m, 6)
+	testmain.RunMultiNode(m, testmain.FastAmsterdamOffset)
 }
