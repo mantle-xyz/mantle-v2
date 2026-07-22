@@ -1,4 +1,4 @@
-package l1reorg
+package deepreorg
 
 import (
 	"testing"
@@ -11,17 +11,10 @@ import (
 	"github.com/ethereum/go-ethereum/params/forks"
 )
 
-// amsterdamOffset activates Amsterdam this many SECONDS after L1 genesis. The unit is
-// seconds, not blocks: WithForkAtL1Offset forwards to WithL1ForkAtOffset, which sets
-// L1DevGenesisParams.AmsterdamTimeOffset, and genesis.go computes
-// amsterdamTime = genesisTimestamp + offset.
-//
-// With 6s L1 blocks that is L1 block amsterdamOffset/6 = block 5. The value must leave
-// pre-Amsterdam blocks ABOVE genesis for the TestSequencer's fakepos builder to actually
-// cross: at 6 (the previous value, written when the unit was believed to be blocks)
-// Amsterdam activated at block 1, which the auto-FakePoS CL had already produced before
-// this test stops it and takes over — so the builder never built the boundary block and
-// phase 1's "does not stall at the boundary" check was never exercised.
+// amsterdamOffset activates Amsterdam this many SECONDS after L1 genesis (the offset unit
+// is seconds, not blocks). With 6s L1 blocks that is L1 block amsterdamOffset/6 = block 5.
+// Unlike the reorg/ package we do NOT fork across this boundary; we drive WELL PAST it so
+// the whole neighbourhood of the reorg target is post-Amsterdam.
 const amsterdamOffset = uint64(30)
 
 func TestMain(m *testing.M) {
@@ -42,5 +35,8 @@ func TestMain(m *testing.M) {
 		)),
 		presets.WithCompatibleTypes(compat.SysGo),
 		presets.WithNoDiscovery(),
+		// Drive the system on a controllable clock: L1 is produced manually via the
+		// TestSequencer, so L2 derivation must not be paced against the wall clock.
+		presets.WithTimeTravel(),
 	)
 }

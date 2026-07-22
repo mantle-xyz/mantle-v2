@@ -17,6 +17,14 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+const l1BlockTime = 6 * time.Second
+
+// NOTE ON THIS PACKAGE'S NAME: despite being called l1reorg, nothing here performs an L1
+// reorg — every block is built on the current head (BuildOpts{Parent: common.Hash{}}). The
+// L1-reorg coverage lives in the reorg/, reorgepoch/ and consecutivereorg/ packages, which
+// fork by passing BuildOpts{Parent: <target>.ParentHash}. This package is derivation
+// coverage: the L2 consuming a fakepos-built Glamsterdam L1.
+
 // TestL2SafeHeadConsumesFakePoSAmsterdamL1 drives the L1 chain manually via the
 // TestSequencer's fakepos builder (op-test-sequencer .../builders/fakepos) across
 // the Amsterdam (Glamsterdam EL) fork boundary, then proves the Mantle L2
@@ -66,28 +74,50 @@ func TestL2SafeHeadConsumesFakePoSAmsterdamL1(gt *testing.T) {
 	// TestSequencer's fakepos builder (the code under test).
 	sys.ControlPlane.FakePoSState(cl.ID(), stack.Stop)
 
+	// activationBlock is the L1 height at which Amsterdam activates: amsterdamOffset is a
+	// time offset in SECONDS from L1 genesis, and the L1 produces a block every l1BlockTime.
+	activationBlock := amsterdamOffset / uint64(l1BlockTime/time.Second)
+
 	driveL1 := func(tag string, iter int) {
-		require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: common.Hash{}}), "%s ts.New iter=%d", tag, iter)
-		require.NoError(ts.Next(ctx), "%s ts.Next iter=%d (amsterdam activates at L1 #%d)", tag, iter, iter)
+		require.NoErrorf(ts.New(ctx, seqtypes.BuildOpts{Parent: common.Hash{}}), "%s ts.New iter=%d", tag, iter)
+		require.NoErrorf(ts.Next(ctx), "%s ts.Next iter=%d (amsterdam activates at L1 #%d)", tag, iter, activationBlock)
 	}
 
-	// Phase 1: drive L1 across the Amsterdam activation block via the fakepos
-	// builder and assert the builder does not stall at the boundary.
+	// Phase 1: drive L1 across the Amsterdam activation block via the fakepos builder and
+	// assert the builder does not stall at the boundary.
 	startL1 := sys.L1EL.BlockRefByLabel(eth.Unsafe)
-	target := startL1.Number + amsterdamOffset + 4
-	logger.Info("driving L1 via TestSequencer across Amsterdam",
-		"start", startL1.Number, "amsterdamOffset", amsterdamOffset, "target", target)
 
-	for i := 0; uint64(i) <= amsterdamOffset+4; i++ {
+	// The whole point of this phase is that the BUILDER produces the activation block. If the
+	// auto-FakePoS CL has already produced it before we took over, a builder that stalls at the
+	// boundary would never be exercised and the phase would pass vacuously.
+	require.Lessf(startL1.Number, activationBlock,
+		"L1 is already at block %d, at/past the Amsterdam activation block %d: the auto-FakePoS CL produced the boundary, so the fakepos builder under test never has to cross it. Raise amsterdamOffset.",
+		startL1.Number, activationBlock)
+
+	target := activationBlock + 4
+	logger.Info("driving L1 via TestSequencer across Amsterdam",
+		"start", startL1.Number, "activationBlock", activationBlock, "target", target)
+
+	for i := 0; sys.L1EL.BlockRefByLabel(eth.Unsafe).Number < target; i++ {
+		require.Lessf(uint64(i), target+8, "fakepos builder made no progress towards L1 #%d", target)
 		driveL1("phase1", i)
-		l1head := sys.L1EL.BlockRefByLabel(eth.Unsafe)
-		logger.Info("advanced L1", "iter", i, "l1", l1head.Number)
+		logger.Info("advanced L1", "iter", i, "l1", sys.L1EL.BlockRefByLabel(eth.Unsafe).Number)
 	}
 
 	l1head := sys.L1EL.BlockRefByLabel(eth.Unsafe)
 	require.GreaterOrEqual(l1head.Number, target,
 		"L1 must advance past the Amsterdam boundary via the fakepos builder")
-	logger.Info("L1 crossed Amsterdam via TestSequencer fakepos builder", "l1head", l1head.Number)
+
+	// The builder genuinely crossed the fork: the block it built at activationBlock is Amsterdam
+	// and its parent is not.
+	actAt := sys.L1EL.BlockRefByNumber(activationBlock)
+	actParent := sys.L1EL.BlockRefByNumber(activationBlock - 1)
+	require.True(l1Config.IsAmsterdam(new(big.Int).SetUint64(activationBlock), actAt.Time),
+		"the block the builder produced at L1 #%d must be post-Amsterdam", activationBlock)
+	require.False(l1Config.IsAmsterdam(new(big.Int).SetUint64(activationBlock-1), actParent.Time),
+		"L1 #%d must be the FIRST Amsterdam block — its parent must still be pre-Amsterdam", activationBlock)
+	logger.Info("fakepos builder built the Amsterdam activation block and kept going",
+		"activationBlock", activationBlock, "l1head", l1head.Number)
 
 	// Phase 2: prove the L2 consumes the Glamsterdam L1. Keep driving L1 one block
 	// at a time so batcher transactions land and derivation can advance, until the

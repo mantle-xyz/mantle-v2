@@ -51,8 +51,18 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 	// target (the activation block) above the finalized horizon and within max reorg depth.
 	sys.ControlPlane.FakePoSState(cl.ID(), stack.Stop)
 
+	// driveErr records the first L1-production error that happens INSIDE a polled condition.
+	//
+	// testify runs an Eventually condition in its own goroutine (assert.Eventually:
+	// `go func() { ch <- condition() }()`). require.NoError there calls FailNow ->
+	// runtime.Goexit, which kills only that goroutine: nothing is ever sent on the channel,
+	// so Eventually just keeps ticking and finally reports "Condition never satisfied"
+	// minutes later, with the real error lost. Errors are therefore recorded here and
+	// asserted on the test goroutine.
+	var driveErr error
+
 	// driveL1InStep produces one L1 block, then advances the clock until the L2 unsafe
-	// origin catches up to the new L1 head.
+	// origin catches up to the new L1 head. Only call this from the test goroutine.
 	driveL1InStep := func() {
 		require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: common.Hash{}}))
 		require.NoError(ts.Next(ctx))
@@ -90,13 +100,22 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 
 	// Drive just past the activation so the L2 has derived across the boundary, while keeping
 	// the activation block within a few of the head (above the finalized horizon, within depth).
-	require.Eventually(func() bool {
+	//
+	// A bounded loop rather than Eventually: each iteration must run on the test goroutine so
+	// driveL1InStep's require.NoError reports the real L1-production error instead of being
+	// swallowed into a timeout (see driveErr).
+	const maxDriveIters = 64
+	for i := 0; ; i++ {
+		require.Lessf(i, maxDriveIters,
+			"L2 origin never got past the Amsterdam boundary (block %d) after %d L1 blocks", expectedBoundary, maxDriveIters)
 		driveL1InStep()
 		l1head := sys.L1EL.BlockRefByLabel(eth.Unsafe).Number
 		l2origin := sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number
 		logger.Info("in-step progress", "l1", l1head, "l2Origin", l2origin, "lag", l1head-l2origin)
-		return l2origin > expectedBoundary+1
-	}, 180*time.Second, 100*time.Millisecond)
+		if l2origin > expectedBoundary+1 {
+			break
+		}
+	}
 
 	// Find the actual Amsterdam activation block (the first Amsterdam L1 block). Reorging THIS
 	// block (by building on its pre-Amsterdam parent) forks the L1 exactly at the boundary.
@@ -134,9 +153,19 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 
 	// produceL1 makes one L1 block WITHOUT requiring the L2 to keep pace — during a deep reorg
 	// the L2 origin legitimately falls behind, so the strict in-step catch-up cannot hold here.
+	// It is called from inside polled conditions, so it records into driveErr rather than
+	// asserting; every caller checks driveErr on the test goroutine.
 	produceL1 := func() {
-		require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: common.Hash{}}))
-		require.NoError(ts.Next(ctx))
+		if driveErr != nil {
+			return
+		}
+		if err := ts.New(ctx, seqtypes.BuildOpts{Parent: common.Hash{}}); err != nil {
+			driveErr = err
+			return
+		}
+		if err := ts.Next(ctx); err != nil {
+			driveErr = err
+		}
 	}
 
 	// Inject the L1 reorg: build a competing block on the PRE-Amsterdam parent of the
@@ -148,8 +177,15 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 		sys.AdvanceTime(2 * time.Second)
 		return sys.L1EL.BlockRefByLabel(eth.Unsafe).Number >= l1Height
 	}, 30*time.Second, 200*time.Millisecond)
-	for sys.L1EL.BlockRefByLabel(eth.Unsafe).Number <= oldHead+1 {
+	// Extend the competing chain past the old head so it wins. Bounded: without a limit a
+	// competing chain that never becomes canonical would spin here until the whole test
+	// times out, instead of failing with a usable message.
+	for i := 0; sys.L1EL.BlockRefByLabel(eth.Unsafe).Number <= oldHead+1; i++ {
+		require.Lessf(uint64(i), (oldHead-l1Height)+16,
+			"competing chain never overtook the old head %d (L1 head stuck at %d)",
+			oldHead, sys.L1EL.BlockRefByLabel(eth.Unsafe).Number)
 		produceL1()
+		require.NoError(driveErr, "L1 block production failed while extending the competing chain")
 	}
 
 	l1After := sys.L1EL.BlockRefByNumber(l1Height)
@@ -164,6 +200,9 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 	// the clock so derivation re-runs, keeping the L1 a little ahead of the L2 origin so there
 	// is always L1 to consume, without the strict in-step catch-up used before the reorg.
 	require.Eventually(func() bool {
+		if driveErr != nil {
+			return true // bail out of polling; the error is asserted below
+		}
 		sys.AdvanceTime(2 * time.Second)
 		l2origin := sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number
 		if l2origin+2 >= sys.L1EL.BlockRefByLabel(eth.Unsafe).Number {
@@ -173,6 +212,7 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 		l2Head := sys.L2EL.BlockRefByLabel(eth.Unsafe)
 		return l2At.Hash != l2BeforeReorg.Hash && l2Head.Number > l2BeforeReorg.Number
 	}, 240*time.Second, 300*time.Millisecond)
+	require.NoError(driveErr, "L1 block production failed while waiting for the L2 to reorg")
 
 	l2At := sys.L2EL.BlockRefByNumber(l2BeforeReorg.Number)
 	require.NotEqual(l2At.Hash, l2BeforeReorg.Hash,
@@ -200,12 +240,16 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 	// pipeline lag, so the window is generous and we keep the clock and L1 moving while it catches up.
 	driveWhile := func(cond func() bool, timeout time.Duration, msg string) {
 		require.Eventually(func() bool {
+			if driveErr != nil {
+				return true // bail out of polling; the error is asserted below
+			}
 			sys.AdvanceTime(2 * time.Second)
 			if sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin.Number+2 >= sys.L1EL.BlockRefByLabel(eth.Unsafe).Number {
 				produceL1()
 			}
 			return cond()
 		}, timeout, 300*time.Millisecond, msg)
+		require.NoErrorf(driveErr, "L1 block production failed while waiting: %s", msg)
 	}
 
 	// (b-i) Drive the SEQUENCER's safe head PAST the reorged activation block, so its safe chain
