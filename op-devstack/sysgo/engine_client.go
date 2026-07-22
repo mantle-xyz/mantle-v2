@@ -17,10 +17,50 @@ import (
 	gethrpc "github.com/ethereum/go-ethereum/rpc"
 )
 
+// maxBlockAccessLists bounds the GetPayloadV6 -> NewPayloadV5 handoff cache below.
+// 64 is far more than the handoff needs (a payload is normally submitted immediately
+// after it is built) while still covering a deep reorg's worth of in-flight blocks.
+const maxBlockAccessLists = 64
+
 type engineClient struct {
-	inner            *rpc.Client
-	mu               sync.Mutex
+	inner *rpc.Client
+	mu    sync.Mutex
+	// blockAccessLists carries the EIP-7928 block access list from GetPayloadV6 (which
+	// receives it) to NewPayloadV5 (which must send it back). It is a handoff buffer, not
+	// a record: entries are dropped once submitted.
+	//
+	// It MUST stay bounded. NewPayloadV5 deletes what it consumes, but a block that gets
+	// built and then discarded -- exactly what the reorg suites do on purpose -- is never
+	// submitted and would otherwise sit here for the lifetime of the process. balOrder is
+	// the FIFO eviction order for that leak.
 	blockAccessLists map[common.Hash]hexutil.Bytes
+	balOrder         []common.Hash
+}
+
+// putBlockAccessList records a block access list for later submission, evicting the
+// oldest entries once the buffer is full. Callers must not hold e.mu.
+func (e *engineClient) putBlockAccessList(blockHash common.Hash, bal hexutil.Bytes) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if _, ok := e.blockAccessLists[blockHash]; !ok {
+		e.balOrder = append(e.balOrder, blockHash)
+	}
+	e.blockAccessLists[blockHash] = bal
+	for len(e.balOrder) > maxBlockAccessLists {
+		oldest := e.balOrder[0]
+		e.balOrder = e.balOrder[1:]
+		delete(e.blockAccessLists, oldest)
+	}
+}
+
+// takeBlockAccessList returns the recorded block access list and drops it. Entries left
+// behind in balOrder by this path are skipped by eviction, which tolerates missing keys.
+func (e *engineClient) takeBlockAccessList(blockHash common.Hash) (hexutil.Bytes, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	bal, ok := e.blockAccessLists[blockHash]
+	delete(e.blockAccessLists, blockHash)
+	return bal, ok
 }
 
 func dialEngine(ctx context.Context, endpoint string, jwtSecret [32]byte) (*engineClient, error) {
@@ -118,7 +158,7 @@ func (e *engineClient) GetPayloadV5(id engine.PayloadID) (*engine.ExecutionPaylo
 }
 
 func (e *engineClient) GetPayloadV6(id engine.PayloadID) (*engine.ExecutionPayloadEnvelope, error) {
-	var result executionPayloadEnvelopeV5
+	var result executionPayloadEnvelopeV6
 	if err := e.inner.CallContext(context.Background(), &result, "engine_getPayloadV6", id); err != nil {
 		return nil, err
 	}
@@ -126,13 +166,11 @@ func (e *engineClient) GetPayloadV6(id engine.PayloadID) (*engine.ExecutionPaylo
 	if err != nil {
 		return nil, err
 	}
-	e.mu.Lock()
-	e.blockAccessLists[blockHash] = blockAccessList
-	e.mu.Unlock()
+	e.putBlockAccessList(blockHash, blockAccessList)
 	return envelope, nil
 }
 
-type executionPayloadEnvelopeV5 struct {
+type executionPayloadEnvelopeV6 struct {
 	ExecutionPayload      json.RawMessage     `json:"executionPayload"`
 	BlockValue            *hexutil.Big        `json:"blockValue"`
 	BlobsBundle           *engine.BlobsBundle `json:"blobsBundle"`
@@ -142,28 +180,23 @@ type executionPayloadEnvelopeV5 struct {
 	ParentBeaconBlockRoot *common.Hash        `json:"parentBeaconBlockRoot,omitempty"`
 }
 
-func (e *executionPayloadEnvelopeV5) toEngine() (*engine.ExecutionPayloadEnvelope, common.Hash, hexutil.Bytes, error) {
+func (e *executionPayloadEnvelopeV6) toEngine() (*engine.ExecutionPayloadEnvelope, common.Hash, hexutil.Bytes, error) {
 	var payload engine.ExecutableData
 	if err := json.Unmarshal(e.ExecutionPayload, &payload); err != nil {
 		return nil, common.Hash{}, nil, err
 	}
-	var rawPayload map[string]json.RawMessage
-	if err := json.Unmarshal(e.ExecutionPayload, &rawPayload); err != nil {
-		return nil, common.Hash{}, nil, err
-	}
-	blockAccessListJSON, ok := rawPayload["blockAccessList"]
-	if !ok {
-		return nil, common.Hash{}, nil, fmt.Errorf("payload %s missing blockAccessList", payload.BlockHash)
-	}
+	// engine.ExecutableData does not carry the Amsterdam fields, so pick them out of the same
+	// bytes with a second, narrow decode. BlockAccessList is a POINTER so that a missing key is
+	// distinguishable from a present-but-empty list -- an empty BAL is legal, an absent one is not.
 	var amsterdamFields struct {
-		BlockHash       common.Hash   `json:"blockHash"`
-		BlockAccessList hexutil.Bytes `json:"blockAccessList"`
-	}
-	if err := json.Unmarshal(blockAccessListJSON, &amsterdamFields.BlockAccessList); err != nil {
-		return nil, common.Hash{}, nil, fmt.Errorf("decode blockAccessList: %w", err)
+		BlockHash       common.Hash    `json:"blockHash"`
+		BlockAccessList *hexutil.Bytes `json:"blockAccessList"`
 	}
 	if err := json.Unmarshal(e.ExecutionPayload, &amsterdamFields); err != nil {
-		return nil, common.Hash{}, nil, err
+		return nil, common.Hash{}, nil, fmt.Errorf("decode Amsterdam payload fields: %w", err)
+	}
+	if amsterdamFields.BlockAccessList == nil {
+		return nil, common.Hash{}, nil, fmt.Errorf("payload %s missing blockAccessList", payload.BlockHash)
 	}
 	requests := make([][]byte, len(e.Requests))
 	for i, req := range e.Requests {
@@ -181,7 +214,7 @@ func (e *executionPayloadEnvelopeV5) toEngine() (*engine.ExecutionPayloadEnvelop
 		Override:              e.Override,
 		Witness:               e.Witness,
 		ParentBeaconBlockRoot: e.ParentBeaconBlockRoot,
-	}, amsterdamFields.BlockHash, amsterdamFields.BlockAccessList, nil
+	}, amsterdamFields.BlockHash, *amsterdamFields.BlockAccessList, nil
 }
 
 func (e *engineClient) NewPayloadV2(ctx context.Context, data engine.ExecutableData) (engine.PayloadStatusV1, error) {
@@ -217,9 +250,6 @@ func (e *engineClient) NewPayloadV5(ctx context.Context, data engine.ExecutableD
 	if err := e.inner.CallContext(ctx, &result, "engine_newPayloadV5", payload, versionedHashes, beaconRoot, executionRequests); err != nil {
 		return engine.PayloadStatusV1{}, err
 	}
-	e.mu.Lock()
-	delete(e.blockAccessLists, data.BlockHash)
-	e.mu.Unlock()
 	return result, nil
 }
 
@@ -232,11 +262,12 @@ func (e *engineClient) newExecutableDataV5(data engine.ExecutableData) (map[stri
 	if err := json.Unmarshal(payloadJSON, &payload); err != nil {
 		return nil, err
 	}
-	e.mu.Lock()
-	blockAccessList, ok := e.blockAccessLists[data.BlockHash]
-	e.mu.Unlock()
+	// Consume the entry here rather than after the RPC: this runs on every NewPayloadV5
+	// path, so the buffer is drained even when the engine call below fails.
+	blockAccessList, ok := e.takeBlockAccessList(data.BlockHash)
 	if !ok {
-		return nil, fmt.Errorf("missing blockAccessList for payload %s", data.BlockHash)
+		return nil, fmt.Errorf("missing blockAccessList for payload %s (built by a different client, "+
+			"already submitted, or evicted after more than %d unsubmitted blocks)", data.BlockHash, maxBlockAccessLists)
 	}
 	blockAccessListJSON, err := json.Marshal(blockAccessList)
 	if err != nil {
