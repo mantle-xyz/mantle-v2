@@ -23,42 +23,48 @@ type NewHeadBlockRefSource interface {
 
 // WatchHeadChanges wraps a new-head subscription from NewHeadSource to feed the given Tracker.
 // The ctx is only used to create the subscription, and does not affect the returned subscription.
+//
+// Two subscription shapes are supported. A source that implements NewHeadBlockRefSource is
+// preferred: it delivers L1BlockRef directly, decoded by the source itself, which is what lets a
+// client that understands newer header fields (EIP-7928 blockAccessListHash, EIP-7843 slotNumber)
+// report a correct block hash. The plain NewHeadSource path decodes into a *types.Header and
+// derives the ref locally, which is only correct as long as the local header type knows every
+// field the chain uses. Both share one subscription loop below.
 func WatchHeadChanges(ctx context.Context, src NewHeadSource, fn HeadSignalFn) (ethereum.Subscription, error) {
 	if refSrc, ok := src.(NewHeadBlockRefSource); ok {
-		headChanges := make(chan L1BlockRef, 10)
-		sub, err := refSrc.SubscribeNewHeadBlockRef(ctx, headChanges)
-		if err != nil {
-			return nil, err
-		}
-		return event.NewSubscription(func(quit <-chan struct{}) error {
-			eventsCtx, eventsCancel := context.WithCancel(context.Background())
-			defer sub.Unsubscribe()
-			defer eventsCancel()
-
-			go func() {
-				select {
-				case <-quit:
-					eventsCancel()
-				case <-eventsCtx.Done():
-					return
-				}
-			}()
-
-			for {
-				select {
-				case ref := <-headChanges:
-					fn(eventsCtx, ref)
-				case <-eventsCtx.Done():
-					return nil
-				case err := <-sub.Err():
-					return err
-				}
-			}
-		}), nil
+		return watchHeadChanges(
+			func(ch chan<- L1BlockRef) (ethereum.Subscription, error) {
+				return refSrc.SubscribeNewHeadBlockRef(ctx, ch)
+			},
+			func(ref L1BlockRef) L1BlockRef { return ref },
+			fn,
+		)
 	}
+	return watchHeadChanges(
+		func(ch chan<- *types.Header) (ethereum.Subscription, error) {
+			return src.SubscribeNewHead(ctx, ch)
+		},
+		func(header *types.Header) L1BlockRef {
+			return L1BlockRef{
+				Hash:       header.Hash(),
+				Number:     header.Number.Uint64(),
+				ParentHash: header.ParentHash,
+				Time:       header.Time,
+			}
+		},
+		fn,
+	)
+}
 
-	headChanges := make(chan *types.Header, 10)
-	sub, err := src.SubscribeNewHead(ctx, headChanges)
+// watchHeadChanges runs the head-subscription loop over any element type, converting each
+// received value to an L1BlockRef with toRef before handing it to fn.
+func watchHeadChanges[T any](
+	subscribe func(chan<- T) (ethereum.Subscription, error),
+	toRef func(T) L1BlockRef,
+	fn HeadSignalFn,
+) (ethereum.Subscription, error) {
+	headChanges := make(chan T, 10)
+	sub, err := subscribe(headChanges)
 	if err != nil {
 		return nil, err
 	}
@@ -79,13 +85,8 @@ func WatchHeadChanges(ctx context.Context, src NewHeadSource, fn HeadSignalFn) (
 
 		for {
 			select {
-			case header := <-headChanges:
-				fn(eventsCtx, L1BlockRef{
-					Hash:       header.Hash(),
-					Number:     header.Number.Uint64(),
-					ParentHash: header.ParentHash,
-					Time:       header.Time,
-				})
+			case v := <-headChanges:
+				fn(eventsCtx, toRef(v))
 			case <-eventsCtx.Done():
 				return nil
 			case err := <-sub.Err(): // if the underlying subscription fails, stop

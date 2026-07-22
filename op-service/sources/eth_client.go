@@ -202,8 +202,19 @@ func (s *EthClient) SubscribeNewHeadBlockRef(ctx context.Context, ch chan<- eth.
 				}
 				info, err := header.Info(s.trustRPC, s.mustBePostMerge)
 				if err != nil {
-					s.log.Warn("failed to process L1 head subscription header", "err", err)
-					continue
+					// Fail the subscription rather than skipping the header. A header we
+					// cannot decode means our view of the L1 head is incomplete, and
+					// silently continuing turns that into the worst failure mode there is:
+					// L1 head tracking quietly stops advancing while every log stays clean.
+					// That is precisely the shape a new L1 fork's header fields would take.
+					//
+					// Failing is safe because both callers (op-node node.go, op-challenger
+					// monitor.go) wrap this in event.ResubscribeErr with a 10s backoff, so a
+					// one-off bad header costs a reconnect, and a SYSTEMATIC decode failure
+					// becomes a visible resubscribe loop instead of silence.
+					s.log.Error("failed to process L1 head subscription header, dropping subscription",
+						"err", err, "hash", header.Hash)
+					return fmt.Errorf("failed to process L1 head subscription header: %w", err)
 				}
 				s.headersCache.Add(info.Hash(), info)
 				ref := eth.InfoToL1BlockRef(info)
