@@ -25,8 +25,13 @@ import (
 // This is the full 30-minute soak, so it is moved OUT of the CI gate: it skips unless ELYSIUM_HEAVY
 // is set. The duration defaults to 30 minutes and can be overridden with ELYSIUM_LONGRUN_SECONDS.
 //
+// Reorg coverage uses both a fixed safe anchor and a rolling safe checkpoint. The fixed anchor
+// catches deep rewrites, while the rolling checkpoint catches shallow rewrites near the safe head.
+// Liveness is scaled to rollup block time instead of a fixed token count.
+//
 // Flips red if, at any sample over the run, the unsafe head stalls, the safe head regresses, or a
-// previously-safe block reorgs.
+// previously-safe block reorgs; or if, over the whole run, either head advanced far slower than
+// the configured block time implies.
 func runSystemLongRunAcrossUpgrade(gt *testing.T) {
 	if os.Getenv("ELYSIUM_HEAVY") == "" {
 		gt.Skip("30-minute soak moved out of CI; run with ELYSIUM_HEAVY=1")
@@ -36,8 +41,10 @@ func runSystemLongRunAcrossUpgrade(gt *testing.T) {
 	require := t.Require()
 
 	l1Config := sys.L1Network.Escape().ChainConfig()
+	rollupCfg := sys.L2Chain.Escape().RollupConfig()
 	require.True(sys.L2Chain.IsMantleForkActive(opforks.MantleElysium), "L2 must run with Mantle Elysium active")
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
+	require.NotZero(rollupCfg.BlockTime, "rollup config must declare an L2 block time")
 
 	runFor := 30 * time.Minute
 	if v := os.Getenv("ELYSIUM_LONGRUN_SECONDS"); v != "" {
@@ -56,8 +63,11 @@ func runSystemLongRunAcrossUpgrade(gt *testing.T) {
 
 	startUnsafe := sys.L2EL.BlockRefByLabel(eth.Unsafe).Number
 	startSafe := sys.L2CL.SyncStatus().SafeL2
+	require.NotZero(startSafe.Number, "must start from a non-genesis safe head")
 	prevUnsafe := startUnsafe
 	prevSafe := startSafe.Number
+	// Fixed anchor catches deep rewrites behind the safe head.
+	safeAnchor := startSafe
 	safeCheckpoint := startSafe
 
 	samples := 0
@@ -71,10 +81,15 @@ func runSystemLongRunAcrossUpgrade(gt *testing.T) {
 		require.GreaterOrEqualf(unsafe, prevUnsafe, "unsafe head must not regress (was %d)", prevUnsafe)
 		require.GreaterOrEqualf(ss.SafeL2.Number, prevSafe, "safe head must not regress (was %d)", prevSafe)
 
-		// A previously-safe block must never reorg.
+		// The first safe block from this run must never be rewritten.
+		anchorNow := sys.L2EL.BlockRefByNumber(safeAnchor.Number)
+		require.Equalf(safeAnchor.Hash, anchorNow.Hash,
+			"the run's first safe block (#%d) must never reorg over the run", safeAnchor.Number)
+
+		// The previous sample's safe block catches shallow rewrites near the safe head.
 		got := sys.L2EL.BlockRefByNumber(safeCheckpoint.Number)
 		require.Equalf(safeCheckpoint.Hash, got.Hash,
-			"a previously-safe block (#%d) must never reorg over the run", safeCheckpoint.Number)
+			"the previous sample's safe block (#%d) must never reorg", safeCheckpoint.Number)
 
 		prevUnsafe = unsafe
 		prevSafe = ss.SafeL2.Number
@@ -83,8 +98,24 @@ func runSystemLongRunAcrossUpgrade(gt *testing.T) {
 	}
 
 	// Over the whole run both heads advanced meaningfully and the safe origin is post-Amsterdam.
-	require.Greaterf(prevUnsafe, startUnsafe+5, "unsafe head must advance over the run (start %d)", startUnsafe)
-	require.Greaterf(prevSafe, startSafe.Number, "safe head must advance over the run (start %d)", startSafe.Number)
+	//
+	// Scale expected progress to the chain's block time, with slack for slow hosts and safe-head
+	// derivation lag.
+	const (
+		minUnsafeGrowthNum = 1 // unsafe head: at least 1/2 of the expected block count
+		minUnsafeGrowthDen = 2
+		minSafeGrowthNum   = 1 // safe head: at least 1/4, it trails by design
+		minSafeGrowthDen   = 4
+	)
+	expectedBlocks := uint64(runFor.Seconds()) / rollupCfg.BlockTime
+	minUnsafeGrowth := expectedBlocks * minUnsafeGrowthNum / minUnsafeGrowthDen
+	minSafeGrowth := expectedBlocks * minSafeGrowthNum / minSafeGrowthDen
+	require.GreaterOrEqualf(prevUnsafe-startUnsafe, minUnsafeGrowth,
+		"unsafe head must advance >= %d blocks over the %s run (block time %ds => ~%d expected); start %d, end %d",
+		minUnsafeGrowth, runFor, rollupCfg.BlockTime, expectedBlocks, startUnsafe, prevUnsafe)
+	require.GreaterOrEqualf(prevSafe-startSafe.Number, minSafeGrowth,
+		"safe head must advance >= %d blocks over the %s run (block time %ds => ~%d expected); start %d, end %d",
+		minSafeGrowth, runFor, rollupCfg.BlockTime, expectedBlocks, startSafe.Number, prevSafe)
 	require.GreaterOrEqual(samples, 3, "must have sampled several times over the run")
 	finalOrigin := sys.L2CL.SyncStatus().SafeL2.L1Origin.Number
 	finalRef := sys.L1EL.BlockRefByNumber(finalOrigin)

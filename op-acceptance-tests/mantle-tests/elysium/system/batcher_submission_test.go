@@ -15,25 +15,30 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
-// TestL1Glamsterdam_BatcherE2E asserts the Mantle L2 batcher, pinned to the BLOB data-availability
-// path, still lands its EIP-4844 blob batches on a Glamsterdam (Amsterdam EL) L1. The Mantle L2
-// stays on Arsia while the L1 runs Glamsterdam; blobs are the current production DA path, so this
-// is the blob counterpart of the calldata-submission test.
+// TestL1Glamsterdam_BatcherSubmissionE2E asserts the Mantle L2 batcher still lands batches on a
+// Glamsterdam (Amsterdam EL) L1 while Mantle L2 stays on Arsia.
+//
+// This package runs against an external real-CL devnet, so the batcher's DA mode comes from the
+// devnet descriptor rather than this test body. The test therefore validates the payload invariant
+// of the DA path that was actually used: blob txs must carry blob hashes, and non-blob inbox txs
+// must carry calldata. Path-specific sysgo coverage lives in elysium/derivblob and
+// elysium/batchercalldata.
 //
 // FLOW / DISCRIMINATION.
 //  1. Drive the L1 across the Amsterdam boundary and wait for the L2 sequencer's L1 origin to
 //     itself cross Amsterdam, so the batch below is posted to a post-Amsterdam L1 block.
 //  2. Submit an L2 value transfer and wait for its EXACT block (number AND hash) to reach the SAFE
-//     head via ReachedRef — op-node re-derived the byte-identical block only by fetching the
-//     batcher's blob from the Glamsterdam L1, so the blob submission provably landed.
-//  3. Locate the batcher's batch-inbox tx on a post-Amsterdam L1 block and assert it is a genuine
-//     EIP-4844 BLOB tx (type-3, carries blob versioned hashes) — the blob DA path, not calldata.
+//     head via ReachedRef - op-node re-derived the byte-identical block only by pulling the
+//     batcher's batch back out of the Glamsterdam L1, so the submission provably landed.
+//  3. Locate the batcher's batch-inbox tx on a post-Amsterdam L1 block and assert it carries a
+//     real payload on its DA path: an EIP-4844 blob tx must carry blob versioned hashes, any
+//     other tx type must carry non-empty calldata. An inbox tx with neither is a broken batcher.
 //  4. Fetch that L1 tx's receipt and assert receipt.Status == Successful.
 //
-// Flips red if: the batcher can't get its blob batch onto a Glamsterdam L1 so the L2 tx never
-// reaches safe (ReachedRef by hash times out); the inbox tx is not a blob tx (wrong DA path); or
-// its L1 receipt reverted/failed.
-func runBatcherBlobSubmission(gt *testing.T) {
+// Flips red if: the batcher can't get its batch onto a Glamsterdam L1 so the L2 tx never reaches
+// safe (ReachedRef by hash times out); the inbox tx carries no payload on either DA path; or its
+// L1 receipt reverted/failed.
+func runBatcherSubmission(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()
@@ -69,10 +74,10 @@ func runBatcherBlobSubmission(gt *testing.T) {
 	t.Log("submitted L2 tx", "block", l2TxBlock, "hash", receipt.TxHash)
 
 	sys.L2CL.ReachedRef(suptypes.CrossSafe, eth.BlockID{Number: l2TxBlock, Hash: receipt.BlockHash}, 60)
-	t.Log("L2 tx block reached safe head — batcher landed its blob batch on the Glamsterdam L1")
+	t.Log("L2 tx block reached safe head - batcher landed its batch on the Glamsterdam L1")
 
-	// 3) Locate the batcher's batch-inbox BLOB tx on a post-Amsterdam L1 block. The batch that
-	//    made our L2 tx safe is such a tx, so one is guaranteed to be present.
+	// 3) Locate the batcher's batch-inbox tx on a post-Amsterdam L1 block. The batch that made our
+	//    L2 tx safe is such a tx, so one is guaranteed to be present.
 	batchInbox := rollupCfg.BatchInboxAddress
 	l1Eth := sys.L1EL.EthClient()
 	var (
@@ -98,11 +103,17 @@ func runBatcherBlobSubmission(gt *testing.T) {
 				if tx.To() == nil || *tx.To() != batchInbox {
 					continue
 				}
-				// This must be the BLOB DA path: a type-3 EIP-4844 tx carrying blob hashes.
-				require.Equalf(uint8(gethtypes.BlobTxType), tx.Type(),
-					"batcher tx to inbox on L1 #%d must be an EIP-4844 blob tx (type-3)", info.NumberU64())
-				require.NotEmptyf(tx.BlobHashes(),
-					"batcher blob tx on L1 #%d must carry blob versioned hashes", info.NumberU64())
+				// Assert the invariants of whichever DA path the devnet's batcher uses: a type-3
+				// EIP-4844 tx must carry blob versioned hashes, anything else must carry calldata.
+				// An inbox tx with neither carries no batch at all.
+				if tx.Type() == gethtypes.BlobTxType {
+					require.NotEmptyf(tx.BlobHashes(),
+						"batcher blob tx on L1 #%d must carry blob versioned hashes", info.NumberU64())
+				} else {
+					require.NotEmptyf(tx.Data(),
+						"batcher calldata tx (type %d) on L1 #%d must carry batch calldata",
+						tx.Type(), info.NumberU64())
+				}
 				batchTx = tx
 				batchL1Block = info.NumberU64()
 				found = true
@@ -113,14 +124,19 @@ func runBatcherBlobSubmission(gt *testing.T) {
 			time.Sleep(time.Second)
 		}
 	}
-	require.True(found, "expected a batcher EIP-4844 blob tx to the batch-inbox on a post-Amsterdam L1 block")
-	t.Log("found post-Amsterdam batcher blob tx to batch-inbox",
-		"l1Block", batchL1Block, "batchInbox", batchInbox, "txHash", batchTx.Hash(), "blobs", len(batchTx.BlobHashes()))
+	require.True(found, "expected a batcher tx to the batch-inbox on a post-Amsterdam L1 block")
+	daPath := "calldata"
+	if batchTx.Type() == gethtypes.BlobTxType {
+		daPath = "blob"
+	}
+	t.Log("found post-Amsterdam batcher tx to batch-inbox",
+		"l1Block", batchL1Block, "batchInbox", batchInbox, "txHash", batchTx.Hash(),
+		"daPath", daPath, "txType", batchTx.Type(), "blobs", len(batchTx.BlobHashes()), "calldata", len(batchTx.Data()))
 
-	// 4) The blob submission must have SUCCEEDED on-chain.
+	// 4) The submission must have SUCCEEDED on-chain.
 	batchReceipt, err := l1Eth.TransactionReceipt(ctx, batchTx.Hash())
-	require.NoError(err, "batcher blob inbox tx must have an L1 receipt")
+	require.NoError(err, "batcher inbox tx must have an L1 receipt")
 	require.Equalf(gethtypes.ReceiptStatusSuccessful, batchReceipt.Status,
-		"batcher BLOB inbox tx on L1 #%d must be mined successfully on the Glamsterdam L1", batchL1Block)
-	t.Log("batcher blob batch mined on the Glamsterdam L1", "l1Block", batchL1Block, "blobs", len(batchTx.BlobHashes()))
+		"batcher %s inbox tx on L1 #%d must be mined successfully on the Glamsterdam L1", daPath, batchL1Block)
+	t.Log("batcher batch mined on the Glamsterdam L1", "l1Block", batchL1Block, "daPath", daPath)
 }

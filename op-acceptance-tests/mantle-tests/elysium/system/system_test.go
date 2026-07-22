@@ -8,7 +8,7 @@ func TestL1Glamsterdam_System_RealCL(gt *testing.T) {
 	gt.Run("TestL1UpgradeMidFlight", runL1UpgradeMidFlight)
 
 	gt.Run("TestL1Glamsterdam_L2Arsia_Smoke", runL1GlamsterdamL2ArsiaSmoke)
-	gt.Run("TestL1Glamsterdam_BatcherE2E", runBatcherBlobSubmission)
+	gt.Run("TestL1Glamsterdam_BatcherSubmissionE2E", runBatcherSubmission)
 	gt.Run("TestL1Glamsterdam_ProposerE2E", runProposerOutputRootSubmission)
 	gt.Run("TestL1Glamsterdam_VerifierConverge", runL1GlamsterdamVerifierConverge)
 	gt.Run("TestL1Glamsterdam_AfterRestart", runL1GlamsterdamAfterRestart)
