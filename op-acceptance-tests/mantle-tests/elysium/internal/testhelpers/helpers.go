@@ -5,6 +5,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/dsl"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
+	"github.com/ethereum-optimism/optimism/op-devstack/stack/match"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 )
 
@@ -58,4 +59,21 @@ func RequireGlamsterdamL1Control(t devtest.T, l1EL *dsl.L1ELNode, l1Ref eth.Bloc
 	require.NotNilf(l1Header.SlotNumber,
 		"L1 block %d is at/after AmsterdamTime but carries no SlotNumber: the L1 EL is not enforcing Amsterdam rules, so this suite is not consuming a Glamsterdam L1",
 		l1Ref.Number)
+}
+
+// L1SecondsPerSlot reads SECONDS_PER_SLOT from the L1 beacon's /eth/v1/config/spec.
+//
+// It is the one timing value the sysgo L1 CL genuinely declares: fakebeacon serves that key and
+// no other, because eth.ReducedConfigData models exactly that field. Cases whose calibration is
+// expressed in seconds but whose property is about slots should bridge the two with this rather
+// than hardcoding the harness's block time, so that a change to the L1 block time surfaces as a
+// failed assertion instead of a silently mis-calibrated test.
+func L1SecondsPerSlot(t devtest.T, sys *presets.MantleMinimal) uint64 {
+	require := t.Require()
+	cl := sys.L1Network.Escape().L1CLNode(match.FirstL1CL)
+	cfg, err := cl.BeaconClient().ConfigSpec(t.Ctx())
+	require.NoError(err, "L1 beacon must serve /eth/v1/config/spec")
+	secondsPerSlot := uint64(cfg.Data.SecondsPerSlot)
+	require.Greater(secondsPerSlot, uint64(0), "SECONDS_PER_SLOT must be usable (>0)")
+	return secondsPerSlot
 }
