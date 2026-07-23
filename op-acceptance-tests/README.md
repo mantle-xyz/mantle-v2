@@ -163,6 +163,67 @@ To add new acceptance tests:
      package: github.com/ethereum-optimism/optimism/op-acceptance-tests/tests/your/package/path
    ```
 
+## Mantle Gates
+
+This fork adds gates for the Mantle network on top of the OP Stack ones above. They follow the
+same rules as any other gate: registered in `acceptance-tests.yaml`, run by `op-acceptor`, and
+selected by name.
+
+| Gate | Covers |
+| --- | --- |
+| `mantle-arsia` | Arsia fork behaviour |
+| `mantle-base` | Sanity/smoke for the Mantle network; inherits `mantle-arsia` |
+| `mantle-elysium` | An Arsia L2 running against an upgraded (Glamsterdam / Amsterdam) L1 |
+
+```bash
+cd op-acceptance-tests
+just acceptance-test "" mantle-base
+just acceptance-test "" mantle-elysium
+```
+
+### mantle-elysium
+
+The L2 stays on Arsia rules and only *consumes* an L1 that has upgraded to Glamsterdam — it does
+not execute Amsterdam itself. The gate covers both directions of that relationship: that the L2
+keeps deriving correctly from L1 blocks carrying the new header fields and DA behaviour, and that
+the L2's own output stays byte-for-byte Arsia while it does so.
+
+This gate needs an **Amsterdam-capable L1 execution client**, which is not the in-process default.
+`mise` builds one from the go-ethereum commit pinned in the repo-root `mise.toml`; point the
+harness at it before running:
+
+```bash
+mise install geth
+export DEVSTACK_L1EL_KIND=geth
+export SYSGO_GETH_EXEC_PATH="$(mise which geth)"
+
+cd op-acceptance-tests
+just acceptance-test "" mantle-elysium
+```
+
+Without those variables the harness falls back to the in-process client, which does not enforce
+Amsterdam header rules. The suite detects this and fails rather than passing vacuously, so a run
+that has silently lost its Glamsterdam L1 is reported as a failure, not a green.
+
+Note that the local (non-CI) path rebuilds contract artifacts before running. If they are already
+built, that step is the slowest part of an otherwise short run.
+
+#### Cases outside the gate
+
+A few cases live under `mantle-tests/elysium/system` and are deliberately **not** registered:
+
+- those asserting against the beacon API itself, which need a real consensus client rather than
+  the in-process stand-in;
+- a batch-submission case whose value is that the DA mode comes from the devnet descriptor rather
+  than being pinned by the test;
+- a long soak and a high-throughput load, both too slow for a per-PR gate.
+
+Run these by hand against a real devnet before a release. They are ordinary Go tests:
+
+```bash
+go test ./mantle-tests/elysium/system/ -run TestL1Glamsterdam_System_RealCL -v
+```
+
 ## Flake-Shake: Test Stability Validation
 
 Flake-shake is a test stability validation system that runs tests multiple times to detect flakiness before they reach production gates. It serves as a quarantine area where new or potentially unstable tests must prove their reliability.
