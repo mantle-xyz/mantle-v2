@@ -92,12 +92,18 @@ func TestBoundary_L1ActivationBlock(gt *testing.T) {
 	// EIP-gated gas assertions have rules.IsAmsterdam.
 	//
 	// What it does catch, by pinning the value rather than its shape: a builder emitting a
-	// constant slot (unless that constant happens to equal offset/blockTime), a builder that
-	// changes the formula (numbering by block height, or dividing by a fixed 12), and a missed
-	// slot before activation, which would push the activation block to offset+blockTime. That
-	// makes it a regression guard on the builder's slot numbering, whose only write site is the
-	// one line in fakepos — worth keeping at this price, but not evidence of agreement between
-	// two independent sources.
+	// constant slot (unless that constant happens to equal offset/blockTime), and a builder
+	// dividing by something other than the slot time it reports. That is the whole list.
+	//
+	// It notably does NOT catch numbering by block height, which is the most likely wrong
+	// formula: at this offset the activation block IS block offset/blockTime, so height and
+	// slot are the same number and the two are indistinguishable here. Nor a missed slot,
+	// which fakepos cannot produce — it derives each block time from the previous head rather
+	// than from a wall clock, so the sequence has no gaps to find.
+	//
+	// So: a regression guard on the builder's slot numbering, whose only write site is the one
+	// line in fakepos — worth keeping at this price, but neither evidence of agreement between
+	// two independent sources nor a broad check on the formula.
 	expectedSlot := testmain.DefaultAmsterdamOffset / secondsPerSlot
 	require.EqualValuesf(expectedSlot, *l1Hdr.SlotNumber,
 		"activation L1 block #%d reports slot %d, but %ds after genesis at %ds per slot is slot %d: "+
