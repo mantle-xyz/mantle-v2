@@ -109,5 +109,14 @@ func runL1GlamsterdamHighTPS(gt *testing.T) {
 	// The busiest block must reach the safe head matched by hash — op-node re-derived the loaded
 	// blocks byte-identically from the Glamsterdam L1, so derivation kept up under load without
 	// stalling or diverging.
-	sys.L2CL.ReachedRef(suptypes.CrossSafe, eth.BlockID{Number: maxBlock, Hash: maxHash}, 180)
+	//
+	// The budget is sized for a real-CL L1, not for sysgo. ReachedRef retries on a fixed 2s
+	// interval, so this is attempts*2 seconds. The load deliberately runs the unsafe head far
+	// ahead, and safe then drains that backlog only as fast as batches land on L1 and are
+	// derived back -- which is paced by the L1 block time. At 12s L1 blocks the observed drain
+	// rate is ~0.75 L2 blocks/s, and a ~300-block backlog needs ~400s; the previous 180 attempts
+	// (360s) fell about 15% short and timed out with the safe head still climbing steadily, not
+	// stalled. 600s leaves room for a slower L1 without hiding a real stall: a derivation that
+	// has actually stopped never advances at all, which no budget rescues.
+	sys.L2CL.ReachedRef(suptypes.CrossSafe, eth.BlockID{Number: maxBlock, Hash: maxHash}, 300)
 }

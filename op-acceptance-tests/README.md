@@ -218,11 +218,57 @@ A few cases live under `mantle-tests/elysium/system` and are deliberately **not*
   than being pinned by the test;
 - a long soak and a high-throughput load, both too slow for a per-PR gate.
 
-Run these by hand against a real devnet before a release. They are ordinary Go tests:
+Run these by hand against a real devnet before a release. They are ordinary Go tests, but they
+need the `sysext` orchestrator pointed at a devnet descriptor. With no `DEVNET_ENV_URL` the
+harness falls back to a Kurtosis enclave (`kt://interop-devnet`) and fails *there* — the error
+talks about a missing Kurtosis engine and says nothing about the descriptor, so it sends you off
+in the wrong direction.
+
+A descriptor for the [rde](https://github.com/mantle-xyz/rde-v4) `glam-accept` profile ships at
+`mantle-tests/elysium/devnets/glam-accept.json`. rde assigns ports deterministically per profile,
+so it works as-is against that profile on localhost.
 
 ```bash
+cd op-acceptance-tests
+
+export DEVSTACK_ORCHESTRATOR=sysext
+export DEVNET_ENV_URL="$PWD/mantle-tests/elysium/devnets/glam-accept.json"
+
+# rde control surface: lets the harness stop and start individual services.
+export DEVNET_ENV_CTRL=rde
+export RDE_DIR=/path/to/rde-v4
+export RDE_PROFILE=glam-accept
+
+# Pins the chain's slot time, which is otherwise only logged. glam-accept runs 12s slots.
+export ELYSIUM_EXPECTED_SECONDS_PER_SLOT=12
+
 go test ./mantle-tests/elysium/system/ -run TestL1Glamsterdam_System_RealCL -v
+go test ./mantle-tests/elysium/system/ -run TestL1Glamsterdam_Derivation_RealCLBeacon -v
 ```
+
+**A faucet is required and rde does not run one.** The preset these cases use resolves an L1 and
+an L2 faucet at construction and fails without them, and the funding calls are real
+`faucet_requestETH` requests rather than local key handling. One `op-faucet` instance serves both
+chains — the descriptor points both at `127.0.0.1:9000`:
+
+```yaml
+# faucet.yaml
+faucets:
+  l1: { el_rpc: "http://127.0.0.1:30145", chain_id: 31337, tx_cfg: { private_key: "0xac09...ff80" } }
+  l2: { el_rpc: "http://127.0.0.1:30245", chain_id: 1337,  tx_cfg: { private_key: "0xac09...ff80" } }
+defaults: { 31337: l1, 1337: l2 }
+```
+
+```bash
+cd op-faucet && go run ./cmd --config=faucet.yaml --rpc.addr=127.0.0.1 --rpc.port=9000
+```
+
+Writing a descriptor for a different devnet: service map keys must be `el` and `cl`, and the
+endpoint key differs by role — L1 `cl` uses `http` (the beacon REST port, not prysm's gRPC),
+everything else uses `rpc`; `batcher` and `proposer` use `http`. `features: ["mantle"]` makes the
+harness pull the rollup config from the running op-node, so it does not have to be transcribed.
+`l1.config` must be the full chain config: chain 31337 is not well-known, so a stub loses
+`amsterdamTime` and every case asserting on it fails.
 
 ## Flake-Shake: Test Stability Validation
 

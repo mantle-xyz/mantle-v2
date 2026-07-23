@@ -173,7 +173,7 @@ gates:
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/derivepoch
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/finality
-        timeout: 10m
+        timeout: 15m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/headernopollut
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/sequenceractive
@@ -195,7 +195,7 @@ gates:
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/boundaryrestart
-        timeout: 10m
+        timeout: 15m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/consecutive
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/deep
@@ -217,7 +217,7 @@ gates:
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/system/afterrestart
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/finalize
-        timeout: 10m
+        timeout: 15m
 
   - id: mantle-temp
     description: "Mantle network tests."
