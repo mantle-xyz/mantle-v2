@@ -35,13 +35,20 @@ LINT_PKGS := \
 	./op-service/... \
 	./op-sync-tester/...
 
+# golangci-lint defaults to a 1m budget, which is not enough for LINT_PKGS on a cold analysis
+# cache -- and CI misses that cache whenever go.sum moves, so the cold path is the common one on a
+# branch. Exceeding it aborts the run mid-analysis and reports "Timeout exceeded", which reads as a
+# lint failure while actually meaning the lint never finished: issues after the cutoff are neither
+# reported nor cleared. The job itself is capped at 30m, so this stays well inside it.
+GOLANGCI_TIMEOUT := 15m
+
 lint-go: ## Lints Go code with specific linters
-	golangci-lint run $(LINT_PKGS)
+	golangci-lint run --timeout $(GOLANGCI_TIMEOUT) $(LINT_PKGS)
 	go mod tidy -diff
 .PHONY: lint-go
 
 lint-go-fix: ## Lints Go code with specific linters and fixes reported issues
-	golangci-lint run $(LINT_PKGS) --fix
+	golangci-lint run --timeout $(GOLANGCI_TIMEOUT) $(LINT_PKGS) --fix
 .PHONY: lint-go-fix
 
 golang-docker: ## Builds Docker images for Go components using buildx
