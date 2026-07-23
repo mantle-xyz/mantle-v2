@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
@@ -23,11 +24,57 @@ import (
 // REAL op-batcher/op-proposer submission code (op-service/txmgr) against the devstack's
 // Glamsterdam L1. The devstack only hands out an apis.EthClient, not an RPC URL, so the few
 // methods that client does not expose directly are issued over its raw RPC handle.
+// It also RECORDS every transaction txmgr publishes. Without that record the retry cases can only
+// infer their own premise: they know what the injected backend REPORTED, not what txmgr actually
+// signed and sent, so "the first attempt was underpriced/under-estimated" and "a second attempt
+// was made at all" are assumptions rather than observations. Recording turns both into
+// assertions, and lets the mined tx be compared against the real first attempt instead of a
+// hardcoded constant.
 type elBackend struct {
 	cl apis.EthClient
+
+	mu        sync.Mutex
+	published []*types.Transaction
 }
 
 var _ txmgr.ETHBackend = (*elBackend)(nil)
+
+// publishedTxs returns the transactions txmgr has published so far, in order. The first entry is
+// the initial attempt; later entries are resubmissions.
+//
+// Ordering is reliable: publishTx is only ever called from the single sendTx loop
+// (op-service/txmgr/txmgr.go), and the goroutines that loop spawns are receipt watchers, not
+// publishers. The mutex is defensive.
+func (b *elBackend) publishedTxs() []*types.Transaction {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]*types.Transaction(nil), b.published...)
+}
+
+// distinctPublishedTxs returns the published transactions with repeats collapsed, keeping first
+// occurrence order.
+//
+// Counting raw publishes would not establish that a bump happened. A publish that the L1 REJECTS
+// still reaches SendTransaction and is recorded, and the sendTx loop then retries it: on the
+// error path it arms retryTicker (op-service/txmgr/txmgr.go, the `else if err != nil` branch) and
+// comes back around to publishTx, which re-sends the SAME transaction unless sendState.bumpFees
+// was set in the meantime. That is exactly the shape of case 2.5, whose first attempt is rejected
+// outright. So a run could publish several times while only ever offering one transaction.
+//
+// (The other duplicate source, the rebroadcast ticker, is inert here: newTxMgr never sets
+// RebroadcastInterval, so it stays 0 and that branch never arms.)
+func (b *elBackend) distinctPublishedTxs() []*types.Transaction {
+	seen := make(map[common.Hash]struct{})
+	var out []*types.Transaction
+	for _, tx := range b.publishedTxs() {
+		if _, dup := seen[tx.Hash()]; dup {
+			continue
+		}
+		seen[tx.Hash()] = struct{}{}
+		out = append(out, tx)
+	}
+	return out
+}
 
 func (b *elBackend) BlockNumber(ctx context.Context) (uint64, error) {
 	info, err := b.cl.InfoByLabel(ctx, eth.Unsafe)
@@ -50,6 +97,11 @@ func (b *elBackend) TransactionReceipt(ctx context.Context, txHash common.Hash) 
 }
 
 func (b *elBackend) SendTransaction(ctx context.Context, tx *types.Transaction) error {
+	// Record before sending: a publish the L1 REJECTS is still an attempt txmgr made, and is
+	// exactly the attempt the retry cases need to observe.
+	b.mu.Lock()
+	b.published = append(b.published, tx)
+	b.mu.Unlock()
 	return b.cl.SendTransaction(ctx, tx)
 }
 

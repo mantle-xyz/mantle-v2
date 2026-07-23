@@ -94,7 +94,8 @@ func TestSubmit_RecoverFromUnderestimatedGas(gt *testing.T) {
 
 	l1Eth := sys.L1EL.EthClient()
 	eoa := sys.FunderL1.NewFundedEOA(eth.OneEther)
-	backend := &underEstimatingBackend{ETHBackend: &elBackend{cl: l1Eth}}
+	recorder := &elBackend{cl: l1Eth}
+	backend := &underEstimatingBackend{ETHBackend: recorder}
 	mgr := newTxMgr(t, backend, eoa.Key().Priv(), eoa.Address(), sys.L1Network.ChainID().ToBig())
 	defer mgr.Close()
 
@@ -119,12 +120,23 @@ func TestSubmit_RecoverFromUnderestimatedGas(gt *testing.T) {
 		"the recovered tx must land on a post-Amsterdam L1 block")
 
 	minedTx := findTx(t, l1Eth, rcpt)
-	require.Greaterf(minedTx.Gas(), badEstimate,
-		"the mined tx must carry a re-estimated gas limit, higher than the %d the submission first committed to", badEstimate)
-	require.GreaterOrEqual(minedTx.Gas(), rcpt.GasUsed, "the mined gas limit must cover the gas actually used")
+
+	// Observe the attempts rather than infer them. badEstimate above is only what the injected
+	// backend REPORTED; what matters is the gas limit txmgr actually signed the first attempt
+	// with, and whether it made a second attempt at all.
+	published := recorder.distinctPublishedTxs()
+	require.GreaterOrEqualf(len(published), 2,
+		"txmgr must have published a DISTINCT second attempt after the under-estimated first one; it published %d distinct tx(s)", len(published))
+	first := published[0]
+	require.Equalf(badEstimate, first.Gas(),
+		"the first published tx must carry the injected under-estimate (%d), otherwise the scenario was never created", badEstimate)
+	require.NotEqual(first.Hash(), minedTx.Hash(), "the mined tx must be a re-estimated resubmission, not the first attempt")
+	require.Greaterf(minedTx.Gas(), first.Gas(),
+		"the mined tx must carry a re-estimated gas limit, higher than the %d the first published attempt committed to", first.Gas())
 	require.Equal(startNonce, minedTx.Nonce(), "the recovery must reuse the reserved nonce, not skip it")
 	t.Log("submission recovered from an underestimated gas limit",
-		"badEstimate", badEstimate, "minedGasLimit", minedTx.Gas(), "gasUsed", rcpt.GasUsed, "l1Block", mined.NumberU64())
+		"distinctAttempts", len(published), "firstAttemptGasLimit", first.Gas(), "reportedUnderEstimate", badEstimate,
+		"minedGasLimit", minedTx.Gas(), "gasUsed", rcpt.GasUsed, "l1Block", mined.NumberU64())
 }
 
 // TestBatcher_FeeBump_PostGlamsterdam proves txmgr fee-bumps an underpriced
@@ -154,7 +166,9 @@ func TestBatcher_FeeBump_PostGlamsterdam(gt *testing.T) {
 	mgr := newTxMgr(t, backend, eoa.Key().Priv(), eoa.Address(), sys.L1Network.ChainID().ToBig())
 	defer mgr.Close()
 
-	// The fee cap the first attempt will be signed with: tip + 2*baseFee, both spoofed to 1 wei.
+	// The fee cap the first attempt is EXPECTED to be signed with: tip + 2*baseFee, both spoofed
+	// to 1 wei. This is a prediction about txmgr's fee arithmetic, so it is checked against the
+	// recorded first attempt below rather than used as the comparison baseline.
 	const firstFeeCap = 3
 
 	startNonce, err := l1Eth.PendingNonceAt(ctx, eoa.Address())
@@ -173,18 +187,37 @@ func TestBatcher_FeeBump_PostGlamsterdam(gt *testing.T) {
 		"the bumped tx must land on a post-Amsterdam L1 block")
 
 	minedTx := findTx(t, l1Eth, rcpt)
-	require.Greaterf(minedTx.GasFeeCap().Uint64(), uint64(firstFeeCap),
-		"the mined tx must carry a bumped fee cap, higher than the %d wei the first attempt was signed with", firstFeeCap)
+
+	// Observe the attempts rather than infer them. Without this the case could not tell a genuine
+	// bump from a first attempt that happened to be priced high enough all along.
+	published := base.distinctPublishedTxs()
+	require.GreaterOrEqualf(len(published), 2,
+		"txmgr must have published a DISTINCT bumped resubmission after the underpriced first one; it published %d distinct tx(s)", len(published))
+	first := published[0]
+	// Bound the first attempt rather than pin it to an exact number: what the scenario needs is
+	// that it was priced FAR below the real market, not that txmgr's fee formula is still exactly
+	// gasTipCap + 2*baseFee. An equality here would go red on a legitimate change to calcGasFeeCap
+	// while the underpricing it guards was still injected perfectly.
+	require.LessOrEqualf(first.GasFeeCap().Uint64(), uint64(firstFeeCap),
+		"the first published tx must carry the spoofed near-zero fee cap (<= %d wei from tip=1, baseFee=1), otherwise the underpricing was never injected; got %s",
+		firstFeeCap, first.GasFeeCap())
+	require.Positivef(mined.BaseFee().Cmp(first.GasFeeCap()),
+		"the first attempt must be unmineable at the prevailing base fee %s, otherwise there was nothing to bump from", mined.BaseFee())
+	require.NotEqual(first.Hash(), minedTx.Hash(), "the mined tx must be the bumped resubmission, not the first attempt")
+	require.Positivef(minedTx.GasFeeCap().Cmp(first.GasFeeCap()),
+		"the mined tx must carry a bumped fee cap, higher than the %s wei the first published attempt was signed with", first.GasFeeCap())
 	require.GreaterOrEqual(minedTx.GasFeeCap().Cmp(mined.BaseFee()), 0,
 		"the bumped fee cap must at least cover the base fee of the block that included it")
 	require.Equal(startNonce, minedTx.Nonce(), "the bumped tx must reuse the reserved nonce")
+	require.Equal(first.Nonce(), minedTx.Nonce(), "the bump must replace the first attempt at its own nonce, not open a new one")
 
 	endNonce, err := l1Eth.NonceAt(ctx, eoa.Address(), nil)
 	require.NoError(err, "read the submitter's final nonce")
 	require.Equalf(startNonce+1, endNonce,
 		"the underpriced tx must have been replaced, not duplicated or abandoned: nonce went %d -> %d", startNonce, endNonce)
 	t.Log("submission recovered from an underpriced first attempt",
-		"firstFeeCap", firstFeeCap, "minedFeeCap", minedTx.GasFeeCap(), "blockBaseFee", mined.BaseFee(), "l1Block", mined.NumberU64())
+		"distinctAttempts", len(published), "firstAttemptFeeCap", first.GasFeeCap(),
+		"minedFeeCap", minedTx.GasFeeCap(), "blockBaseFee", mined.BaseFee(), "l1Block", mined.NumberU64())
 }
 
 // findTx returns the mined transaction the receipt refers to.

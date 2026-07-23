@@ -23,10 +23,11 @@ import (
 // calldata-floor increase. The batcher is pinned to calldata, the L1 crosses Glamsterdam, and a
 // post-upgrade L2 block must become safe by hash, proving the batch landed and was re-derived.
 //
-// The test then checks the mined inbox tx is calldata, succeeded on L1, and had a gas limit at
-// least as high as the Glamsterdam L1's own estimate for the same submission. It deliberately does
-// not bound over-reservation: the batcher biases high by design, and senders pay gas used rather
-// than the limit.
+// The test then checks the mined inbox tx is calldata, succeeded on L1, and reserved at least the
+// EIP-7976 floor recomputed here from its own calldata. It deliberately does not bound
+// over-reservation: the batcher biases high by design, and senders pay gas used rather than the
+// limit. It also does not assert against the L1's own eth_estimateGas — see the note at step 6:
+// that comparison tracked a base-cost divergence between the two geth builds, not the batcher.
 func TestBatcher_CalldataCost_After7976(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
@@ -122,7 +123,35 @@ func TestBatcher_CalldataCost_After7976(gt *testing.T) {
 	require.Equalf(gethtypes.ReceiptStatusSuccessful, batchReceipt.Status,
 		"batcher CALLDATA inbox tx on L1 #%d must be mined successfully under the raised EIP-7976 floor", batchL1Block)
 
-	// 5) The batcher's gas limit must cover the live L1 estimate for the same call.
+	// 5) The batcher must reserve at least the Amsterdam (EIP-7976) floor it computes for this
+	//    calldata. This is deliberately a SAME-LIBRARY check: op-batcher and this test both link
+	//    the pinned Mantle op-geth (go.mod replace), so floorAmsterdam recomputes exactly what
+	//    driver.go handed to the txmgr, and no property of the separate L1 build can perturb it.
+	//    GreaterOrEqual rather than Equal because a fee-bumped resubmission legitimately lands
+	//    above the floor (txmgr keeps max(tx.Gas(), re-estimate)).
+	floorAmsterdam, err := core.FloorDataGas(params.Rules{IsAmsterdam: true}, batchTx.Data(), batchTx.AccessList())
+	require.NoError(err, "compute Amsterdam (EIP-7976) floor for the batcher tx")
+	floorPre, err := core.FloorDataGas(params.Rules{}, batchTx.Data(), batchTx.AccessList())
+	require.NoError(err, "compute pre-Amsterdam (EIP-7623) floor for the batcher tx")
+	require.GreaterOrEqualf(batchTx.Gas(), floorAmsterdam,
+		"batcher committed gas limit %d must cover the EIP-7976 floor %d it computes for this %d-byte calldata submission",
+		batchTx.Gas(), floorAmsterdam, len(batchTx.Data()))
+
+	// 6) The live L1 estimate, for diagnosis only — NOT asserted. It is tempting to require
+	//    batchTx.Gas() >= l1Estimate, and that assertion passed for a long time, but it was
+	//    measuring a divergence between two builds rather than anything about the batcher:
+	//
+	//    The L1 is a separate vanilla-geth build carrying EIP-2780 (Glamsterdam CFI), whose
+	//    FloorDataGas anchors the floor to TxBaseCost2780 = 12000. The pinned Mantle op-geth has
+	//    no such symbol and anchors to params.TxGas = 21000. The two implementations are
+	//    otherwise byte-identical, so for the same calldata the batcher over-reserves by exactly
+	//    9000 gas, always. eth_estimateGas in turn OVER-estimates by design (estimateGasErrorRatio
+	//    = 0.015, and the bisection returns hi as soon as (hi-lo)/hi falls under it), so the
+	//    comparison held only while that 9000 covered the estimator's overshoot — measured at
+	//    ~1.4%, it crosses over around 10 KB of calldata. Worse, if the two builds ever AGREE on
+	//    the floor (EIP-2780 is only CFI, and its spec moved to a shape-dependent base one day
+	//    after this L1 pin was cut), the batcher reserves the floor exactly while the estimator
+	//    still rounds up, and the assertion fails on every run at any size.
 	sender, err := gethtypes.Sender(gethtypes.LatestSignerForChainID(batchTx.ChainId()), batchTx)
 	require.NoError(err, "recover the batcher tx sender")
 	l1Estimate, err := l1Eth.EstimateGas(ctx, ethereum.CallMsg{
@@ -132,23 +161,13 @@ func TestBatcher_CalldataCost_After7976(gt *testing.T) {
 		Value: batchTx.Value(),
 	})
 	require.NoError(err, "the Glamsterdam L1 must estimate the batcher's own calldata submission")
-	require.GreaterOrEqualf(batchTx.Gas(), l1Estimate,
-		"batcher committed gas limit %d must cover the Glamsterdam L1's own estimate %d for the same %d-byte calldata submission; under-committing is rejected with ErrFloorDataGas and stalls the batch",
-		batchTx.Gas(), l1Estimate, len(batchTx.Data()))
-	t.Log("batcher gas commitment covers the L1's own estimate",
-		"committedGasLimit", batchTx.Gas(), "l1Estimate", l1Estimate, "gasUsed", batchReceipt.GasUsed)
 
-	// 6) Recompute local floor values for logging only; the live L1 estimate above is asserted.
-	floorAmsterdam, err := core.FloorDataGas(params.Rules{IsAmsterdam: true}, batchTx.Data(), batchTx.AccessList())
-	require.NoError(err, "compute Amsterdam (EIP-7976) floor for the batcher tx")
-	floorPre, err := core.FloorDataGas(params.Rules{}, batchTx.Data(), batchTx.AccessList())
-	require.NoError(err, "compute pre-Amsterdam (EIP-7623) floor for the batcher tx")
-
-	// The local floor values are diagnostic; vanilla-geth L1 charging may differ.
 	t.Log("batcher calldata batch mined on the Glamsterdam L1",
 		"l1Block", batchL1Block,
 		"dataLen", len(batchTx.Data()),
+		"committedGasLimit", batchTx.Gas(),
 		"gasUsed", batchReceipt.GasUsed,
 		"floorAmsterdam_7976", floorAmsterdam,
-		"floorPre_7623", floorPre)
+		"floorPre_7623", floorPre,
+		"l1EstimateDiagnosticOnly", l1Estimate)
 }
