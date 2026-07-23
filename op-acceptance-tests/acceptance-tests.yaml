@@ -206,6 +206,8 @@ gates:
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/fakepos
         timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/finalize
+        timeout: 10m
 
   - id: mantle-temp
     description: "Mantle network tests."
