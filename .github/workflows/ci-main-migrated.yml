@@ -70,7 +70,20 @@ jobs:
           }
 
           contracts_bedrock="$(has_match '^(\.github/workflows/ci-main-migrated\.yml|packages/contracts-bedrock/|op-node/)')"
-          main_go="$(has_match '^(go\.(mod|sum)$|gas-oracle/|op-batcher/|op-chain-ops/|op-node/|op-proposer/|op-service/|op-e2e/mantleopgeth/|op-e2e/actions/mantletests/|op-e2e/actions/mantleupgrades/|op-e2e/system/mantleda/|op-e2e/system/mantlep2p/|op-acceptance-tests/|op-devstack/|devnet-sdk/)')"
+          # The four paths added below are all things an acceptance run's verdict depends on,
+          # none of which used to trigger one:
+          #   mise.toml            pins the L1 EL geth the elysium job installs and runs (see its
+          #                        "Check Glamsterdam geth" step) -- the Amsterdam rules the whole
+          #                        suite discriminates on come from that binary
+          #   op-deployer/         builds the L1/L2 genesis every sysgo run starts from
+          #                        (op-devstack/sysgo/deployer.go)
+          #   op-e2e/e2eutils/     holds fakepos, which BUILDS the post-Amsterdam L1 blocks
+          #   op-test-sequencer/   holds the fakepos builder the reorg suites drive
+          # A harness bug here does not announce itself: it makes the L1 subtly wrong while every
+          # "post-Amsterdam" assertion still passes, which is the one failure these suites cannot
+          # catch for themselves.
+          # This file is in the list too, so a change to the acceptance jobs runs them.
+          main_go="$(has_match '^(go\.(mod|sum)$|mise\.toml$|\.github/workflows/ci-main-migrated\.yml$|gas-oracle/|op-batcher/|op-chain-ops/|op-node/|op-proposer/|op-service/|op-deployer/|op-test-sequencer/|op-e2e/e2eutils/|op-e2e/mantleopgeth/|op-e2e/actions/mantletests/|op-e2e/actions/mantleupgrades/|op-e2e/system/mantleda/|op-e2e/system/mantlep2p/|op-acceptance-tests/|op-devstack/|devnet-sdk/)')"
 
           echo "contracts_bedrock=$contracts_bedrock"
           echo "main_go=$main_go"

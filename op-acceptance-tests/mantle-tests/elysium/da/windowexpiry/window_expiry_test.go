@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	"github.com/ethereum-optimism/optimism/op-chain-ops/devkeys"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/dsl"
@@ -28,7 +29,8 @@ const l2FaucetFunderUserKey = devkeys.UserKey(10_000)
 // This is a general op-node / derivation property that is independent of the L1
 // fork — it holds under any L1. The test runs with the L1 on Glamsterdam so the
 // behavior is confirmed to survive in that environment, but the Glamsterdam L1
-// is the environment, not the discriminator: none of the assertions below are
+// is the environment, not the discriminator: apart from the opening control that
+// the L1 really did cross Amsterdam, none of the assertions below are
 // L1-fork-sensitive.
 func TestVerifierReorgsAfterSequencingWindowExpiry(gt *testing.T) {
 	t := devtest.SerialT(gt)
@@ -36,6 +38,14 @@ func TestVerifierReorgsAfterSequencingWindowExpiry(gt *testing.T) {
 	require := t.Require()
 	logger := t.Logger()
 	ctx := t.Ctx()
+
+	// The assertions below are not L1-fork-sensitive, but the claim that they were confirmed
+	// on a Glamsterdam L1 is only worth anything if this run actually had one. Without this,
+	// a silent fall back to the in-process op-geth (see testhelpers) would leave the package
+	// green having never crossed Amsterdam -- the one way this case can lie about its scope.
+	l1Config := sys.L1Network.Escape().ChainConfig()
+	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 
 	cl := sys.L1Network.Escape().L1CLNode(match.FirstL1CL)
 	sequenceL1BlockAndWait(t, sys)

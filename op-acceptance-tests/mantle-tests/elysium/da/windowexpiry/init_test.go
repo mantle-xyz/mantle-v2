@@ -7,7 +7,9 @@ import (
 )
 
 const (
-	amsterdamOffset     = uint64(6)
+	// This case never observes the L2 before the activation boundary, so it takes the
+	// post-boundary offset by its stated criterion rather than repeating the number.
+	amsterdamOffset     = testmain.PostBoundaryAmsterdamOffset
 	sequencerWindowSize = uint64(4)
 )
 
