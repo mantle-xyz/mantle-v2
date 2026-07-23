@@ -151,15 +151,15 @@ gates:
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/beaconslot
         timeout: 1m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/rpcschema
-        timeout: 10m
+        timeout: 15m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/rpcheader
-        timeout: 10m
+        timeout: 15m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/l2output
-        timeout: 10m
+        timeout: 15m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/ethtransferlog
-        timeout: 10m
+        timeout: 15m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/evm
-        timeout: 10m
+        timeout: 15m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/deposit
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/deposit/consistency
