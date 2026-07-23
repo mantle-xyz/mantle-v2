@@ -835,6 +835,7 @@ jobs:
       - docker-build
       - op-acceptance-tests
       - op-acceptance-tests-reth
+      - op-acceptance-tests-elysium
     steps:
       - name: Validate job statuses
         env:
