@@ -208,10 +208,12 @@ func (s *EthClient) SubscribeNewHeadBlockRef(ctx context.Context, ch chan<- eth.
 					// L1 head tracking quietly stops advancing while every log stays clean.
 					// That is precisely the shape a new L1 fork's header fields would take.
 					//
-					// Failing is safe because both callers (op-node node.go, op-challenger
-					// monitor.go) wrap this in event.ResubscribeErr with a 10s backoff, so a
-					// one-off bad header costs a reconnect, and a SYSTEMATIC decode failure
-					// becomes a visible resubscribe loop instead of silence.
+					// Failing is safe because the one caller that reaches this method,
+					// op-node node.go, wraps it in event.ResubscribeErr with a 10s backoff, so
+					// a one-off bad header costs a reconnect, and a SYSTEMATIC decode failure
+					// becomes a visible resubscribe loop instead of silence. (op-challenger also
+					// calls eth.WatchHeadChanges, but its headSource implements only
+					// SubscribeNewHead, so it takes the plain-header branch and never gets here.)
 					s.log.Error("failed to process L1 head subscription header, dropping subscription",
 						"err", err, "hash", header.Hash)
 					return fmt.Errorf("failed to process L1 head subscription header: %w", err)

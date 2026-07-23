@@ -30,30 +30,51 @@ type NewHeadBlockRefSource interface {
 // report a correct block hash. The plain NewHeadSource path decodes into a *types.Header and
 // derives the ref locally, which is only correct as long as the local header type knows every
 // field the chain uses. Both share one subscription loop below.
-func WatchHeadChanges(ctx context.Context, src NewHeadSource, fn HeadSignalFn) (ethereum.Subscription, error) {
-	if refSrc, ok := src.(NewHeadBlockRefSource); ok {
+//
+// The preferred shape is not available on every transport, so a rejected block-ref subscription
+// falls back to the plain one rather than failing. An http(s) endpoint is wrapped in
+// client.PollingClient (see op-service/client/rpc.go NewRPCWithClient), and its Subscribe accepts
+// only a chan<- *types.Header, so a source subscribing with its own header type is rejected at
+// setup. Without the fallback that error reaches event.ResubscribeErr in the callers, which
+// retries a call that can never succeed -- L1 head tracking stops advancing for as long as the
+// endpoint stays http. The warning is what keeps the downgrade from being silent.
+func WatchHeadChanges(ctx context.Context, log log.Logger, src NewHeadSource, fn HeadSignalFn) (ethereum.Subscription, error) {
+	watchHeaders := func() (ethereum.Subscription, error) {
 		return watchHeadChanges(
-			func(ch chan<- L1BlockRef) (ethereum.Subscription, error) {
-				return refSrc.SubscribeNewHeadBlockRef(ctx, ch)
+			func(ch chan<- *types.Header) (ethereum.Subscription, error) {
+				return src.SubscribeNewHead(ctx, ch)
 			},
-			func(ref L1BlockRef) L1BlockRef { return ref },
+			func(header *types.Header) L1BlockRef {
+				return L1BlockRef{
+					Hash:       header.Hash(),
+					Number:     header.Number.Uint64(),
+					ParentHash: header.ParentHash,
+					Time:       header.Time,
+				}
+			},
 			fn,
 		)
 	}
-	return watchHeadChanges(
-		func(ch chan<- *types.Header) (ethereum.Subscription, error) {
-			return src.SubscribeNewHead(ctx, ch)
+
+	refSrc, ok := src.(NewHeadBlockRefSource)
+	if !ok {
+		return watchHeaders()
+	}
+
+	sub, err := watchHeadChanges(
+		func(ch chan<- L1BlockRef) (ethereum.Subscription, error) {
+			return refSrc.SubscribeNewHeadBlockRef(ctx, ch)
 		},
-		func(header *types.Header) L1BlockRef {
-			return L1BlockRef{
-				Hash:       header.Hash(),
-				Number:     header.Number.Uint64(),
-				ParentHash: header.ParentHash,
-				Time:       header.Time,
-			}
-		},
+		func(ref L1BlockRef) L1BlockRef { return ref },
 		fn,
 	)
+	if err == nil {
+		return sub, nil
+	}
+	log.Warn("block-ref head subscription unavailable, falling back to locally decoded headers; "+
+		"head block hashes will be wrong if the chain uses header fields this build does not know",
+		"err", err)
+	return watchHeaders()
 }
 
 // watchHeadChanges runs the head-subscription loop over any element type, converting each

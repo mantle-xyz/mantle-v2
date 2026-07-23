@@ -154,7 +154,7 @@ func (m *gameMonitor) resubscribeFunction() event.ResubscribeErrFunc {
 		if err != nil {
 			m.logger.Warn("resubscribing after failed L1 subscription", "err", err)
 		}
-		return eth.WatchHeadChanges(ctx, m.l1Source, m.onNewL1Head)
+		return eth.WatchHeadChanges(ctx, m.logger, m.l1Source, m.onNewL1Head)
 	}
 }
 
