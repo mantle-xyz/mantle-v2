@@ -1,4 +1,4 @@
-package system
+package proposer
 
 import (
 	"math/big"
@@ -35,7 +35,7 @@ import (
 // Flips red if: the proposer stops submitting after the boundary (no proposer tx to the
 // L2OutputOracle on a post-Amsterdam L1 within the deadline), it submits to the wrong contract, or
 // its submission reverts/fails on the Glamsterdam L1.
-func runProposerOutputRootSubmission(gt *testing.T) {
+func TestL1Glamsterdam_ProposerE2E(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()

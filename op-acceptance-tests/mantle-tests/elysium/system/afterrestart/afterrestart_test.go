@@ -1,4 +1,4 @@
-package system
+package afterrestart
 
 import (
 	"context"
@@ -21,7 +21,7 @@ import (
 // pre-restart safe block, and continue producing/deriving new blocks from the
 // Glamsterdam L1. The harder "L1 crosses while op-node is down" case lives in
 // boundaryrestart.
-func runL1GlamsterdamAfterRestart(gt *testing.T) {
+func TestL1Glamsterdam_AfterRestart(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()

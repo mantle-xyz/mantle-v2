@@ -204,6 +204,18 @@ gates:
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/fakepos
         timeout: 10m
+      # §5 cases that reference no CL. They lived in elysium/system until it became clear the
+      # only thing keeping them out of the gate was sharing a package with the beacon cases.
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/system/smoke
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/system/midflight
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/system/proposer
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/system/verifierconverge
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/system/afterrestart
+        timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/finalize
         timeout: 10m
 

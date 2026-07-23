@@ -1,4 +1,4 @@
-package system
+package verifierconverge
 
 import (
 	"testing"
@@ -16,10 +16,10 @@ import (
 // cross-safe hash on both nodes implies byte-identical chains up to it: deterministic derivation
 // across the fork.
 //
-// Topology prerequisite: the sysext devnet descriptor must expose at least TWO L2 CL nodes on the
-// chain — an active sequencer plus an independent follower — or NewMantleSingleChainMultiNode
-// fails hydration before the test body runs.
-func runL1GlamsterdamVerifierConverge(gt *testing.T) {
+// Topology prerequisite: the system must expose at least TWO L2 CL nodes on the chain — an active
+// sequencer plus an independent follower — or NewMantleSingleChainMultiNode fails hydration before
+// the test body runs. TestMain brings up the sysgo multi-node system, which satisfies this.
+func TestL1Glamsterdam_VerifierConverge(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleSingleChainMultiNode(t)
 	require := t.Require()

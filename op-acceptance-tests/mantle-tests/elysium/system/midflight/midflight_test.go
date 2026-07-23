@@ -1,4 +1,4 @@
-package system
+package midflight
 
 import (
 	"math/big"
@@ -22,7 +22,10 @@ import (
 // It submits one L2 tx before Amsterdam and one after the L2 origin crosses
 // Amsterdam, then requires both blocks to become safe by hash. The origin checks
 // prove the txs straddle the fork, and header checks ensure the L2 stays Arsia.
-func runL1UpgradeMidFlight(gt *testing.T) {
+//
+// The first assertion runs while the L1 is still pre-Amsterdam, so this package
+// uses testmain.DefaultAmsterdamOffset to keep a pre-boundary window open.
+func TestL1UpgradeMidFlight(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()

@@ -1,4 +1,4 @@
-package system
+package smoke
 
 import (
 	"testing"
@@ -17,7 +17,7 @@ import (
 // The key assertion is hash-based: the exact boundary L2 block must reach
 // cross-safe, proving op-node re-derived the byte-identical block from the
 // Glamsterdam L1 rather than only advancing to the same height.
-func runL1GlamsterdamL2ArsiaSmoke(gt *testing.T) {
+func TestL1Glamsterdam_L2Arsia_Smoke(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()
