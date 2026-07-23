@@ -55,7 +55,12 @@ binary_signer = "1.0.4"
 version = "49e199bbfb7eb149f02a785ee2b73a841cccbc42"
 url = "https://github.com/ethereum/go-ethereum/archive/49e199bbfb7eb149f02a785ee2b73a841cccbc42.tar.gz"
 bin = "geth"
-postinstall = "cd $MISE_TOOL_INSTALL_PATH/go-ethereum-49e199bbfb7eb149f02a785ee2b73a841cccbc42 && mise exec go@1.24 -- go build -o $MISE_TOOL_INSTALL_PATH/geth ./cmd/geth"
+# Do not hardcode the extracted directory name. Older mise keeps the archive's top-level
+# go-ethereum-<sha>/ directory; newer mise strips it and puts the sources directly in the install
+# path. Pinning either layout breaks on the other, and because this tool lives in the ROOT config
+# every mise-action job installs it -- so a wrong guess here fails jobs that have nothing to do
+# with the L1 EL, and reports it as `cd: can't cd to ...` rather than anything about geth.
+postinstall = "cd $MISE_TOOL_INSTALL_PATH && src=$(ls -d go-ethereum-*/ 2>/dev/null | head -1) && cd \"${src:-.}\" && mise exec go@1.24 -- go build -o $MISE_TOOL_INSTALL_PATH/geth ./cmd/geth"
 
 [tool_alias]
 forge = "github:foundry-rs/foundry[exe=forge]"
