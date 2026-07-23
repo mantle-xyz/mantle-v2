@@ -3,7 +3,6 @@ package system
 import (
 	"fmt"
 	"math/big"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -32,12 +31,11 @@ import (
 // Honest scope: per-tx success is L1-fork-independent; the Glamsterdam-specific property is
 // the byte-identical RE-DERIVATION of loaded blocks from a post-Amsterdam L1.
 //
-// It runs the full ~1000-tx load and is therefore kept out of the light path: it skips unless
-// ELYSIUM_HEAVY is set, and is meant to be run on demand / scheduled.
+// It runs the full ~1000-tx load and carries no skip gate: this whole package is already outside
+// the CI gate (it needs a real-CL sysext devnet), so gating again inside it would only make a
+// manual run against a live devnet quietly cover less than its result suggests. Use -run to select
+// subtests when iterating.
 func runL1GlamsterdamHighTPS(gt *testing.T) {
-	if os.Getenv("ELYSIUM_HEAVY") == "" {
-		gt.Skip("heavy load test; run with ELYSIUM_HEAVY=1")
-	}
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()

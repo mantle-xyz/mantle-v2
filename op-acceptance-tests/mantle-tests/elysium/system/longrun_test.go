@@ -23,8 +23,13 @@ import (
 // environment that could break Mantle's derivation, and these liveness assertions are what would
 // catch that.
 //
-// This is the full 30-minute soak, so it is moved OUT of the CI gate: it skips unless ELYSIUM_HEAVY
-// is set. The duration defaults to 30 minutes and can be overridden with ELYSIUM_LONGRUN_SECONDS.
+// This is the full 30-minute soak. It carries no skip gate: this whole package is already outside
+// the CI gate (acceptance-tests.yaml lists no elysium/system package, because these cases need a
+// real-CL sysext devnet a PR runner cannot stand up), so a second gate inside it would only mean a
+// manual run against a live devnet silently covers less than it appears to — the very failure this
+// package's TestMain forces DEVNET_EXPECT_PRECONDITIONS_MET to prevent. To iterate quickly, select
+// subtests with -run instead. The duration defaults to 30 minutes and can be overridden with
+// ELYSIUM_LONGRUN_SECONDS.
 //
 // Reorg coverage uses both a fixed safe anchor and a rolling safe checkpoint. The fixed anchor
 // catches deep rewrites, while the rolling checkpoint catches shallow rewrites near the safe head.
@@ -34,9 +39,6 @@ import (
 // previously-safe block reorgs; or if, over the whole run, either head advanced far slower than
 // the configured block time implies.
 func runSystemLongRunAcrossUpgrade(gt *testing.T) {
-	if os.Getenv("ELYSIUM_HEAVY") == "" {
-		gt.Skip("30-minute soak moved out of CI; run with ELYSIUM_HEAVY=1")
-	}
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
 	require := t.Require()
