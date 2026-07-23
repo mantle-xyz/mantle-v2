@@ -12,30 +12,43 @@ import (
 )
 
 // l1FinalizedDistance mirrors the fakepos builder's FinalizedDistance
-// (op-devstack/sysgo/test_sequencer.go): the L1 finalizes head-20, so head-20 is the deepest
-// block a reorg is allowed to leave untouched, and everything strictly above it is fair game.
+// (op-devstack/sysgo/test_sequencer.go). It sizes the drive loop -- the chain has to be at least
+// this tall before a fork parent at the horizon can even exist -- and nothing else.
+//
+// It deliberately does NOT locate the fork parent. The builder derives the finalized header from
+// the head it held BEFORE the block it is about to build
+// (op-test-sequencer/sequencer/backend/work/builders/fakepos/job.go), so the label trails
+// head-FinalizedDistance by one further block. Computing the fork parent from this constant
+// would bake that off-by-one in as an assumption, and it is not one this test wants to make:
+// the case is "fork off whatever the L1 currently calls finalized", so it reads the label.
 const l1FinalizedDistance = uint64(20)
 
-// reorgDepth targets the block immediately ABOVE the finalized horizon, so the fork parent IS
-// the finalized block. That is the deepest reorg the L1 can legally perform: one block deeper
-// would rewrite finalized history, which finality forbids outright.
-const reorgDepth = l1FinalizedDistance - 1
+// minReorgDepth is a floor on the resulting reorg, not a target. The actual depth falls out of
+// where the finalized label sits when the drive loop stops; this only rejects a run where the
+// horizon drifted so close to the head that the reorg would be shallow enough to prove nothing.
+const minReorgDepth = uint64(12)
 
 // postBoundaryMargin keeps both the reorg target and the fork parent (which sits a full
-// reorgDepth below the head) comfortably post-Amsterdam.
+// finality distance below the head) comfortably post-Amsterdam.
 const postBoundaryMargin = uint64(8)
 
-// TestBoundary_L1ReorgAtFinalize drives an L1 reorg that lands exactly ON the finalized
-// boundary: the competing chain forks off the finalized block itself and discards every block
-// above it. This is the deepest reorg the L1 can legally do, and it is the case the deep-reorg
-// suite deliberately excludes -- that test asserts its target stays strictly above the
-// finalized horizon, so nothing else in the suite exercises the horizon itself.
+// TestBoundary_L1ReorgAtFinalize drives the deepest L1 reorg the chain will legally perform:
+// the competing chain forks off the block immediately above the finalized horizon and discards
+// everything from there up. It is the case the deep-reorg suite deliberately excludes -- that
+// test asserts its target stays well above the horizon, so nothing else here goes near it.
+//
+// It forks one block ABOVE the finalized block rather than off the finalized block itself
+// because the latter is not something an EL will do: geth answers a forkchoice update whose head
+// is at or below the finalized block with VALID and a nil payload id, building nothing
+// ("Skipping beacon update to finalized ancestor", eth/catalyst/api.go). Finality is enforced
+// there, at the engine API, not merely observed afterwards -- so finalized+1 is the boundary a
+// test can actually stand on.
 //
 // The discriminating property is that FINALITY IS IRREVERSIBLE while everything above it is
 // not. A reorg this deep must invalidate the L2's unsafe and safe chains and force a
 // re-derivation, yet it must NOT move finality on either layer:
 //
-//   - the L1 finalized block must survive byte-identically (it is the fork parent, so a
+//   - the L1 finalized block must survive byte-identically (it is the fork parent's parent, so a
 //     changed hash there means the reorg reached past the horizon);
 //   - the L2 finalized head must not regress in height, and the exact block that was finalized
 //     before the reorg must still be canonical at the same hash afterwards.
@@ -59,11 +72,12 @@ func TestBoundary_L1ReorgAtFinalize(gt *testing.T) {
 
 	drive := l1drive.New(t, sys)
 
-	// The L1 must be tall enough that the fork parent (head-reorgDepth-1) is still
-	// post-Amsterdam, on top of the usual margin for the L2 origin.
+	// The L1 must be tall enough that the finalized block -- roughly a full finality distance
+	// below the head -- is itself still post-Amsterdam, on top of the usual margin for the L2
+	// origin. The +2 covers the extra block the builder's finalized label trails by.
 	expectedBoundary := amsterdamOffset / uint64(l1BlockTime/time.Second)
 	require.GreaterOrEqual(expectedBoundary, uint64(2), "offset must leave pre-Amsterdam blocks above genesis")
-	minL1Head := expectedBoundary + reorgDepth + postBoundaryMargin + 2
+	minL1Head := expectedBoundary + l1FinalizedDistance + postBoundaryMargin + 2
 
 	// Drive the L1 by hand until the chain is tall enough, the L2 has derived well past the
 	// Amsterdam boundary, AND the L2 has a non-genesis finalized head. That last condition is
@@ -90,17 +104,35 @@ func TestBoundary_L1ReorgAtFinalize(gt *testing.T) {
 	}
 
 	oldHead := sys.L1EL.BlockRefByLabel(eth.Unsafe).Number
-	l1Height := oldHead - reorgDepth
-	l1Before := sys.L1EL.BlockRefByNumber(l1Height)
-	l1Parent := sys.L1EL.BlockRefByNumber(l1Height - 1)
 
-	// The fork parent must be exactly the L1 finalized block -- that is what makes this the
-	// finalize-boundary case rather than just another deep reorg.
+	// Fork as deep as the L1 will legally allow: one block ABOVE the finalized horizon.
+	//
+	// Not ON it. geth refuses a forkchoice update whose head is at or below the finalized block
+	// -- "Skipping beacon update to finalized ancestor", eth/catalyst/api.go, which answers VALID
+	// with a nil payload id and builds nothing. Finality being irreversible is enforced by the EL
+	// at the engine API, so a test cannot ask for a fork parent at the horizon; the deepest one it
+	// can ask for is finalized+1, which rewrites everything from finalized+2 up.
+	//
+	// The horizon is read from the label rather than derived from l1FinalizedDistance: the builder
+	// computes the finalized header from the head it held before the block it is building, so the
+	// label trails head-FinalizedDistance by one more block and any arithmetic here would encode
+	// that off-by-one as a constant.
 	l1FinalizedBefore := sys.L1EL.BlockRefByLabel(eth.Finalized)
-	require.Equalf(l1FinalizedBefore.Number, l1Parent.Number,
-		"the fork parent (L1 #%d) must be the finalized block (L1 #%d): reorgDepth must track "+
-			"the fakepos FinalizedDistance of %d", l1Parent.Number, l1FinalizedBefore.Number, l1FinalizedDistance)
-	require.Equal(l1FinalizedBefore.Hash, l1Parent.Hash, "the fork parent must be the finalized block by hash")
+	l1Parent := sys.L1EL.BlockRefByNumber(l1FinalizedBefore.Number + 1)
+	l1Height := l1Parent.Number + 1
+	l1Before := sys.L1EL.BlockRefByNumber(l1Height)
+
+	require.Equalf(l1FinalizedBefore.Number+1, l1Parent.Number,
+		"the fork parent (#%d) must sit exactly one block above the finalized horizon (#%d): "+
+			"deeper is refused by the EL, shallower stops being the boundary case",
+		l1Parent.Number, l1FinalizedBefore.Number)
+
+	require.Greaterf(oldHead, l1Height,
+		"the finalized block (#%d) must sit below the head (#%d) for a reorg above it to exist",
+		l1Parent.Number, oldHead)
+	require.GreaterOrEqualf(oldHead-l1Parent.Number, minReorgDepth,
+		"the reorg would only be %d blocks deep (head #%d, finalized #%d); a shallow unwind does "+
+			"not exercise what this case is for", oldHead-l1Parent.Number, oldHead, l1Parent.Number)
 
 	// Both sides of the boundary must be post-Amsterdam, so the unwind is entirely Glamsterdam.
 	require.True(l1Config.IsAmsterdam(new(big.Int).SetUint64(l1Height), l1Before.Time),
@@ -129,7 +161,7 @@ func TestBoundary_L1ReorgAtFinalize(gt *testing.T) {
 		return sys.L1EL.BlockRefByLabel(eth.Unsafe).Number >= l1Height
 	}, 30*time.Second, 200*time.Millisecond, "the competing chain must reach the reorg height")
 	for i := uint64(0); sys.L1EL.BlockRefByLabel(eth.Unsafe).Number <= oldHead+1; i++ {
-		require.Lessf(i, reorgDepth+24,
+		require.Lessf(i, l1FinalizedDistance+24,
 			"the competing chain never overtook the old head %d (L1 head stuck at %d)",
 			oldHead, sys.L1EL.BlockRefByLabel(eth.Unsafe).Number)
 		drive.Produce()
