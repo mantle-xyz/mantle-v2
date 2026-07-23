@@ -1,6 +1,7 @@
 package windowexpiry
 
 import (
+	"math/big"
 	"testing"
 	"time"
 
@@ -39,18 +40,29 @@ func TestVerifierReorgsAfterSequencingWindowExpiry(gt *testing.T) {
 	logger := t.Logger()
 	ctx := t.Ctx()
 
-	// The assertions below are not L1-fork-sensitive, but the claim that they were confirmed
-	// on a Glamsterdam L1 is only worth anything if this run actually had one. Without this,
-	// a silent fall back to the in-process op-geth (see testhelpers) would leave the package
-	// green having never crossed Amsterdam -- the one way this case can lie about its scope.
 	l1Config := sys.L1Network.Escape().ChainConfig()
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
-	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
 
 	cl := sys.L1Network.Escape().L1CLNode(match.FirstL1CL)
 	sequenceL1BlockAndWait(t, sys)
 	sys.L2ELB.Matched(sys.L2EL, types.LocalUnsafe, 30)
 	sys.L2ELB.Matched(sys.L2EL, types.LocalSafe, 30)
+
+	// The assertions below are not L1-fork-sensitive, but the claim that they were confirmed on a
+	// Glamsterdam L1 is only worth anything if this run actually had one: a silent fall back to
+	// the in-process op-geth (see testhelpers) would leave the package green having never crossed
+	// Amsterdam, which is the one way this case can lie about its own scope.
+	//
+	// Checked here rather than at the top, and without waiting. This test drives L1 by hand and
+	// needs the L2 origin to advance one block at a time; a WaitForGlamsterdamL1 up front lets the
+	// L1 outrun the L2 and the next sequencing attempt dies on "cannot create new block with L1
+	// origin :2 ... on top of L1 origin :0". By this point the opening sequence has already put
+	// the L1 past the activation block (offset 6, one block) with the L2 matched to it, so the
+	// head can simply be inspected.
+	l1Head := sys.L1EL.BlockRefByLabel(eth.Unsafe)
+	require.Truef(l1Config.IsAmsterdam(new(big.Int).SetUint64(l1Head.Number), l1Head.Time),
+		"L1 head #%d (t=%d) must be post-Amsterdam by the time sequencing starts", l1Head.Number, l1Head.Time)
+	testhelpers.RequireGlamsterdamL1Control(t, sys.L1EL, l1Head)
 
 	sender := prefundedL2FaucetFunder(t, sys)
 	recipient := sys.Wallet.NewEOA(sys.L2EL)
