@@ -603,7 +603,12 @@ jobs:
       - name: Check Glamsterdam geth
         run: |
           set -euo pipefail
-          mise install geth
+          # The tool is declared as [tools."http:geth"] in mise.toml; `geth` is only the binary it
+          # produces (bin = "geth"). `mise install geth` therefore resolves to geth@latest and is
+          # looked up in the registry, which has no such tool -- it fails with "geth not found in
+          # mise tool registry", naming a tool nobody declared. Install by the tool's real name;
+          # `mise which` still resolves by binary name.
+          mise install http:geth
           GETH_PATH="$(mise which geth)"
           test -n "$GETH_PATH"
           echo "DEVSTACK_L1EL_KIND=geth" >> "$GITHUB_ENV"
