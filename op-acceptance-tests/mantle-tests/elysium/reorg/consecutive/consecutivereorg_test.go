@@ -94,10 +94,16 @@ func TestL1Reorg_Consecutive_PostUpgrade(gt *testing.T) {
 		logger.Info("L1 reorged", "round", round, "height", l1Height, "old", l1Before.Hash, "new", l1After.Hash)
 
 		// The L2 must reorg the old block and keep advancing.
+		//
+		// Check the head BEFORE reading the recorded height: the unwind takes the chain below it
+		// before rebuilding, and dsl's BlockRefByNumber fails the test outright on an absent
+		// block instead of reporting absence, so a poll landing in that gap fails a recovery that
+		// is proceeding normally. Same condition as before, ordered so it cannot fault.
 		drive.While(func() bool {
-			l2At := sys.L2EL.BlockRefByNumber(l2BeforeReorg.Number)
-			l2Head := sys.L2EL.BlockRefByLabel(eth.Unsafe)
-			return l2At.Hash != l2BeforeReorg.Hash && l2Head.Number > l2BeforeReorg.Number
+			if sys.L2EL.BlockRefByLabel(eth.Unsafe).Number <= l2BeforeReorg.Number {
+				return false
+			}
+			return sys.L2EL.BlockRefByNumber(l2BeforeReorg.Number).Hash != l2BeforeReorg.Hash
 		}, 240*time.Second, fmt.Sprintf("round %d: L2 must reorg and keep advancing", round))
 
 		// The sequencer safe head must derive from the new canonical L1.

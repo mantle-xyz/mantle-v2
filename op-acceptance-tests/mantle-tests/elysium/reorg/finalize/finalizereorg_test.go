@@ -184,10 +184,18 @@ func TestBoundary_L1ReorgAtFinalize(gt *testing.T) {
 		"finalizedIntact", l1FinalizedBefore.Number)
 
 	// The L2 must unwind the invalidated chain and keep producing.
+	//
+	// Check the head BEFORE reading the recorded height. A reorg this deep unwinds the L2 below
+	// that height and then rebuilds, and dsl's BlockRefByNumber fails the test outright when the
+	// block is absent rather than reporting absence -- so reading it during the gap turns a
+	// mid-recovery poll into a failure. The gap is real but short: a fast machine rebuilds
+	// between two polls and never lands in it, a slow one does. Waiting for the head first is
+	// also exactly the condition that was already being asserted, so nothing is given up.
 	drive.While(func() bool {
-		l2At := sys.L2EL.BlockRefByNumber(l2BeforeReorg.Number)
-		l2Head := sys.L2EL.BlockRefByLabel(eth.Unsafe)
-		return l2At.Hash != l2BeforeReorg.Hash && l2Head.Number > l2BeforeReorg.Number
+		if sys.L2EL.BlockRefByLabel(eth.Unsafe).Number <= l2BeforeReorg.Number {
+			return false
+		}
+		return sys.L2EL.BlockRefByNumber(l2BeforeReorg.Number).Hash != l2BeforeReorg.Hash
 	}, 300*time.Second, "L2 must reorg the invalidated chain and keep advancing")
 
 	// FINALITY IS IRREVERSIBLE. The L2 finalized head may not regress, and the block that was
