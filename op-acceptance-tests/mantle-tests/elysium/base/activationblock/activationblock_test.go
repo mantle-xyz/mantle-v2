@@ -70,18 +70,38 @@ func TestBoundary_L1ActivationBlock(gt *testing.T) {
 	require.NotNil(l1Hdr.SlotNumber,
 		"the Amsterdam activation L1 block must carry an EIP-7843 SlotNumber")
 
-	// The slot number must be the RIGHT one, not merely present. Every other case here checks
-	// only that the field is non-nil, which a builder emitting a constant would satisfy. The L1
-	// numbers its slots from genesis at one per SECONDS_PER_SLOT, so the activation block — which
-	// sits exactly amsterdamOffset seconds after genesis — must report that offset in slots.
+	// amsterdamOffset must name a whole slot, or the activation block sits mid-slot and every
+	// slot-indexed claim below it is arithmetic about a boundary that does not exist. The two
+	// operands are genuinely independent: the offset is a test-side constant in testmain, while
+	// SECONDS_PER_SLOT comes from the L1 network config, so raising the L1 block time to 12s
+	// makes 30%12=6 and this goes red.
 	secondsPerSlot := testhelpers.L1SecondsPerSlot(t, sys)
 	require.Zerof(testmain.DefaultAmsterdamOffset%secondsPerSlot,
 		"amsterdamOffset=%ds is not a whole number of %ds slots, so it does not name a slot boundary",
 		testmain.DefaultAmsterdamOffset, secondsPerSlot)
+
+	// The slot number must be the RIGHT one, not merely present — every other case here only
+	// checks the field is non-nil, which a builder emitting a constant would satisfy.
+	//
+	// Be precise about what this is, because it looks like more than it is. It is NOT a
+	// cross-component consistency check between the beacon's slot clock and the builder's: both
+	// sides descend from the same l1Net.blockTime and the same genesis timestamp — fakebeacon
+	// reports blockTime as SECONDS_PER_SLOT (fakebeacon/blobs.go), fakepos derives slotNumber as
+	// elapsed/blockTime (geth/fakepos.go) — so they are two consumers of one config field and
+	// cannot disagree about it. Nor is there a compiled-in divergent branch to trip, the way the
+	// EIP-gated gas assertions have rules.IsAmsterdam.
+	//
+	// What it does catch, by pinning the value rather than its shape: a builder emitting a
+	// constant slot (unless that constant happens to equal offset/blockTime), a builder that
+	// changes the formula (numbering by block height, or dividing by a fixed 12), and a missed
+	// slot before activation, which would push the activation block to offset+blockTime. That
+	// makes it a regression guard on the builder's slot numbering, whose only write site is the
+	// one line in fakepos — worth keeping at this price, but not evidence of agreement between
+	// two independent sources.
 	expectedSlot := testmain.DefaultAmsterdamOffset / secondsPerSlot
 	require.EqualValuesf(expectedSlot, *l1Hdr.SlotNumber,
-		"activation L1 block #%d reports slot %d, but %ds after genesis at SECONDS_PER_SLOT=%d is slot %d: "+
-			"the L1's slot numbering does not match its own block timing",
+		"activation L1 block #%d reports slot %d, but %ds after genesis at %ds per slot is slot %d: "+
+			"the builder's slot numbering has changed, or a slot was missed before activation",
 		activation, *l1Hdr.SlotNumber, testmain.DefaultAmsterdamOffset, secondsPerSlot, expectedSlot)
 
 	t.Log("Amsterdam activation L1 block located", "number", activation, "hash", activationHash,
