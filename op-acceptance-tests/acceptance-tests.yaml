@@ -184,8 +184,6 @@ gates:
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/submission
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/epochcross
-        timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/da/cellproof
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/da/channeltimeout

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testmain"
 	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
@@ -68,7 +69,23 @@ func TestBoundary_L1ActivationBlock(gt *testing.T) {
 		"the Amsterdam activation L1 block must carry an EIP-7928 BlockAccessListHash")
 	require.NotNil(l1Hdr.SlotNumber,
 		"the Amsterdam activation L1 block must carry an EIP-7843 SlotNumber")
-	t.Log("Amsterdam activation L1 block located", "number", activation, "hash", activationHash)
+
+	// The slot number must be the RIGHT one, not merely present. Every other case here checks
+	// only that the field is non-nil, which a builder emitting a constant would satisfy. The L1
+	// numbers its slots from genesis at one per SECONDS_PER_SLOT, so the activation block — which
+	// sits exactly amsterdamOffset seconds after genesis — must report that offset in slots.
+	secondsPerSlot := testhelpers.L1SecondsPerSlot(t, sys)
+	require.Zerof(testmain.DefaultAmsterdamOffset%secondsPerSlot,
+		"amsterdamOffset=%ds is not a whole number of %ds slots, so it does not name a slot boundary",
+		testmain.DefaultAmsterdamOffset, secondsPerSlot)
+	expectedSlot := testmain.DefaultAmsterdamOffset / secondsPerSlot
+	require.EqualValuesf(expectedSlot, *l1Hdr.SlotNumber,
+		"activation L1 block #%d reports slot %d, but %ds after genesis at SECONDS_PER_SLOT=%d is slot %d: "+
+			"the L1's slot numbering does not match its own block timing",
+		activation, *l1Hdr.SlotNumber, testmain.DefaultAmsterdamOffset, secondsPerSlot, expectedSlot)
+
+	t.Log("Amsterdam activation L1 block located", "number", activation, "hash", activationHash,
+		"slot", *l1Hdr.SlotNumber)
 
 	// Once the safe head's L1 origin is beyond activation, any L2 block anchored
 	// at activation is fully derived.
