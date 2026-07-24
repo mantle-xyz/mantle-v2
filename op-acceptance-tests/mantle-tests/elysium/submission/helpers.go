@@ -54,12 +54,13 @@ func (b *elBackend) publishedTxs() []*types.Transaction {
 // distinctPublishedTxs returns the published transactions with repeats collapsed, keeping first
 // occurrence order.
 //
-// Counting raw publishes would not establish that a bump happened. A publish that the L1 REJECTS
-// still reaches SendTransaction and is recorded, and the sendTx loop then retries it: on the
-// error path it arms retryTicker (op-service/txmgr/txmgr.go, the `else if err != nil` branch) and
-// comes back around to publishTx, which re-sends the SAME transaction unless sendState.bumpFees
-// was set in the meantime. That is exactly the shape of case 2.5, whose first attempt is rejected
-// outright. So a run could publish several times while only ever offering one transaction.
+// Counting raw publishes would not establish that a bump happened. txmgr's sendTx loop can hand
+// the SAME transaction to SendTransaction more than once on some retry paths (a gas rejection
+// like case 2.5's returns (tx, false, nil) from publishTx's default branch, so the loop neither
+// confirms nor errors and simply re-publishes on the next tick, and a transient nonce-too-high
+// re-sends the same tx outright), all of which the recorder captures. Folding by hash is what
+// makes len >= 2 mean "txmgr produced a genuinely different second transaction" -- an actual
+// re-estimate or fee bump -- rather than the same one offered twice.
 //
 // (The other duplicate source, the rebroadcast ticker, is inert here: newTxMgr never sets
 // RebroadcastInterval, so it stays 0 and that branch never arms.)

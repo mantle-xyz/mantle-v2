@@ -270,6 +270,13 @@ harness pull the rollup config from the running op-node, so it does not have to 
 `l1.config` must be the full chain config: chain 31337 is not well-known, so a stub loses
 `amsterdamTime` and every case asserting on it fails.
 
+Note that `l1.config`'s fork times (`amsterdamTime`, `bpo2Time`) are wall-clock timestamps baked
+in when the devnet's genesis was generated, so they change every time rde rebuilds the devnet
+(`task clean && task up`). The checked-in `glam-accept.json` carries one such snapshot. If a run
+fails at `WaitForGlamsterdamL1` with the L1 head never showing the Amsterdam header fields, the
+descriptor's timestamps are stale relative to the running devnet — regenerate them from the
+profile's `genesis/metadata/genesis.json`.
+
 ## Flake-Shake: Test Stability Validation
 
 Flake-shake is a test stability validation system that runs tests multiple times to detect flakiness before they reach production gates. It serves as a quarantine area where new or potentially unstable tests must prove their reliability.
