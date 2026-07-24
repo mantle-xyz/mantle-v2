@@ -105,9 +105,16 @@ func TestL1Reorg_AtUpgradeActivation(gt *testing.T) {
 		if l2origin+2 >= sys.L1EL.BlockRefByLabel(eth.Unsafe).Number {
 			drive.Produce()
 		}
-		l2At := sys.L2EL.BlockRefByNumber(l2BeforeReorg.Number)
+		// Read the head before the height: the reorg unwinds l2BeforeReorg.Number out of existence
+		// and rebuilds past it, and dsl BlockRefByNumber faults the test on an absent block rather
+		// than reporting absence. Guarding on head > N is truth-equivalent to the old
+		// `... && l2Head.Number > N` but never reads a rewound-out height.
 		l2Head := sys.L2EL.BlockRefByLabel(eth.Unsafe)
-		return l2At.Hash != l2BeforeReorg.Hash && l2Head.Number > l2BeforeReorg.Number
+		if l2Head.Number <= l2BeforeReorg.Number {
+			return false
+		}
+		l2At := sys.L2EL.BlockRefByNumber(l2BeforeReorg.Number)
+		return l2At.Hash != l2BeforeReorg.Hash
 	}, 240*time.Second, 300*time.Millisecond)
 	require.NoError(drive.Err(), "L1 block production failed while waiting for the L2 to reorg")
 
