@@ -372,7 +372,7 @@ func initL1Handlers(cfg *config.Config, node *OpNode) (ethereum.Subscription, et
 		if err != nil {
 			node.log.Warn("resubscribing after failed L1 subscription", "err", err)
 		}
-		return eth.WatchHeadChanges(ctx, node.log, node.l1Source, onL1Head)
+		return eth.WatchHeadChanges(ctx, node.l1Source, onL1Head)
 	})
 	go func() {
 		err, ok := <-l1HeadsSub.Err()

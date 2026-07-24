@@ -3,7 +3,6 @@ package sources
 import (
 	"context"
 	crand "crypto/rand"
-	"log/slog"
 	"math/big"
 	"math/rand"
 	"testing"
@@ -21,7 +20,6 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/sources/caching"
-	"github.com/ethereum-optimism/optimism/op-service/testlog"
 )
 
 type mockRPC struct {
@@ -227,35 +225,4 @@ func TestReceiptValidation(t *testing.T) {
 
 	_, _, err := ethcl.FetchReceipts(ctx, block.Hash)
 	require.ErrorContains(err, "unexpected nil block number")
-}
-
-// TestEthClient_SubscribeNewHeadBlockRefRejectedByPollingTransport pins the transport limit that
-// eth.WatchHeadChanges has to work around.
-//
-// An op-node given an http(s) L1 endpoint has its RPC wrapped in client.PollingClient
-// (op-service/client/rpc.go NewRPCWithClient), and PollingClient.Subscribe documents and enforces
-// that the channel must be a chan<- *types.Header (op-service/client/polling.go). This
-// subscription hands it a chan *RPCHeader so it can decode headers itself -- which is the whole
-// point of the method, since it is what makes EIP-7928/7843 fields survive -- and Go never
-// asserts one channel type to the other. So it is rejected before a single head is delivered.
-//
-// The consequence lives in eth.WatchHeadChanges, which falls back to the plain header
-// subscription; see TestWatchHeadChangesFallsBackWhenBlockRefSubscriptionRejected. If this test
-// ever starts failing, PollingClient accepts another channel type and that fallback should be
-// re-examined rather than the assertion here relaxed.
-func TestEthClient_SubscribeNewHeadBlockRefRejectedByPollingTransport(t *testing.T) {
-	m := new(mockRPC)
-	m.On("Close").Return()
-
-	lgr := testlog.Logger(t, slog.LevelInfo)
-	// A zero poll rate keeps the client from ever calling the underlying RPC.
-	polling := client.NewPollingClient(context.Background(), lgr, m, client.WithPollRate(0))
-	t.Cleanup(polling.Close)
-
-	s, err := NewEthClient(polling, lgr, nil, testEthClientConfig)
-	require.NoError(t, err)
-
-	_, err = s.SubscribeNewHeadBlockRef(context.Background(), make(chan eth.L1BlockRef, 1))
-	require.ErrorContains(t, err, "invalid channel type",
-		"PollingClient must reject the block-ref subscription's own header channel")
 }

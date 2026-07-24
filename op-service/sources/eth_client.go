@@ -22,7 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -181,61 +180,6 @@ func (s *EthClient) SubscribeNewHead(ctx context.Context, ch chan<- *types.Heade
 	// Note that *types.Header does not cache the block hash unlike *HeaderInfo, it always recomputes.
 	// Inefficient if used poorly, but no trust issue.
 	return s.client.Subscribe(ctx, "eth", ch, "newHeads")
-}
-
-func (s *EthClient) SubscribeNewHeadBlockRef(ctx context.Context, ch chan<- eth.L1BlockRef) (ethereum.Subscription, error) {
-	headChanges := make(chan *RPCHeader, 10)
-	sub, err := s.client.Subscribe(ctx, "eth", headChanges, "newHeads")
-	if err != nil {
-		return nil, err
-	}
-	return event.NewSubscription(func(quit <-chan struct{}) error {
-		defer sub.Unsubscribe()
-		for {
-			select {
-			case header, ok := <-headChanges:
-				if !ok {
-					return nil
-				}
-				if header == nil {
-					continue
-				}
-				info, err := header.Info(s.trustRPC, s.mustBePostMerge)
-				if err != nil {
-					// Fail the subscription rather than skipping the header. A header we
-					// cannot decode means our view of the L1 head is incomplete, and
-					// silently continuing turns that into the worst failure mode there is:
-					// L1 head tracking quietly stops advancing while every log stays clean.
-					// That is precisely the shape a new L1 fork's header fields would take.
-					//
-					// Failing is safe because the one caller that reaches this method,
-					// op-node node.go, wraps it in event.ResubscribeErr with a 10s backoff, so
-					// a one-off bad header costs a reconnect, and a SYSTEMATIC decode failure
-					// becomes a visible resubscribe loop instead of silence. (op-challenger also
-					// calls eth.WatchHeadChanges, but its headSource implements only
-					// SubscribeNewHead, so it takes the plain-header branch and never gets here.)
-					s.log.Error("failed to process L1 head subscription header, dropping subscription",
-						"err", err, "hash", header.Hash)
-					return fmt.Errorf("failed to process L1 head subscription header: %w", err)
-				}
-				s.headersCache.Add(info.Hash(), info)
-				ref := eth.InfoToL1BlockRef(info)
-				s.blockRefsCache.Add(ref.Hash, ref)
-				select {
-				case ch <- ref:
-				case <-quit:
-					return nil
-				}
-			case <-quit:
-				return nil
-			case err, ok := <-sub.Err():
-				if !ok {
-					return nil
-				}
-				return err
-			}
-		}
-	}), nil
 }
 
 // rpcBlockID is an internal type to enforce header and block call results match the requested identifier
