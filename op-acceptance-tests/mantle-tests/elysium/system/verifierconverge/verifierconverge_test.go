@@ -17,8 +17,14 @@ import (
 // across the fork.
 //
 // Topology prerequisite: the system must expose at least TWO L2 CL nodes on the chain — an active
-// sequencer plus an independent follower — or NewMantleSingleChainMultiNode fails hydration before
-// the test body runs. TestMain brings up the sysgo multi-node system, which satisfies this.
+// sequencer plus an independent follower. NewMantleSingleChainMultiNode resolves that follower
+// through match.Assume, which by design SKIPS the test rather than failing it when nothing matches,
+// so the suite stays portable across topologies that have no independent verifier. TestMain brings
+// up the sysgo multi-node system, which satisfies this.
+//
+// Worth knowing when reading a green CI run: because the miss is a skip, a follower that fails to
+// come up is reported as "skipped" and `go test` still exits 0. What guarantees this case actually
+// ran is the gate's fixed topology, not anything this test asserts about itself.
 func TestL1Glamsterdam_VerifierConverge(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleSingleChainMultiNode(t)

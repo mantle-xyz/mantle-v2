@@ -122,8 +122,12 @@ func TestBoundary_L1ReorgAtFinalize(gt *testing.T) {
 	l1Height := l1Parent.Number + 1
 	l1Before := sys.L1EL.BlockRefByNumber(l1Height)
 
-	require.Equalf(l1FinalizedBefore.Number+1, l1Parent.Number,
-		"the fork parent (#%d) must sit exactly one block above the finalized horizon (#%d): "+
+	// l1Parent was fetched BY the number l1FinalizedBefore.Number+1, so asserting its Number equals
+	// that same expression only restates the fetch and can never fail. Check the ancestry instead:
+	// the fork parent must really be the finalized block's direct child, which is what makes this
+	// the deepest legal reorg rather than merely a block sitting at the right height.
+	require.Equalf(l1FinalizedBefore.Hash, l1Parent.ParentHash,
+		"the fork parent (#%d) must be the direct child of the finalized horizon (#%d): "+
 			"deeper is refused by the EL, shallower stops being the boundary case",
 		l1Parent.Number, l1FinalizedBefore.Number)
 

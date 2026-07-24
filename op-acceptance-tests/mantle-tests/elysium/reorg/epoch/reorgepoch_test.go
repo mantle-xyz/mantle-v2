@@ -74,7 +74,10 @@ func TestL1Reorg_AtEpochBoundary_PostUpgrade(gt *testing.T) {
 	// Locate the L2 epoch opener so the same epoch can be checked after the reorg.
 	epochOpener, ok := drive.EpochOpener(l2BeforeReorg.Number, l1Height)
 	require.True(ok, "the target L1 block must open an L2 epoch before the reorg")
-	require.Equal(l1Height, epochOpener.L1Origin.Number, "epoch opener must reference the target L1 block")
+	// EpochOpener only ever assigns a block whose L1Origin.Number == l1Height, so re-asserting that
+	// equality here would restate the helper's own postcondition and could not fail. The origin
+	// HASH is the load-bearing check: it is what tells the old canonical target apart from the
+	// block that replaces it at the same height after the reorg.
 	require.Equal(l1Before.Hash, epochOpener.L1Origin.Hash,
 		"before the reorg the epoch opener must derive from the OLD canonical target L1 block")
 	logger.Info("reorg target = recent post-Amsterdam L1 epoch boundary",

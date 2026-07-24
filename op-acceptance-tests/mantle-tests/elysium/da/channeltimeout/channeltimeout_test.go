@@ -121,21 +121,37 @@ func TestDerivation_ChannelTimeout_PostUpgrade(gt *testing.T) {
 		return frames
 	}
 
-	// postFrames submits one inbox tx and mines exactly one L1 block to include it.
+	// postFrames submits one inbox tx, mines exactly one L1 block, and reads the receipt back to
+	// prove the frames actually landed in THAT block.
+	//
+	// Returning the L1 head counter alone is not enough: driveL1To stops exactly on its target and
+	// produceL1Block adds exactly one, so the `require.Equal(<target>, closedX)` checks below would
+	// be an arithmetic identity of those two helpers -- true whichever block, if any, the tx
+	// actually reached. Where the closing frame lands relative to the deadline is the entire point
+	// of this test, so it has to be read off the receipt rather than inferred from a counter.
 	postFrames := func(what string, frames ...[]byte) uint64 {
 		payload := []byte{derive_params.DerivationVersion0}
 		for _, f := range frames {
 			payload = append(payload, f...)
 		}
-		_, err := txplan.NewPlannedTx(txplan.Combine(
+		ptx := txplan.NewPlannedTx(txplan.Combine(
 			batcherEOA.Plan(),
 			txplan.WithTo(&inbox),
 			txplan.WithData(payload),
 			txplan.WithGasLimit(1_000_000),
-		)).Submitted.Eval(ctx)
+		))
+		_, err := ptx.Submitted.Eval(ctx)
 		require.NoErrorf(err, "submit %s inbox tx", what)
 		produceL1Block()
 		n := sys.L1EL.BlockRefByLabel(eth.Unsafe).Number
+		rcpt, err := ptx.Included.Eval(ctx)
+		require.NoErrorf(err, "%s inbox tx must be included; it was submitted before L1 #%d was built", what, n)
+		require.Equalf(gethtypes.ReceiptStatusSuccessful, rcpt.Status,
+			"%s inbox tx must be mined successfully", what)
+		require.Equalf(n, rcpt.BlockNumber.Uint64(),
+			"%s must land in the L1 block produced right after it was submitted (#%d), but the receipt says #%d: "+
+				"the deadline assertions below only mean anything if the frames are in the block this returns",
+			what, n, rcpt.BlockNumber.Uint64())
 		logger.Info("posted channel frames", "what", what, "l1Block", n, "frames", len(frames), "bytes", len(payload))
 		return n
 	}

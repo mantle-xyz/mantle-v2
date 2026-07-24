@@ -2,6 +2,7 @@ package smoke
 
 import (
 	"testing"
+	"time"
 
 	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
 	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
@@ -43,11 +44,19 @@ func TestL1Glamsterdam_L2Arsia_Smoke(gt *testing.T) {
 		return bi.NumberU64() >= unsafeTarget, nil
 	})
 
-	// (4) Match by hash, not just height, so a divergent re-derivation fails. ReachedRef
-	// already pins safe >= boundaryRef.Number; only the strict advance past the safe head
-	// recorded at the boundary adds anything on top of it.
+	// (4) Match by hash, not just height, so a divergent re-derivation fails.
 	sys.L2CL.ReachedRef(suptypes.CrossSafe, eth.BlockID{Number: boundaryRef.Number, Hash: boundaryRef.Hash}, int(moreBlocks)+120)
-	safe := sys.L2CL.SyncStatus().SafeL2
-	require.Greater(safe.Number, boundarySafe,
-		"L2 safe head must strictly advance after the L1 crosses Amsterdam")
+
+	// ReachedRef already pins safe >= boundaryRef.Number, and boundarySafe trails boundaryRef.Number
+	// (the safe head lags the unsafe head), so comparing the new safe head against boundarySafe
+	// would be satisfied the moment ReachedRef returned and could never fail on its own. Require
+	// the safe head to move strictly PAST the boundary block instead: derivation that reproduces
+	// the boundary block byte-identically and then stalls -- while the sequencer happily keeps
+	// producing the 30 blocks step (3) waits for -- is precisely the regression this step exists
+	// to catch, and it is invisible to any check anchored on boundarySafe.
+	require.Eventuallyf(func() bool {
+		return sys.L2CL.SyncStatus().SafeL2.Number > boundaryRef.Number
+	}, 120*time.Second, time.Second,
+		"L2 safe head must derive strictly past the boundary block #%d rather than stalling on it "+
+			"(safe head at the boundary was #%d)", boundaryRef.Number, boundarySafe)
 }
