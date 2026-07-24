@@ -65,7 +65,7 @@ type RPCHeader struct {
 	// RequestsHash was added by EIP-7685 and is ignored in legacy headers.
 	RequestsHash *common.Hash `json:"requestsHash,omitempty" rlp:"optional"`
 
-	// BlockAccessListHash was added by EIP-7928 and is ignored in legacy headers.
+	// BlockAccessListHash was added by EIP-8159 and is ignored in legacy headers.
 	BlockAccessListHash *common.Hash `json:"blockAccessListHash,omitempty" rlp:"optional"`
 
 	// SlotNumber was added by EIP-7843 and is ignored in legacy headers.
