@@ -168,8 +168,6 @@ gates:
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/preactivation
         timeout: 10m
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/derivation
-        timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/derivepoch
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/finality

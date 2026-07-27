@@ -28,11 +28,12 @@ const depositGasLimit uint32 = 300_000
 // bvmETHAddr is the Mantle L2 BVM_ETH predeploy that an L1 ETH deposit mints into.
 var bvmETHAddr = common.HexToAddress("0xdEAddEaDdeadDEadDEADDEAddEADDEAddead1111")
 
-// TestDeposit_AcrossL1Upgrade_ThreePositions places deposits before, at, and
-// after L1 Amsterdam activation. It checks BVM_ETH crediting on sequencer and
-// verifier, and confirms EIP-7708 system Transfer logs do not produce spurious
-// L2 deposits.
-func TestDeposit_AcrossL1Upgrade_ThreePositions(gt *testing.T) {
+// TestDerivation_AcrossL1Upgrade places deposits at three positions — before,
+// at, and after L1 Amsterdam activation — and proves each is correctly derived
+// into the L2: BVM_ETH credits equally on sequencer and verifier, the derived
+// epoch block carries exactly one user deposit plus the L1-attributes deposit,
+// and EIP-7708 system Transfer logs do not produce spurious L2 deposits.
+func TestDerivation_AcrossL1Upgrade(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleSingleChainMultiNodeWithTestSeq(t)
 	require := t.Require()
