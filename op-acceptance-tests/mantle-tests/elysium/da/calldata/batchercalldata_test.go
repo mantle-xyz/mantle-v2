@@ -137,21 +137,10 @@ func TestBatcher_CalldataCost_After7976(gt *testing.T) {
 		"batcher committed gas limit %d must cover the EIP-7976 floor %d it computes for this %d-byte calldata submission",
 		batchTx.Gas(), floorAmsterdam, len(batchTx.Data()))
 
-	// 6) The live L1 estimate, for diagnosis only — NOT asserted. It is tempting to require
-	//    batchTx.Gas() >= l1Estimate, and that assertion passed for a long time, but it was
-	//    measuring a divergence between two builds rather than anything about the batcher:
-	//
-	//    The L1 is a separate vanilla-geth build carrying EIP-2780 (Glamsterdam CFI), whose
-	//    FloorDataGas anchors the floor to TxBaseCost2780 = 12000. The pinned Mantle op-geth has
-	//    no such symbol and anchors to params.TxGas = 21000. The two implementations are
-	//    otherwise byte-identical, so for the same calldata the batcher over-reserves by exactly
-	//    9000 gas, always. eth_estimateGas in turn OVER-estimates by design (estimateGasErrorRatio
-	//    = 0.015, and the bisection returns hi as soon as (hi-lo)/hi falls under it), so the
-	//    comparison held only while that 9000 covered the estimator's overshoot — measured at
-	//    ~1.4%, it crosses over around 10 KB of calldata. Worse, if the two builds ever AGREE on
-	//    the floor (EIP-2780 is only CFI, and its spec moved to a shape-dependent base one day
-	//    after this L1 pin was cut), the batcher reserves the floor exactly while the estimator
-	//    still rounds up, and the assertion fails on every run at any size.
+	// 6) The live L1 estimate, for diagnosis only — NOT asserted. batchTx.Gas() >= l1Estimate
+	//    would measure a base-cost divergence between the two geth builds (the L1's EIP-2780
+	//    12000 floor vs the pinned op-geth's 21000 anchor), not anything about the batcher, and
+	//    the margin flips with calldata size — so it is logged rather than checked.
 	sender, err := gethtypes.Sender(gethtypes.LatestSignerForChainID(batchTx.ChainId()), batchTx)
 	require.NoError(err, "recover the batcher tx sender")
 	l1Estimate, err := l1Eth.EstimateGas(ctx, ethereum.CallMsg{

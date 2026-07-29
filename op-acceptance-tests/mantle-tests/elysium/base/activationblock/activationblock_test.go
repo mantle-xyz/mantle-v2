@@ -80,30 +80,9 @@ func TestBoundary_L1ActivationBlock(gt *testing.T) {
 		"amsterdamOffset=%ds is not a whole number of %ds slots, so it does not name a slot boundary",
 		testmain.DefaultAmsterdamOffset, secondsPerSlot)
 
-	// The slot number must be the RIGHT one, not merely present — every other case here only
-	// checks the field is non-nil, which a builder emitting a constant would satisfy.
-	//
-	// Be precise about what this is, because it looks like more than it is. It is NOT a
-	// cross-component consistency check between the beacon's slot clock and the builder's: both
-	// sides descend from the same l1Net.blockTime and the same genesis timestamp — fakebeacon
-	// reports blockTime as SECONDS_PER_SLOT (fakebeacon/blobs.go), fakepos derives slotNumber as
-	// elapsed/blockTime (geth/fakepos.go) — so they are two consumers of one config field and
-	// cannot disagree about it. Nor is there a compiled-in divergent branch to trip, the way the
-	// EIP-gated gas assertions have rules.IsAmsterdam.
-	//
-	// What it does catch, by pinning the value rather than its shape: a builder emitting a
-	// constant slot (unless that constant happens to equal offset/blockTime), and a builder
-	// dividing by something other than the slot time it reports. That is the whole list.
-	//
-	// It notably does NOT catch numbering by block height, which is the most likely wrong
-	// formula: at this offset the activation block IS block offset/blockTime, so height and
-	// slot are the same number and the two are indistinguishable here. Nor a missed slot,
-	// which fakepos cannot produce — it derives each block time from the previous head rather
-	// than from a wall clock, so the sequence has no gaps to find.
-	//
-	// So: a regression guard on the builder's slot numbering, whose only write site is the one
-	// line in fakepos — worth keeping at this price, but neither evidence of agreement between
-	// two independent sources nor a broad check on the formula.
+	// Pin the slot VALUE (not just non-nil) as a regression guard on fakepos's slot numbering.
+	// Narrow by design: beacon and builder both derive from one config field (not a cross-component
+	// check), and at this offset slot == block height, so it cannot catch height-vs-slot confusion.
 	expectedSlot := testmain.DefaultAmsterdamOffset / secondsPerSlot
 	require.EqualValuesf(expectedSlot, *l1Hdr.SlotNumber,
 		"activation L1 block #%d reports slot %d, but %ds after genesis at %ds per slot is slot %d: "+
