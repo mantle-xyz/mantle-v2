@@ -545,6 +545,7 @@ func SetupMantleNormal(t require.TestingT, deployParams *DeployParams, alloc *Al
 		MantleSkadiTime:   deployConf.MantleSkadiTime(uint64(deployConf.L1GenesisBlockTimestamp)),
 		MantleLimbTime:    deployConf.MantleLimbTime(uint64(deployConf.L1GenesisBlockTimestamp)),
 		MantleArsiaTime:   deployConf.MantleArsiaTime(uint64(deployConf.L1GenesisBlockTimestamp)),
+		MantleElysiumTime: deployConf.MantleElysiumTime(uint64(deployConf.L1GenesisBlockTimestamp)),
 		AltDAConfig:       pcfg,
 		ChainOpConfig: &params.OptimismConfig{
 			EIP1559Elasticity:        deployConf.EIP1559Elasticity,
