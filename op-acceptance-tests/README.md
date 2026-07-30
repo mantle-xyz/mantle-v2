@@ -163,6 +163,120 @@ To add new acceptance tests:
      package: github.com/ethereum-optimism/optimism/op-acceptance-tests/tests/your/package/path
    ```
 
+## Mantle Gates
+
+This fork adds gates for the Mantle network on top of the OP Stack ones above. They follow the
+same rules as any other gate: registered in `acceptance-tests.yaml`, run by `op-acceptor`, and
+selected by name.
+
+| Gate | Covers |
+| --- | --- |
+| `mantle-arsia` | Arsia fork behaviour |
+| `mantle-base` | Sanity/smoke for the Mantle network; inherits `mantle-arsia` |
+| `mantle-elysium` | An Arsia L2 running against an upgraded (Glamsterdam / Amsterdam) L1 |
+
+```bash
+cd op-acceptance-tests
+just acceptance-test "" mantle-base
+just acceptance-test "" mantle-elysium
+```
+
+### mantle-elysium
+
+The L2 stays on Arsia rules and only *consumes* an L1 that has upgraded to Glamsterdam — it does
+not execute Amsterdam itself. The gate covers both directions of that relationship: that the L2
+keeps deriving correctly from L1 blocks carrying the new header fields and DA behaviour, and that
+the L2's own output stays byte-for-byte Arsia while it does so.
+
+This gate needs an **Amsterdam-capable L1 execution client**, which is not the in-process default.
+`mise` builds one from the go-ethereum commit pinned in the repo-root `mise.toml`; point the
+harness at it before running:
+
+```bash
+mise install geth
+export DEVSTACK_L1EL_KIND=geth
+export SYSGO_GETH_EXEC_PATH="$(mise which geth)"
+
+cd op-acceptance-tests
+just acceptance-test "" mantle-elysium
+```
+
+Without those variables the harness falls back to the in-process client, which does not enforce
+Amsterdam header rules. The suite detects this and fails rather than passing vacuously, so a run
+that has silently lost its Glamsterdam L1 is reported as a failure, not a green.
+
+Note that the local (non-CI) path rebuilds contract artifacts before running. If they are already
+built, that step is the slowest part of an otherwise short run.
+
+#### Cases outside the gate
+
+A few cases live under `mantle-tests/elysium/system` and are deliberately **not** registered:
+
+- those asserting against the beacon API itself, which need a real consensus client rather than
+  the in-process stand-in;
+- a batch-submission case whose value is that the DA mode comes from the devnet descriptor rather
+  than being pinned by the test;
+- a long soak and a high-throughput load, both too slow for a per-PR gate.
+
+Run these by hand against a real devnet before a release. They are ordinary Go tests, but they
+need the `sysext` orchestrator pointed at a devnet descriptor. With no `DEVNET_ENV_URL` the
+harness falls back to a Kurtosis enclave (`kt://interop-devnet`) and fails *there* — the error
+talks about a missing Kurtosis engine and says nothing about the descriptor, so it sends you off
+in the wrong direction.
+
+A descriptor for the [rde](https://github.com/mantle-xyz/rde-v4) `glam-accept` profile ships at
+`mantle-tests/elysium/devnets/glam-accept.json`. rde assigns ports deterministically per profile,
+so it works as-is against that profile on localhost.
+
+```bash
+cd op-acceptance-tests
+
+export DEVSTACK_ORCHESTRATOR=sysext
+export DEVNET_ENV_URL="$PWD/mantle-tests/elysium/devnets/glam-accept.json"
+
+# rde control surface: lets the harness stop and start individual services.
+export DEVNET_ENV_CTRL=rde
+export RDE_DIR=/path/to/rde-v4
+export RDE_PROFILE=glam-accept
+
+# Pins the chain's slot time, which is otherwise only logged. glam-accept runs 12s slots.
+export ELYSIUM_EXPECTED_SECONDS_PER_SLOT=12
+
+go test ./mantle-tests/elysium/system/ -run TestL1Glamsterdam_System_RealCL -v
+go test ./mantle-tests/elysium/system/ -run TestL1Glamsterdam_Derivation_RealCLBeacon -v
+```
+
+**A faucet is required and rde does not run one.** The preset these cases use resolves an L1 and
+an L2 faucet at construction and fails without them, and the funding calls are real
+`faucet_requestETH` requests rather than local key handling. One `op-faucet` instance serves both
+chains — the descriptor points both at `127.0.0.1:9000`:
+
+```yaml
+# faucet.yaml
+faucets:
+  l1: { el_rpc: "http://127.0.0.1:30145", chain_id: 31337, tx_cfg: { private_key: "0xac09...ff80" } }
+  l2: { el_rpc: "http://127.0.0.1:30245", chain_id: 1337,  tx_cfg: { private_key: "0xac09...ff80" } }
+defaults: { 31337: l1, 1337: l2 }
+```
+
+```bash
+cd op-faucet && go run ./cmd --config=faucet.yaml --rpc.addr=127.0.0.1 --rpc.port=9000
+```
+
+Writing a descriptor for a different devnet: service map keys must be `el` and `cl`, and the
+endpoint key differs by role — L1 `cl` uses `http` (the beacon REST port, not prysm's gRPC),
+everything else uses `rpc`; `batcher` and `proposer` use `http`. `features: ["mantle"]` makes the
+harness pull the rollup config from the running op-node, so it does not have to be transcribed.
+`l1.config` must be the full chain config: chain 31337 is not well-known, so a stub loses
+`amsterdamTime` and every case asserting on it fails.
+
+Note that `l1.config`'s fork times (`amsterdamTime`, `bpo2Time`) are wall-clock timestamps baked
+in when the devnet's genesis was generated, so they change every time rde rebuilds the devnet
+(`task clean && task up`). The checked-in `glam-accept.json` carries one such snapshot. If a run
+fails at `WaitForGlamsterdamL1` with the L1 head never showing the Amsterdam header fields, the
+descriptor's timestamps are stale relative to the running devnet — regenerate them from the
+profile's `genesis/metadata/genesis.json`.
+
 ## Flake-Shake: Test Stability Validation
 
 Flake-shake is a test stability validation system that runs tests multiple times to detect flakiness before they reach production gates. It serves as a quarantine area where new or potentially unstable tests must prove their reliability.

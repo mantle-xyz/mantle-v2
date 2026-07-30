@@ -1,7 +1,10 @@
 package sysgo
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,9 +20,13 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/clock"
 	"github.com/ethereum-optimism/optimism/op-service/logpipe"
+	"github.com/ethereum-optimism/optimism/op-service/sources"
 	"github.com/ethereum-optimism/optimism/op-service/tasks"
 	"github.com/ethereum-optimism/optimism/op-service/testutils/tcpproxy"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 type ExternalL1Geth struct {
@@ -150,6 +157,34 @@ func (n *ExternalL1Geth) AuthRPC() string {
 
 const GethExecPathEnvVar = "SYSGO_GETH_EXEC_PATH"
 
+type rpcHeaderBackend struct {
+	client client.RPC
+}
+
+func (b *rpcHeaderBackend) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
+	var header *sources.RPCHeader
+	if err := b.client.CallContext(ctx, &header, "eth_getBlockByNumber", blockNumArg(number), false); err != nil {
+		return nil, err
+	}
+	if header == nil {
+		return nil, ethereum.NotFound
+	}
+	return header.CreateGethHeader(), nil
+}
+
+func blockNumArg(number *big.Int) string {
+	if number == nil {
+		return "latest"
+	}
+	if number.Sign() >= 0 {
+		return hexutil.EncodeBig(number)
+	}
+	if number.IsInt64() {
+		return rpc.BlockNumber(number.Int64()).String()
+	}
+	return fmt.Sprintf("<invalid %d>", number)
+}
+
 func WithL1NodesSubprocess(id stack.L1ELNodeID, clID stack.L1CLNodeID) stack.Option[*Orchestrator] {
 	return stack.AfterDeploy(func(orch *Orchestrator) {
 		p := orch.P().WithCtx(stack.ContextWithID(orch.P().Ctx(), id))
@@ -190,6 +225,7 @@ func WithL1NodesSubprocess(id stack.L1ELNodeID, clID stack.L1CLNodeID) stack.Opt
 			"--verbosity", "5",
 			"--miner.recommit", "2s",
 			"--gcmode", "archive",
+			"--syncmode", "full",
 		}
 
 		l1EL := &ExternalL1Geth{
@@ -209,8 +245,10 @@ func WithL1NodesSubprocess(id stack.L1ELNodeID, clID stack.L1CLNodeID) stack.Opt
 		p.Logger().Info("geth is ready", "userRPC", l1EL.userRPC, "authRPC", l1EL.authRPC)
 		require.True(orch.l1ELs.SetIfMissing(id, l1EL), "must be unique L2 EL node")
 
-		backend, err := ethclient.DialContext(p.Ctx(), l1EL.userRPC)
+		backendRPC, err := client.NewRPC(p.Ctx(), p.Logger(), l1EL.userRPC)
 		require.NoError(err)
+		p.Cleanup(backendRPC.Close)
+		backend := &rpcHeaderBackend{client: backendRPC}
 
 		l1Clock := clock.SystemClock
 		if orch.timeTravelClock != nil {

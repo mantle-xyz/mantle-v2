@@ -70,7 +70,20 @@ jobs:
           }
 
           contracts_bedrock="$(has_match '^(\.github/workflows/ci-main-migrated\.yml|packages/contracts-bedrock/|op-node/)')"
-          main_go="$(has_match '^(go\.(mod|sum)$|gas-oracle/|op-batcher/|op-chain-ops/|op-node/|op-proposer/|op-service/|op-e2e/mantleopgeth/|op-e2e/actions/mantletests/|op-e2e/actions/mantleupgrades/|op-e2e/system/mantleda/|op-e2e/system/mantlep2p/|op-acceptance-tests/|op-devstack/|devnet-sdk/)')"
+          # The four paths added below are all things an acceptance run's verdict depends on,
+          # none of which used to trigger one:
+          #   mise.toml            pins the L1 EL geth the elysium job installs and runs (see its
+          #                        "Check Glamsterdam geth" step) -- the Amsterdam rules the whole
+          #                        suite discriminates on come from that binary
+          #   op-deployer/         builds the L1/L2 genesis every sysgo run starts from
+          #                        (op-devstack/sysgo/deployer.go)
+          #   op-e2e/e2eutils/     holds fakepos, which BUILDS the post-Amsterdam L1 blocks
+          #   op-test-sequencer/   holds the fakepos builder the reorg suites drive
+          # A harness bug here does not announce itself: it makes the L1 subtly wrong while every
+          # "post-Amsterdam" assertion still passes, which is the one failure these suites cannot
+          # catch for themselves.
+          # This file is in the list too, so a change to the acceptance jobs runs them.
+          main_go="$(has_match '^(go\.(mod|sum)$|mise\.toml$|\.github/workflows/ci-main-migrated\.yml$|gas-oracle/|op-batcher/|op-chain-ops/|op-node/|op-proposer/|op-service/|op-deployer/|op-test-sequencer/|op-e2e/e2eutils/|op-e2e/mantleopgeth/|op-e2e/actions/mantletests/|op-e2e/actions/mantleupgrades/|op-e2e/system/mantleda/|op-e2e/system/mantlep2p/|op-acceptance-tests/|op-devstack/|devnet-sdk/)')"
 
           echo "contracts_bedrock=$contracts_bedrock"
           echo "main_go=$main_go"
@@ -559,6 +572,124 @@ jobs:
           name: acceptance-test-logs
           path: op-acceptance-tests/logs
 
+  # Runs in PARALLEL with op-acceptance-tests rather than as extra steps inside it, so the
+  # elysium suite's wall clock counts as max() against mantle-base instead of sum(). The cost is
+  # one extra runner plus a duplicated setup (checkout / mise / forge artifacts / go mod), which
+  # is cheaper than serialising two ~1h suites into a single 150-minute job budget.
+  op-acceptance-tests-elysium:
+    name: op-acceptance-tests (elysium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    needs:
+      - detect-changes
+      - contracts-bedrock-build
+    if: needs.detect-changes.outputs.main_go == 'true'
+    env:
+      GOFLAGS: "-mod=mod"
+      GO111MODULE: "on"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - name: Install toolchain via mise
+        uses: jdx/mise-action@v2
+
+      # The elysium suite needs an Amsterdam-capable L1 EL. mise builds it from the pinned
+      # go-ethereum commit (see mise.toml), so fail here with a clear message rather than deep
+      # inside a devnet bring-up. devstackenv.Configure() in the tests would auto-locate geth
+      # anyway; setting the vars explicitly makes the choice visible in the job log.
+      - name: Check Glamsterdam geth
+        run: |
+          set -euo pipefail
+          # The tool is declared as [tools."http:geth"] in mise.toml; `geth` is only the binary it
+          # produces (bin = "geth"). `mise install geth` therefore resolves to geth@latest and is
+          # looked up in the registry, which has no such tool -- it fails with "geth not found in
+          # mise tool registry", naming a tool nobody declared. Install by the tool's real name;
+          # `mise which` still resolves by binary name.
+          mise install http:geth
+          GETH_PATH="$(mise which geth)"
+          test -n "$GETH_PATH"
+          echo "DEVSTACK_L1EL_KIND=geth" >> "$GITHUB_ENV"
+          echo "SYSGO_GETH_EXEC_PATH=$GETH_PATH" >> "$GITHUB_ENV"
+          "$GETH_PATH" version
+
+      - name: Install contracts dependencies
+        run: git submodule update --init --recursive --force -j 8
+      - name: Restore forge artifacts from cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            packages/contracts-bedrock/forge-artifacts
+            packages/contracts-bedrock/cache
+            op-deployer/pkg/deployer/artifacts/forge-artifacts
+          key: forge-artifacts-${{ github.sha }}
+      - name: Build contract artifacts on cache miss
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: |
+          cd packages/contracts-bedrock && just build-no-tests
+          cd ../../op-deployer && just copy-contract-artifacts
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: go-mod-v1-${{ hashFiles('go.sum') }}
+          restore-keys: go-mod-v1-
+
+      - name: Download Go dependencies
+        working-directory: op-acceptance-tests
+        run: go mod download
+
+      - name: Run mantle-elysium acceptance tests (sysgo)
+        working-directory: op-acceptance-tests
+        timeout-minutes: 75
+        run: LOG_LEVEL=info just acceptance-test "" "mantle-elysium"
+
+      - name: Print results (summary)
+        if: always()
+        working-directory: op-acceptance-tests
+        run: |
+          LOG_DIR=$(ls -td -- logs/* | head -1)
+          cat "$LOG_DIR/summary.log" || true
+
+      - name: Print results (failures)
+        if: failure()
+        working-directory: op-acceptance-tests
+        run: |
+          LOG_DIR=$(ls -td -- logs/* | head -1)
+          cat "$LOG_DIR/failed/*.log" || true
+
+      - name: Print results (all)
+        if: always()
+        working-directory: op-acceptance-tests
+        run: |
+          LOG_DIR=$(ls -td -- logs/* | head -1)
+          cat "$LOG_DIR/all.log" || true
+
+      - name: Generate JUnit XML test report
+        if: always()
+        working-directory: op-acceptance-tests
+        run: |
+          LOG_DIR=$(ls -td -- logs/* | head -1)
+          gotestsum --junitfile results/results.xml --raw-command cat $LOG_DIR/raw_go_events.log || true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-test-results-elysium
+          path: op-acceptance-tests/results
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-test-logs-elysium
+          path: op-acceptance-tests/logs
+
   op-acceptance-tests-reth:
     name: op-acceptance-tests (reth)
     runs-on: ubuntu-latest
@@ -722,6 +853,7 @@ jobs:
       - docker-build
       - op-acceptance-tests
       - op-acceptance-tests-reth
+      - op-acceptance-tests-elysium
     steps:
       - name: Validate job statuses
         env:
