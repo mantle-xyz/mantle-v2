@@ -81,6 +81,10 @@ func (sc *ControlClient) Seal(ctx context.Context) error {
 	return sc.client.CallContext(ctx, nil, "sequencer_seal")
 }
 
+func (sc *ControlClient) Cancel(ctx context.Context) error {
+	return sc.client.CallContext(ctx, nil, "sequencer_cancel")
+}
+
 func (sc *ControlClient) Sign(ctx context.Context) error {
 	return sc.client.CallContext(ctx, nil, "sequencer_sign")
 }

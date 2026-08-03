@@ -293,6 +293,29 @@ func WithOpReth(id stack.L2ELNodeID, opts ...L2ELOption) stack.Option[*Orchestra
 			args = append(args, "--rollup.supervisor-http="+supervisorRPC)
 		}
 
+		// Mantle preconf subsystem. reth has no env-var config, so these are
+		// CLI flags (names per mantle-reth/crates/cli/src/args.rs). The journal
+		// file lives under tempDir, alongside genesis/logs above.
+		if cfg.PreconfEnabled {
+			args = append(args, "--preconf.enable")
+			if cfg.PreconfAll {
+				args = append(args, "--preconf.all")
+			}
+			for _, a := range cfg.PreconfFrom {
+				args = append(args, "--preconf.from="+a)
+			}
+			for _, a := range cfg.PreconfTo {
+				args = append(args, "--preconf.to="+a)
+			}
+			if cfg.PreconfJournal {
+				journalPath := filepath.Join(tempDir, "preconf.journal")
+				args = append(args, "--preconf.journal-path="+journalPath)
+			}
+			if cfg.PreconfTimeoutMs > 0 {
+				args = append(args, fmt.Sprintf("--preconf.timeout-ms=%d", cfg.PreconfTimeoutMs))
+			}
+		}
+
 		l2EL := &OpReth{
 			id:                 id,
 			jwtPath:            jwtPath,

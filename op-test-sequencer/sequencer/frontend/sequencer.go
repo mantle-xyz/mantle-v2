@@ -39,6 +39,10 @@ func (bf *SequencerFrontend) Seal(ctx context.Context) error {
 	return toJsonError(bf.Sequencer.Seal(ctx))
 }
 
+func (bf *SequencerFrontend) Cancel(ctx context.Context) error {
+	return toJsonError(bf.Sequencer.Cancel(ctx))
+}
+
 func (bf *SequencerFrontend) PrebuiltEnvelope(ctx context.Context, block *eth.ExecutionPayloadEnvelope) error {
 	return toJsonError(bf.Sequencer.Prebuilt(ctx, block))
 }
