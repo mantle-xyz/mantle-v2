@@ -602,8 +602,10 @@ func TestInvalidPayloadThroughCLP2P(gt *testing.T) {
 	payload2.ExecutionPayload.BlockHash = newHash
 	_, ok = payload.CheckBlockHash()
 	require.True(ok)
-	// Post invalid payload with the fault that can be only checked at the EL side
-	sys.L2CLB.PostUnsafePayload(payload)
+	// Post payload2 (valid self-hash, parent = the previously-rejected block): the EL-only fault.
+	// Previously this posted `payload` (already rejected in Scenario 2), so the invalid-parent path
+	// was never exercised and the NotAdvanced checks below passed vacuously.
+	sys.L2CLB.PostUnsafePayload(payload2)
 	// ex) op-geth error msg: "ignoring bad block: links to previously rejected block"
 	sys.L2CLB.NotAdvanced(types.LocalUnsafe, attempts)
 	sys.L2ELB.NotAdvanced(eth.Unsafe, attempts)
