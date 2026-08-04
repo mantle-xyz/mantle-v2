@@ -834,8 +834,9 @@ jobs:
               echo "Pulling op-reth image ${OP_RETH_IMAGE}"
               docker pull "$OP_RETH_IMAGE"
               cid="$(docker create "$OP_RETH_IMAGE")"
+              # trap, not a trailing docker rm: set -e would skip cleanup if docker cp fails
+              trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
               docker cp "${cid}:${OP_RETH_IMAGE_BIN}" ./op-reth
-              docker rm "$cid"
               sudo install -m 755 op-reth /usr/local/bin/op-reth
               ;;
             *)
@@ -843,7 +844,8 @@ jobs:
               exit 1
               ;;
           esac
-          op-reth --version
+          # smoke-test the exact path OP_RETH_EXEC_PATH will use, not a PATH lookup
+          /usr/local/bin/op-reth --version
 
       - name: Install contracts dependencies
         run: git submodule update --init --recursive --force -j 8
