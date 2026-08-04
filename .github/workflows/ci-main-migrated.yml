@@ -781,9 +781,16 @@ jobs:
       GOFLAGS: "-mod=mod"
       GO111MODULE: "on"
       DEVSTACK_L2EL_KIND: "op-reth"
-      # op-reth 版本 pin —— 唯一旋钮,改这一行即可切换。base gate 与 fork 无关,用 arsia 线的 reth。
-      # 注:该 tag 目前尚无 x86_64-linux 二进制资产,reth 发布后本 job 才能真正拉到 op-reth。
-      OP_RETH_VERSION: "op-reth-v2.2.1-mantle-arsia.1"
+      # ── op-reth 获取:唯一旋钮。reth 一旦能正常发布,只改这几个 env、job 逻辑不动即可通过 ──
+      # OP_RETH_SOURCE = 从哪拿 op-reth 二进制:
+      #   release-tarball = 从 mantle-xyz/reth Releases 下 x86_64-linux tar.gz。
+      #                     需 reth 先修好 release.yml(把 revm 依赖从私有 GHSA fork 指回公开 mantle-xyz/revm);
+      #                     当前该 tag 无二进制资产,故此路径现在拉不到——这是 reth 侧的分发缺口,非本仓。
+      #   ghcr-image      = 从 op-reth Docker 镜像 copy 出二进制(DevOps 实际走的分发:镜像在私有 mantle-config 构建)。
+      #                     切换:设 OP_RETH_SOURCE=ghcr-image + OP_RETH_IMAGE=<镜像坐标>,私有镜像再配下方拉取密钥。
+      OP_RETH_SOURCE: "release-tarball"
+      OP_RETH_VERSION: "op-reth-v2.2.1-mantle-arsia.1"   # release-tarball 用:reth release tag
+      OP_RETH_IMAGE: ""                                  # ghcr-image 用:如 ghcr.io/mantle-xyz/op-reth:<tag>
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -794,16 +801,48 @@ jobs:
         uses: jdx/mise-action@v2
 
       - name: Install op-reth
+        # 目标:把 op-reth 装到 /usr/local/bin/op-reth(下方测试用 OP_RETH_EXEC_PATH 指它)。
+        # 两条获取路径由 OP_RETH_SOURCE 二选一,reth 可正常发布后只切 env、本步骤逻辑不改:
+        #   • release-tarball:reth 修好 release.yml 后开箱即用(必要时 bump OP_RETH_VERSION)。
+        #   • ghcr-image:reth 走镜像分发时设 OP_RETH_SOURCE=ghcr-image + OP_RETH_IMAGE;
+        #     私有镜像再加 GHCR_PULL_TOKEN secret;镜像内二进制路径按 reth DockerfileOp 核对 OP_RETH_IMAGE_BIN。
+        env:
+          OP_RETH_IMAGE_BIN: "/usr/local/bin/op-reth"   # ghcr-image:镜像内 op-reth 路径(按 reth DockerfileOp 核对)
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}    # 仅私有镜像需要;公开镜像可留空
         run: |
           set -euo pipefail
-          TARBALL="op-reth-${OP_RETH_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
-          URL="https://github.com/mantle-xyz/reth/releases/download/${OP_RETH_VERSION}/${TARBALL}"
-          echo "Downloading op-reth ${OP_RETH_VERSION} from ${URL}"
-          curl -fsSL "${URL}.sha256" -o "${TARBALL}.sha256"
-          curl -fsSL "$URL" -o "$TARBALL"
-          sha256sum -c "${TARBALL}.sha256"
-          tar xzf "$TARBALL"
-          sudo install -m 755 op-reth /usr/local/bin/op-reth
+          case "$OP_RETH_SOURCE" in
+            release-tarball)
+              TARBALL="op-reth-${OP_RETH_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+              URL="https://github.com/mantle-xyz/reth/releases/download/${OP_RETH_VERSION}/${TARBALL}"
+              echo "Downloading op-reth ${OP_RETH_VERSION} from ${URL}"
+              curl -fsSL "${URL}.sha256" -o "${TARBALL}.sha256"
+              curl -fsSL "$URL" -o "$TARBALL"
+              sha256sum -c "${TARBALL}.sha256"
+              tar xzf "$TARBALL"
+              sudo install -m 755 op-reth /usr/local/bin/op-reth
+              ;;
+            ghcr-image)
+              if [ -z "$OP_RETH_IMAGE" ]; then
+                echo "OP_RETH_SOURCE=ghcr-image but OP_RETH_IMAGE is empty" >&2
+                exit 1
+              fi
+              if [ -n "$GHCR_TOKEN" ]; then
+                echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+              fi
+              echo "Pulling op-reth image ${OP_RETH_IMAGE}"
+              docker pull "$OP_RETH_IMAGE"
+              cid="$(docker create "$OP_RETH_IMAGE")"
+              docker cp "${cid}:${OP_RETH_IMAGE_BIN}" ./op-reth
+              docker rm "$cid"
+              sudo install -m 755 op-reth /usr/local/bin/op-reth
+              ;;
+            *)
+              echo "Unknown OP_RETH_SOURCE: $OP_RETH_SOURCE (want release-tarball | ghcr-image)" >&2
+              exit 1
+              ;;
+          esac
           op-reth --version
 
       - name: Install contracts dependencies
