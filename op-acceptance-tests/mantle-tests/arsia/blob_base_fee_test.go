@@ -1,4 +1,4 @@
-package fusaka
+package arsia
 
 import (
 	"context"
@@ -21,50 +21,30 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/txplan"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 )
 
-func TestSafeHeadAdvancesAfterOsaka(gt *testing.T) {
+// TestBlobBaseFeePlumbing checks that the L1 blob base fee is correctly surfaced into L2 system
+// data: the L1-info system-deposit tx (derive.L1BlockInfoFromBytes) and the L1Block predeploy
+// (BlobBaseFee()). It is fork-agnostic L1->L2 plumbing and needs only a post-Osaka L1 with a blob
+// schedule, which the Arsia baseline (BPO2-at-genesis) provides.
+//
+// It was relocated here from the fusaka suite: fusaka runs in the non-blocking mantle-orphan soak,
+// yet this was the ONLY CI assertion of the blob-base-fee value reaching L2 (arsia/check_scripts
+// only reads BlobBaseFeeScalar; elysium/base/headernopollut round-trips the regular base fee, not
+// the blob one). Moving it into arsia makes that unique coverage a blocking per-PR check. The
+// BPO-crossing variant (TestBlobBaseFeeIsCorrectAfterBPOFork) stays in fusaka, since only fusaka's
+// L1 crosses a BPO blob-parameter fork mid-run.
+func TestBlobBaseFeePlumbing(gt *testing.T) {
 	t := devtest.SerialT(gt)
 	sys := presets.NewMantleMinimal(t)
-	l1Config := sys.L1Network.Escape().ChainConfig()
-	t.Log("Waiting for Osaka to activate")
-	t.Require().NotNil(l1Config.OsakaTime)
-	sys.L1EL.WaitForTime(*l1Config.OsakaTime)
-	t.Log("Osaka activated")
 
-	l2BlockTime := time.Duration(sys.L2Chain.Escape().RollupConfig().BlockTime) * time.Second
-	for {
-		l2SafeRef := sys.L2EL.BlockRefByLabel(eth.Safe)
-		if l1Config.IsOsaka(new(big.Int).SetUint64(l2SafeRef.Number), l2SafeRef.Time) {
-			return
-		}
-		t.Log("L2 safe head predates Osaka activation on L1, waiting for it to advance...")
-		select {
-		case <-time.After(l2BlockTime):
-		case <-t.Ctx().Done():
-			t.Require().Fail("Never found a safe L2 block after Osaka activated on L1")
-		}
-	}
-}
+	spamBlobs(t, sys)
 
-func TestBlobBaseFeeIsCorrectAfterBPOFork(gt *testing.T) {
-	t := devtest.SerialT(gt)
-	sys := presets.NewMantleMinimal(t)
-	t.Log("Waiting for BPO1 to activate")
-	if sys.L1Network.Escape().ChainConfig().BPO1Time == nil {
-		t.Skip("BPO1 time not configured on L1; skipping BPO1-specific validation")
-	}
-	sys.L1EL.WaitForTime(*sys.L1Network.Escape().ChainConfig().BPO1Time)
-	t.Log("BPO1 activated")
+	t.Log("Waiting for a block with blob base fee")
+	l2UnsafeHash, l1BlobBaseFee := waitForL1BlobBaseFee(t, sys)
+	t.Log("Found block with blob base fee")
 
-	spamBlobs(t, sys) // Raise the blob base fee to make blob parameter changes visible.
-
-	t.Log("Waiting for non trivial BPO1 block")
-	l2UnsafeHash, l1BlobBaseFee := waitForNonTrivialBPO1Block(t, sys)
-	t.Log("Non-trivial BPO1 block found")
 	l2Info, l2Txs, err := sys.L2EL.Escape().EthClient().InfoAndTxsByHash(t.Ctx(), l2UnsafeHash)
 	t.Require().NoError(err)
 
@@ -83,45 +63,26 @@ func TestBlobBaseFeeIsCorrectAfterBPOFork(gt *testing.T) {
 	t.Require().Equal(l1BlobBaseFee, l2BlobBaseFee)
 }
 
-// NOTE: the steady-state L1->L2 blob-base-fee plumbing check that used to live here
-// (TestBlobBaseFeePlumbing) was relocated to the arsia suite (arsia/blob_base_fee_test.go), which
-// runs in the blocking mantle-arsia/mantle-base gate rather than this non-blocking mantle-orphan
-// soak. Only the BPO-crossing variant below is kept here, since it needs fusaka's mid-run BPO fork.
-
-// waitForNonTrivialBPO1Block will return an L1 blob base fee that can only be calculated using the
-// correct BPO1 parameters (i.e., the Osaka parameters result in a different value). It also
-// returns an L2 block hash from the same epoch.
-func waitForNonTrivialBPO1Block(t devtest.T, sys *presets.MantleMinimal) (common.Hash, *big.Int) {
+func waitForL1BlobBaseFee(t devtest.T, sys *presets.MantleMinimal) (common.Hash, *big.Int) {
 	l1ChainConfig := sys.L1Network.Escape().ChainConfig()
 	l1BlockTime := estimateL1BlockTimeSafe(t, sys)
+
 	for {
 		l2UnsafeRef := sys.L2CL.SyncStatus().UnsafeL2
-
 		l1Info, _, err := sys.L1EL.EthClient().InfoAndTxsByHash(t.Ctx(), l2UnsafeRef.L1Origin.Hash)
-		if errors.Is(err, ethereum.NotFound) { // Possible reorg, try again.
+		if errors.Is(err, ethereum.NotFound) {
 			continue
 		}
 		t.Require().NoError(err)
 
-		// Calculate expected blob base fee with old Osaka parameters.
-		osakaBlobBaseFee := eip4844.CalcBlobFee(l1ChainConfig, &types.Header{
-			Time:          *l1ChainConfig.OsakaTime,
-			ExcessBlobGas: l1Info.ExcessBlobGas(),
-		})
-
-		// Calculate expected blob base fee with new BPO1 parameters.
-		bpo1BlobBaseFee := eip4844.CalcBlobFee(l1ChainConfig, &types.Header{
-			Time:          l1Info.Time(),
-			ExcessBlobGas: l1Info.ExcessBlobGas(),
-		})
-
-		if bpo1BlobBaseFee.Cmp(osakaBlobBaseFee) != 0 {
-			return l2UnsafeRef.Hash, bpo1BlobBaseFee
+		l1BlobBaseFee := l1Info.BlobBaseFee(l1ChainConfig)
+		if l1BlobBaseFee != nil {
+			return l2UnsafeRef.Hash, l1BlobBaseFee
 		}
 
 		select {
 		case <-t.Ctx().Done():
-			t.Require().Fail("context canceled before finding a block with a divergent base fee")
+			t.Require().Fail("context canceled before finding a block with blob base fee")
 		case <-time.After(l1BlockTime):
 		}
 	}
