@@ -8,27 +8,10 @@ import (
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 )
 
-func WithMantleSkadiAtGenesis() stack.CommonOption {
-	return stack.Combine(
-		stack.MakeCommon(sysgo.WithDeployerPipelineOption(sysgo.WithMantleForkAtGenesis(forks.MantleSkadi))),
-		stack.MakeCommon(sysgo.WithDeployerPipelineOption(sysgo.WithScalarAndOverhead(1368, 1000000))),
-		stack.MakeCommon(sysgo.WithDeployerPipelineOption(sysgo.WithGasLimit(1125899906842624))),
-		// Skadi uses the legacy batcher which uses singular batches and zlib compression
-		WithMantleLegacyBatcher(),
-	)
-}
-
-func WithMantleLimbAtGenesis() stack.CommonOption {
-	return stack.Combine(
-		stack.MakeCommon(sysgo.WithDeployerPipelineOption(sysgo.WithMantleForkAtGenesis(forks.MantleLimb))),
-		// Limb uses legacy gas limit and scalar/overhead
-		stack.MakeCommon(sysgo.WithDeployerPipelineOption(sysgo.WithScalarAndOverhead(1368, 1000000))),
-		stack.MakeCommon(sysgo.WithDeployerPipelineOption(sysgo.WithGasLimit(1125899906842624))),
-		// Limb uses the legacy batcher which uses singular batches and zlib compression
-		WithMantleLegacyBatcher(),
-	)
-}
-
+// WithMantleLegacyBatcher configures the pre-span-batch batcher (singular batches + zlib), as used
+// by the pre-Arsia forks. The Skadi/Limb genesis presets that composed it were removed along with
+// their suites (their 2^50 gas limit exceeds SystemConfig.MAX_GAS_LIMIT, so they could never run
+// under sysgo); sync_tester_hfs still uses this batcher option directly.
 func WithMantleLegacyBatcher() stack.CommonOption {
 	return stack.MakeCommon(sysgo.WithBatcherOption(func(_ stack.L2BatcherID, cfg *bss.CLIConfig) {
 		cfg.BatchType = derive.SingularBatchType
