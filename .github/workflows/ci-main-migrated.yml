@@ -574,6 +574,81 @@ jobs:
           name: acceptance-test-logs
           path: op-acceptance-tests/logs
 
+  # Previously-ungated "concern" suites (sync / depreqres / sync_tester / safeheaddb / batcher /
+  # fusaka), sysgo only — see the mantle-orphan gate in acceptance-tests.yaml. All 19 packages pass
+  # locally (measured 17s-270s each). Runs allow-failure (continue-on-error) for an initial soak
+  # since that pass is n=1 and these are devnet-heavy multi-node suites; once a few CI runs are
+  # green, drop continue-on-error to make it a merge gate.
+  op-acceptance-tests-orphan:
+    name: op-acceptance-tests (orphan)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    continue-on-error: true
+    needs:
+      - detect-changes
+      - contracts-bedrock-build
+    if: needs.detect-changes.outputs.main_go == 'true'
+    env:
+      GOFLAGS: "-mod=mod"
+      GO111MODULE: "on"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - name: Install toolchain via mise
+        uses: jdx/mise-action@v2
+      - name: Install contracts dependencies
+        run: git submodule update --init --recursive --force -j 8
+      - name: Restore forge artifacts from cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            packages/contracts-bedrock/forge-artifacts
+            packages/contracts-bedrock/cache
+            op-deployer/pkg/deployer/artifacts/forge-artifacts
+          key: forge-artifacts-${{ github.sha }}
+      - name: Build contract artifacts on cache miss
+        if: steps.cache-restore.outputs.cache-hit != 'true'
+        run: |
+          cd packages/contracts-bedrock && just build-no-tests
+          cd ../../op-deployer && just copy-contract-artifacts
+      - name: Cache Go modules + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-build-v2-${{ hashFiles('go.sum') }}
+          restore-keys: go-build-v2-
+      - name: Download Go dependencies
+        working-directory: op-acceptance-tests
+        run: go mod download
+      - name: Run mantle-orphan acceptance tests (sysgo)
+        working-directory: op-acceptance-tests
+        timeout-minutes: 75
+        run: LOG_LEVEL=info just acceptance-test "" "mantle-orphan"
+      - name: Print results (summary)
+        if: always()
+        working-directory: op-acceptance-tests
+        run: |
+          LOG_DIR=$(ls -td -- logs/* | head -1)
+          cat "$LOG_DIR/summary.log" || true
+      - name: Print results (failures)
+        if: failure()
+        working-directory: op-acceptance-tests
+        run: |
+          LOG_DIR=$(ls -td -- logs/* | head -1)
+          cat "$LOG_DIR/failed/*.log" || true
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-test-logs-orphan
+          path: op-acceptance-tests/logs
+
   # Runs in PARALLEL with op-acceptance-tests rather than as extra steps inside it, so the
   # elysium suite's wall clock counts as max() against mantle-base instead of sum(). The cost is
   # one extra runner plus a duplicated setup (checkout / mise / forge artifacts / go mod), which

@@ -216,3 +216,49 @@ gates:
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/finalize
         timeout: 15m
+
+  # Previously-ungated "concern" suites (fork-agnostic, sysgo). Bulk-imported by #314, author left,
+  # never ran in any gate. All 19 sysgo packages here pass locally (measured 17s-270s each); the
+  # sysext sync_tester_*_ext / _hfs variants are intentionally excluded (need a real EL / under FIXME).
+  # timeouts sized from measured runtimes: 15m for the slow multi-node depreqres, 10m for the rest.
+  - id: mantle-orphan
+    description: "Ungated concern suites (sync / depreqres / sync_tester / safeheaddb / batcher / fusaka), sysgo."
+    tests:
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/fusaka
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/batcher
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/safeheaddb_clsync
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/safeheaddb_elsync
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/sync/manual
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/sync/unsafe_only
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/sync/clsync/gap_clp2p
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/sync/elsync/gap_clp2p
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/sync/elsync/gap_elp2p
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/sync/elsync/reorg
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/depreqres/reqressyncdisabled
+        timeout: 15m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/depreqres/reqressyncdisabled/clsync
+        timeout: 15m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/depreqres/reqressyncdisabled/divergence
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/depreqres/reqressyncdisabled/elsync
+        timeout: 15m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/depreqres/syncmodereqressync/clsync
+        timeout: 15m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/depreqres/syncmodereqressync/elsync
+        timeout: 15m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/sync_tester/sync_tester_e2e
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/sync_tester/sync_tester_elsync
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/sync_tester/sync_tester_elsync_multi
+        timeout: 10m
