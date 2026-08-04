@@ -216,10 +216,3 @@ gates:
         timeout: 10m
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/finalize
         timeout: 15m
-
-  - id: mantle-temp
-    description: "Mantle network tests."
-    tests:
-      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/base/deposit
-        name: TestDepositMNTByBridge_WithoutMsgValue
-        timeout: 5m
