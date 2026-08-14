@@ -199,6 +199,12 @@ func (s *Driver) Start() error {
 		if err := s.sequencer.SetMaxSafeLag(s.driverCtx, s.driverConfig.SequencerMaxSafeLag); err != nil {
 			return fmt.Errorf("failed to set sequencer max safe lag: %w", err)
 		}
+		if s.driverConfig.SequencerEagerBuild {
+			s.log.Info("sequencer eager-build enabled: next block starts immediately after the previous becomes canonical")
+		} else {
+			s.log.Info("sequencer eager-build disabled: next block waits for the slot boundary")
+		}
+		s.sequencer.SetEagerBuild(s.driverConfig.SequencerEagerBuild)
 		if err := s.sequencer.Init(s.driverCtx, !s.driverConfig.SequencerStopped); err != nil {
 			return fmt.Errorf("persist initial sequencer state: %w", err)
 		}
