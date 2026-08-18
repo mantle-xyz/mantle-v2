@@ -747,18 +747,23 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
 
     // ===== MAX_BATCH sizing =====
     //
-    // `MAX_BATCH = 330` is not a round number picked for looks: it is calibrated so that a full
-    // batch of the most expensive rule form stays under the ~23M gas a governance message has to
-    // fit in. That justification lives entirely in the two measurements below, so they assert a
-    // ceiling rather than only logging. A change that inflates per-rule cost has to either stay
-    // under the bound or force whoever made it to re-derive `MAX_BATCH` — which is the point.
+    // `MAX_BATCH = 256` is calibrated so that a full batch of the most expensive rule form fits in
+    // the gas a governance message can actually be given. That budget comes from **L1**, not from
+    // the L2 block: `OptimismPortal.depositTransaction` is `metered`, so `ResourceMetering` caps the
+    // deposit gas bought per L1 block at `maxResourceLimit` (20,000,000), and
+    // `CrossDomainMessenger.baseGas` spends 683,088 of it on overhead before the EIP-150 63/64 term
+    // — leaving 19,015,085 of `_minGasLimit`. The full derivation is on `MAX_BATCH` in
+    // `PreconfWhitelist.sol`; extrapolating the two figures below puts the hard ceiling near 276.
     //
-    // The bounds are deliberately loose (about 2.5% of headroom over the recorded figures), so
-    // compiler-version noise does not turn them into a tripwire. Run with `-vv` to read the
-    // numbers; if a bound trips, re-measure and update the table in `PreconfWhitelist.sol`.
+    // That justification lives entirely in the two measurements below, so they assert the ceiling
+    // rather than only logging. A change that inflates per-rule cost has to either stay under the
+    // bound or force whoever made it to re-derive `MAX_BATCH` — which is the point. The pair bound
+    // is the real 19,015,085 figure, which sits 7% above the recorded cost, so compiler-version
+    // noise is not a tripwire. Run with `-vv` to read the numbers; if a bound trips, re-measure and
+    // update the table in `PreconfWhitelist.sol`.
 
     /// @notice A full `MAX_BATCH` of exact-pair adds — the expensive form `MAX_BATCH` is sized
-    ///         against. Recorded at 22,446,092 (68,018 per rule).
+    ///         against. Recorded at 17,689,309 (69,098 per rule).
     function test_gas_maxBatchOfPairAdds() external {
         uint256 max = wl.MAX_BATCH();
         PreconfWhitelist.Rule[] memory adds = _pairBatch(max, 0);
@@ -772,11 +777,11 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
         console.log("gas, all pair adds    ", used);
         console.log("gas per pair add      ", used / max);
 
-        assertLt(used, 23_000_000, "MAX_BATCH is calibrated against a ~23M ceiling -- re-derive it");
+        assertLt(used, 19_015_085, "a full batch must fit in the _minGasLimit L1 can pay for -- re-derive MAX_BATCH");
     }
 
     /// @notice The same batch made entirely of wildcards, to confirm the pair form really is the
-    ///         expensive one. Recorded at 15,074,717 (45,680 per rule).
+    ///         expensive one. Recorded at 11,941,833 (46,647 per rule).
     /// @dev    Bounded above by the pair figure as well as by an absolute number: if a wildcard add
     ///         ever became the costlier of the two, `MAX_BATCH` would be sized against the wrong
     ///         operation and the ceiling above would stop being an upper bound at all.
@@ -795,7 +800,7 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
         console.log("gas, all wildcard adds", used);
         console.log("gas per wildcard add  ", used / max);
 
-        assertLt(used, 15_500_000, "wildcard adds got more expensive -- re-measure");
-        assertLt(used, 22_446_092, "the exact-pair form must stay the expensive one");
+        assertLt(used, 12_300_000, "wildcard adds got more expensive -- re-measure");
+        assertLt(used, 17_689_309, "the exact-pair form must stay the expensive one");
     }
 }

@@ -69,8 +69,13 @@ contract PreconfWhitelist {
     /// @dev    Held as an `address` because a cast to a contract type is not a compile-time
     ///         constant; the cast happens at the call site (same as `CrossDomainOwnable2`).
     ///         Spelled as a literal rather than `Predeploys.L2_CROSS_DOMAIN_MESSENGER` because
-    ///         solc 0.8.15 rejects a library constant in a constant initializer; the value is
-    ///         asserted equal to that constant in `test/PreconfWhitelist.t.sol`.
+    ///         solc 0.8.15 rejects a library constant in a constant initializer. There is no
+    ///         explicit `assertEq` pinning the two: `MESSENGER` is `internal` and unreachable from
+    ///         a test, so such an assertion would compare two constants and say nothing about this
+    ///         contract. Equality is proven implicitly instead — `test/PreconfWhitelist.t.sol`
+    ///         declares its messenger *as* that predeploy, and the first gate below admits only
+    ///         `msg.sender == MESSENGER`, so every passing governance call in that file depends on
+    ///         it. See the note on `test_updatePreconfs_notMessenger_reverts`.
     address internal constant MESSENGER = 0x4200000000000000000000000000000000000007;
 
     /// @notice The one L1 address permitted to govern this allowlist (the governance Safe), stored
@@ -133,22 +138,42 @@ contract PreconfWhitelist {
     /// @notice Maximum number of rules a single `updatePreconfs` call may touch, summed across
     ///         both arguments.
     /// @dev    Adding an exact pair is the most expensive per-rule operation (two array slots plus
-    ///         one mapping slot, against two slots for a wildcard), so bounding the *total* count
-    ///         by the exact-pair-add capacity makes `MAX_BATCH * gas(_addExactPair)` a strict bound
-    ///         on the call's gas regardless of how the batch is composed. That keeps the relayed
-    ///         call inside the `minGasLimit` governance supplies and well inside the L2 block gas
-    ///         limit. Oversized batches revert before any SSTORE, so they are cheap and change
-    ///         nothing.
+    ///         one mapping slot, against one array slot plus one mapping slot for a wildcard), so
+    ///         bounding the *total* count by the exact-pair-add capacity makes
+    ///         `MAX_BATCH * gas(_addExactPair)` a strict bound on the call's gas regardless of how
+    ///         the batch is composed. Oversized batches revert before any SSTORE, so they are cheap
+    ///         and change nothing.
     ///
     ///         **Measured**, by `test_gas_maxBatchOfPairAdds` / `..OfWildcardAdds`:
     ///
-    ///           pair add      68,018 gas   ->  330 of them = 22,446,092
-    ///           wildcard add  45,680 gas   ->  330 of them = 15,074,717
+    ///           pair add      69,098 gas   ->  256 of them = 17,689,309
+    ///           wildcard add  46,647 gas   ->  256 of them = 11,941,833
     ///
-    ///         330 is calibrated against the same ~23M ceiling the previous cross-product version
-    ///         used (its 500 address-adds at 45,680 each came to 22.84M). Raising this constant
-    ///         means re-running those two tests, not re-deriving from the ratio.
-    uint256 public constant MAX_BATCH = 330;
+    ///         What that has to fit in is **not** the L2 block gas limit — on Mantle that is orders
+    ///         of magnitude larger and never binds. The binding constraint is on **L1**: governance
+    ///         reaches us through `L1CrossDomainMessenger.sendMessage`, which asks
+    ///         `OptimismPortal.depositTransaction` for `baseGas(_message, _minGasLimit)` gas, and
+    ///         that call is `metered`. `ResourceMetering` caps the deposit gas bought per L1 block
+    ///         at `maxResourceLimit` — 20,000,000 in `Constants.DEFAULT_RESOURCE_CONFIG`. So the
+    ///         ceiling on the L2 execution governance can pay for is what survives `baseGas`:
+    ///
+    ///           20,000,000  -  683,088 fixed overhead   (200k constant + 16,516 calldata bytes at
+    ///                                                    16+2 each + 800 + 40k + 90k + 55k)
+    ///                       =  19,316,912, then x 63/64  (the EIP-150 dynamic term)
+    ///                       =  19,015,085 of `_minGasLimit`
+    ///
+    ///         256 pair adds need 17,689,309 of that — **7% headroom**. Extrapolating the two
+    ///         measurements puts the hard ceiling near 276 rules, so 256 is the power of two just
+    ///         below it. The headroom is not decoration: `maxResourceLimit` is a budget
+    ///         *shared across every depositor in the L1 block*, so the 19M figure is the best case
+    ///         of an otherwise-idle block. Buying near it is also expensive, since the target is
+    ///         `maxResourceLimit / elasticityMultiplier` = 2,000,000 and the deposit base fee climbs
+    ///         against that target.
+    ///
+    ///         Raising this constant means re-running those two tests and re-deriving the ceiling
+    ///         above, not scaling from the ratio. Lowering `maxResourceLimit` on L1 lowers the
+    ///         ceiling too, and nothing here would notice — see the warning on `updatePreconfs`.
+    uint256 public constant MAX_BATCH = 256;
 
     /// @notice The layout this contract declares, written to [`layoutVersion`] at construction.
     /// @dev    Bump on **any** change to the storage layout above — a reordering, an insertion, or
@@ -230,6 +255,15 @@ contract PreconfWhitelist {
     ///         No normalization or deduplication happens across the three sets. `(A, B)` and
     ///         `(A, 0)` may both be present; both match, and removing one leaves the other. Which
     ///         of them expresses governance's intent is not something this contract can infer.
+    /// @dev    [`MAX_BATCH`] bounds this call's gas, but the matching *supply* of gas is an L1-side
+    ///         decision this contract cannot see or check: governance picks `_minGasLimit` when it
+    ///         calls `sendMessage`, and the portal's `maxResourceLimit` caps what that may be. If
+    ///         either is too small, the relayed call runs out of gas inside
+    ///         `L2CrossDomainMessenger.relayMessage`, which records the message as failed rather
+    ///         than reverting the block — so the allowlist silently stays as it was, and the L1
+    ///         transaction that sent it still succeeded. Governance must verify on L2 that the
+    ///         update landed; a batch at or below [`MAX_BATCH`] is a necessary condition, not a
+    ///         sufficient one.
     /// @param _add    Rules to authorize.
     /// @param _remove Rules to revoke.
     function updatePreconfs(Rule[] calldata _add, Rule[] calldata _remove) external onlyL1Gov {
