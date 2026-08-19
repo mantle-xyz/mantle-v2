@@ -135,6 +135,24 @@ contract PreconfWhitelist {
     ///         start.
     uint256 public layoutVersion;
 
+    /// @notice Highest governance nonce this contract has executed. Slot 7. Starts at 0, so the
+    ///         first accepted message must carry a nonce of at least 1.
+    /// @dev    Exists to kill **stale replays**. A relayed message that fails lands in the
+    ///         L2CrossDomainMessenger's `failedMessages` mapping, from where *anyone* may replay it
+    ///         forever. Authorization survives the replay unchanged — the versioned hash binds the
+    ///         original L1 sender — but the *timing* does not: `updatePreconfs` carries a delta,
+    ///         and a delta computed against the allowlist of six months ago re-authorizes whatever
+    ///         governance has revoked since. The replayer picks the moment.
+    ///
+    ///         Only one failure mode actually produces a message that fails now and would succeed
+    ///         later: running out of gas. The two `require`s below (`batch too large`,
+    ///         `pair is all-zero`) are decided by the calldata alone, so a replay of one of those
+    ///         fails identically and is harmless.
+    ///
+    ///         Appended after `layoutVersion`, so it cannot shift the slots op-reth reads. Adding
+    ///         it is therefore **not** a layout change and must not bump [`LAYOUT_VERSION`].
+    uint256 public localNonce;
+
     /// @notice Maximum number of rules a single `updatePreconfs` call may touch, summed across
     ///         both arguments.
     /// @dev    Adding an exact pair is the most expensive per-rule operation (two array slots plus
@@ -146,8 +164,8 @@ contract PreconfWhitelist {
     ///
     ///         **Measured**, by `test_gas_maxBatchOfPairAdds` / `..OfWildcardAdds`:
     ///
-    ///           pair add      69,098 gas   ->  256 of them = 17,689,309
-    ///           wildcard add  46,647 gas   ->  256 of them = 11,941,833
+    ///           pair add      69,275 gas   ->  256 of them = 17,734,481
+    ///           wildcard add  46,824 gas   ->  256 of them = 11,987,007
     ///
     ///         What that has to fit in is **not** the L2 block gas limit — on Mantle that is orders
     ///         of magnitude larger and never binds. The binding constraint is on **L1**: governance
@@ -157,13 +175,20 @@ contract PreconfWhitelist {
     ///         at `maxResourceLimit` — 20,000,000 in `Constants.DEFAULT_RESOURCE_CONFIG`. So the
     ///         ceiling on the L2 execution governance can pay for is what survives `baseGas`:
     ///
-    ///           20,000,000  -  683,088 fixed overhead   (200k constant + 16,516 calldata bytes at
+    ///           20,000,000  -  683,664 fixed overhead   (200k constant + 16,548 calldata bytes at
     ///                                                    16+2 each + 800 + 40k + 90k + 55k)
-    ///                       =  19,316,912, then x 63/64  (the EIP-150 dynamic term)
-    ///                       =  19,015,085 of `_minGasLimit`
+    ///                       =  19,316,336, then x 63/64  (the EIP-150 dynamic term)
+    ///                       =  19,014,519 of `_minGasLimit`
     ///
-    ///         256 pair adds need 17,689,309 of that — **7% headroom**. Extrapolating the two
-    ///         measurements puts the hard ceiling near 276 rules, so 256 is the power of two just
+    ///         The exact boundary is the largest `_minGasLimit` satisfying
+    ///         `fixed + _minGasLimit * 64 / 63 <= 20,000,000`; multiplying the remainder by 63/64
+    ///         floors one gas low, so solve rather than scale if the figure ever has to be exact.
+    ///
+    ///         The 16,548 bytes are a full batch's `updatePreconfs` calldata: 4 selector + 32 for
+    ///         `_nonce` + two 32-byte offsets + a 32-byte length per array + 64 per rule.
+    ///
+    ///         256 pair adds need 17,734,481 of that — **6.7% headroom**. Extrapolating the
+    ///         measurements puts the hard ceiling at 275 rules, so 256 is the power of two just
     ///         below it. The headroom is not decoration: `maxResourceLimit` is a budget
     ///         *shared across every depositor in the L1 block*, so the 19M figure is the best case
     ///         of an otherwise-idle block. Buying near it is also expensive, since the target is
@@ -264,10 +289,36 @@ contract PreconfWhitelist {
     ///         transaction that sent it still succeeded. Governance must verify on L2 that the
     ///         update landed; a batch at or below [`MAX_BATCH`] is a necessary condition, not a
     ///         sufficient one.
+    ///
+    ///         That same failure path is why `_nonce` exists — a failed message is replayable by
+    ///         anyone, forever, and a stale delta re-authorizes what governance has since revoked.
+    ///         See [`localNonce`] for the threat and for the limit of what this guard covers.
+    ///
+    ///         The nonce is a plain parameter rather than something read from the messenger:
+    ///         `relayMessage`'s own `_nonce` is never stored and is not exposed to the target, and
+    ///         the target cannot reach the caller's calldata. Passing it explicitly is equivalent
+    ///         in strength — the versioned hash covers `_message` in full, so a replay must carry
+    ///         these exact bytes and cannot alter the nonce it was sent with.
+    ///
+    ///         It leads the parameter list to match the two frames this calldata travels inside —
+    ///         `relayMessage(uint256 _nonce, ...)` and `Hashing.hashCrossDomainMessageV1(uint256
+    ///         _nonce, ...)` both open with it — and because it is the first thing checked below.
+    /// @param _nonce  Governance-chosen sequence number, strictly greater than [`localNonce`].
+    ///                Gaps are fine — only the ordering matters — so this may be sourced from a
+    ///                dedicated counter or from `L1CrossDomainMessenger.messageNonce()`.
     /// @param _add    Rules to authorize.
     /// @param _remove Rules to revoke.
-    function updatePreconfs(Rule[] calldata _add, Rule[] calldata _remove) external onlyL1Gov {
+    function updatePreconfs(
+        uint256 _nonce,
+        Rule[] calldata _add,
+        Rule[] calldata _remove
+    )
+        external
+        onlyL1Gov
+    {
+        require(_nonce > localNonce, "PreconfWhitelist: stale nonce");
         require(_add.length + _remove.length <= MAX_BATCH, "PreconfWhitelist: batch too large");
+        localNonce = _nonce;
         for (uint256 i = 0; i < _add.length; i++) {
             _apply(_add[i].from, _add[i].to, true);
         }
