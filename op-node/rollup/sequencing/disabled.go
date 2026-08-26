@@ -54,4 +54,6 @@ func (ds DisabledSequencer) ConductorEnabled(ctx context.Context) bool {
 
 func (ds DisabledSequencer) SetRecoverMode(mode bool) {}
 
+func (ds DisabledSequencer) SetEagerBuild(mode bool) {}
+
 func (ds DisabledSequencer) Close() {}

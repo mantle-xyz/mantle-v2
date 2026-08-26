@@ -271,6 +271,13 @@ var (
 		Value:    false,
 		Category: SequencerCategory,
 	}
+	SequencerEagerBuildFlag = &cli.BoolFlag{
+		Name:     "sequencer.eager-build",
+		Usage:    "Start building the next L2 block immediately after the previous one becomes canonical, instead of waiting for the slot boundary. Shortens preconfirmation response time by including preconf txs sooner. Seal timing is unchanged. Enabled by default; pass =false to restore the boundary wait.",
+		EnvVars:  prefixEnvVars("SEQUENCER_EAGER_BUILD"),
+		Value:    true,
+		Category: SequencerCategory,
+	}
 	FinalityLookbackFlag = &cli.Uint64Flag{
 		Name:     "finality.lookback",
 		Usage:    "Number of L1 blocks to look back for finality verification. Uses default calculation if 0 (considers alt-DA challenge/resolve windows if applicable).",
@@ -490,6 +497,7 @@ var optionalFlags = []cli.Flag{
 	SequencerMaxSafeLagFlag,
 	SequencerL1Confs,
 	SequencerRecoverMode,
+	SequencerEagerBuildFlag,
 	FinalityLookbackFlag,
 	FinalityDelayFlag,
 	L1EpochPollIntervalFlag,

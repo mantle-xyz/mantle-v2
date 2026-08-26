@@ -27,6 +27,12 @@ type Config struct {
 	// to be compatible with verifiers forcefully generating the same block while catching up the sequencing window timeout.
 	RecoverMode bool `json:"recover_mode"`
 
+	// SequencerEagerBuild makes the sequencer start building the next L2 block immediately after the
+	// previous one becomes canonical, instead of waiting for the slot boundary. This shortens
+	// preconfirmation response time (preconf txs are included sooner). Seal timing is unchanged.
+	// Enabled by default (see flags.SequencerEagerBuildFlag).
+	SequencerEagerBuild bool `json:"sequencer_eager_build"`
+
 	// Finalizer contains runtime configuration for finality behavior.
 	Finalizer *finality.Config `json:"finalizer,omitempty"`
 }

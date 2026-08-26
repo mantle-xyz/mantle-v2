@@ -633,6 +633,71 @@ func TestSequencerBuild(t *testing.T) {
 	require.Equal(t, testClock.Now(), nextTime, "start asap on the next block")
 }
 
+// TestSequencerEagerBuild locks the preconf-response-time optimization: after a
+// block becomes canonical, a sequencer with eager-build off waits until the slot
+// boundary before starting the next build, whereas an eager-build sequencer
+// starts immediately (so preconf txs are included sooner). Note the op-node flag
+// defaults eager-build *on*; the Sequencer struct itself starts off, so the
+// off-case below is reached by simply not calling SetEagerBuild.
+//
+// We drive onForkchoiceUpdate directly with the clock set 45ms before the new
+// head's own timestamp — mimicking sealing at boundary-50ms — which puts us in
+// the `remainingTime > blockTime` ("wait until boundary") branch, i.e. exactly
+// the branch the eager-build flag changes.
+func TestSequencerEagerBuild(t *testing.T) {
+	// head whose timestamp is 45ms in the future relative to "now".
+	const headTime = uint64(31000)
+	newActiveSeq := func(t *testing.T) (*Sequencer, func(tm time.Time), func() time.Time) {
+		logger := testlog.Logger(t, log.LevelError)
+		seq, _ := createSequencer(logger)
+		testClock := clock.NewSimpleClock()
+		seq.timeNow = testClock.Now
+		testClock.SetTime(30000)
+		emitter := &testutils.MockEmitter{}
+		seq.AttachEmitter(emitter)
+		require.NoError(t, seq.Init(context.Background(), true))
+		require.True(t, seq.Active(), "started in active mode")
+		emitter.AssertExpectations(t)
+		return seq, testClock.Set, testClock.Now
+	}
+	// Emit a forkchoice update advancing the unsafe head; the head-advance branch
+	// of onForkchoiceUpdate emits nothing, so a fresh no-expectation emitter also
+	// asserts that nothing unexpected is emitted.
+	driveFCU := func(t *testing.T, seq *Sequencer, setClock func(time.Time)) {
+		setClock(time.Unix(int64(headTime), 0).Add(-45 * time.Millisecond))
+		emitter := &testutils.MockEmitter{}
+		seq.AttachEmitter(emitter)
+		head := eth.L2BlockRef{Hash: common.Hash{0x22}, Number: 100, Time: headTime}
+		seq.OnEvent(context.Background(), engine.ForkchoiceUpdateEvent{UnsafeL2Head: head})
+		emitter.AssertExpectations(t)
+	}
+
+	t.Run("eager-build off waits until the slot boundary", func(t *testing.T) {
+		seq, setClock, now := newActiveSeq(t)
+		driveFCU(t, seq, setClock)
+
+		nextAction, ok := seq.NextAction()
+		require.True(t, ok, "ready to build next block")
+		// boundary == payloadTime - blockTime == head.Time (computed exactly as the code does).
+		expectedBoundary := time.Unix(int64(headTime+2), 0).Add(-2 * time.Second)
+		require.Equal(t, expectedBoundary, nextAction,
+			"eager-build off: next build is scheduled at the slot boundary")
+		require.False(t, nextAction.Equal(now()),
+			"eager-build off: must not start immediately")
+	})
+
+	t.Run("eager-build starts immediately", func(t *testing.T) {
+		seq, setClock, now := newActiveSeq(t)
+		seq.SetEagerBuild(true)
+		driveFCU(t, seq, setClock)
+
+		nextAction, ok := seq.NextAction()
+		require.True(t, ok, "ready to build next block")
+		require.Equal(t, now(), nextAction,
+			"eager-build: next build starts immediately, shortening preconf response time")
+	})
+}
+
 func TestSequencerL1TemporaryErrorEvent(t *testing.T) {
 	logger := testlog.Logger(t, log.LevelError)
 	seq, deps := createSequencer(logger)

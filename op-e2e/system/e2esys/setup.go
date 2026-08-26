@@ -152,6 +152,10 @@ func DefaultSystemConfig(t testing.TB, opts ...SystemConfigOpt) SystemConfig {
 					VerifierConfDepth:  0,
 					SequencerConfDepth: 0,
 					SequencerEnabled:   true,
+					// Match the op-node flag default (--sequencer.eager-build), which
+					// this in-process config bypasses; otherwise e2e would only ever
+					// exercise the non-default boundary-wait path.
+					SequencerEagerBuild: true,
 				},
 				// Submitter PrivKey is set in system start for rollup nodes where sequencer = true
 				RPC: oprpc.CLIConfig{

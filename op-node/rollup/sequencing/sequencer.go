@@ -90,6 +90,14 @@ type Sequencer struct {
 
 	recoverMode atomic.Bool
 
+	// eagerBuild, when set, makes the sequencer start building the next block
+	// immediately after the previous one becomes canonical, instead of waiting
+	// until the slot boundary. This shortens preconfirmation response time: a
+	// preconf tx arriving in the gap between blocks is picked up by the next
+	// build right away instead of only after the boundary wait.
+	// Seal timing is unchanged, so blocks are still published at their boundary.
+	eagerBuild atomic.Bool
+
 	// active identifies whether the sequencer is running.
 	// This is an atomic value, so it can be read without locking the whole sequencer.
 	active atomic.Bool
@@ -465,7 +473,13 @@ func (d *Sequencer) onForkchoiceUpdate(x engine.ForkchoiceUpdateEvent) {
 		blockTime := time.Duration(d.rollupCfg.BlockTime) * time.Second
 		payloadTime := time.Unix(int64(x.UnsafeL2Head.Time+d.rollupCfg.BlockTime), 0)
 		remainingTime := payloadTime.Sub(now)
-		if remainingTime > blockTime {
+		if d.eagerBuild.Load() {
+			// Optimize preconfirmation response time: start building the next
+			// block immediately instead of idling until the slot boundary, so
+			// preconf txs are included sooner. Seal timing is unchanged (see
+			// onBuildStarted), so the block is still published at its boundary.
+			d.nextAction = now
+		} else if remainingTime > blockTime {
 			// if we have too much time, then wait before starting the build
 			d.nextAction = payloadTime.Add(-blockTime)
 		} else {
@@ -779,6 +793,10 @@ func (d *Sequencer) ConductorEnabled(ctx context.Context) bool {
 func (d *Sequencer) SetRecoverMode(mode bool) {
 	d.l1OriginSelector.SetRecoverMode(mode)
 	d.recoverMode.Store(mode)
+}
+
+func (d *Sequencer) SetEagerBuild(mode bool) {
+	d.eagerBuild.Store(mode)
 }
 
 func (d *Sequencer) Close() {
