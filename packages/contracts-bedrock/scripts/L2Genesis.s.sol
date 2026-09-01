@@ -438,6 +438,9 @@ contract L2Genesis is Script {
         // BVM_ETH has immutables. Deploy a real instance so the constructor patches
         // them into the runtime code, then etch that code at the predeploy address.
         // name()/symbol() are constant overrides and do not require storage copying.
+        // BVM_ETH's constructor takes no arguments, so there is nothing for
+        // DeployUtils.encodeConstructor to wrap — it rejects payloads shorter than 4 bytes.
+        // nosemgrep: sol-safety-deployutils-args
         address bvmEth = DeployUtils.create1({ _name: "BVM_ETH.sol:BVM_ETH", _args: "" });
         vm.etch(Predeploys.BVM_ETH, address(bvmEth).code);
         vm.etch(bvmEth, "");
@@ -448,7 +451,9 @@ contract L2Genesis is Script {
     function setBaseFeeVault(Input memory _input) internal {
         address vault = DeployUtils.create1({
             _name: "BaseFeeVault",
-            _args: DeployUtils.encodeConstructor(abi.encodeCall(IFeeVault.__constructor__, (_input.baseFeeVaultRecipient)))
+            _args: DeployUtils.encodeConstructor(
+                abi.encodeCall(IFeeVault.__constructor__, (_input.baseFeeVaultRecipient))
+            )
         });
 
         address impl = Predeploys.predeployToCodeNamespace(Predeploys.BASE_FEE_VAULT);
@@ -463,7 +468,9 @@ contract L2Genesis is Script {
     function setL1FeeVault(Input memory _input) internal {
         address vault = DeployUtils.create1({
             _name: "L1FeeVault",
-            _args: DeployUtils.encodeConstructor(abi.encodeCall(IFeeVault.__constructor__, (_input.l1FeeVaultRecipient)))
+            _args: DeployUtils.encodeConstructor(
+                abi.encodeCall(IFeeVault.__constructor__, (_input.l1FeeVaultRecipient))
+            )
         });
 
         address impl = Predeploys.predeployToCodeNamespace(Predeploys.L1_FEE_VAULT);

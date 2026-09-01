@@ -84,6 +84,12 @@ contract PreconfWhitelist {
     /// @dev    Immutable, so it occupies no storage slot and cannot shift the layout below.
     ///         Rotating the governance Safe therefore requires redeploying this contract and
     ///         repointing op-reth at the new address.
+    ///
+    ///         The codebase-wide ban on immutables exists for proxied contracts, where an immutable
+    ///         set at implementation-deploy time diverges from the proxy. This contract is neither
+    ///         proxied nor a predeploy (see the note above), and occupying no slot is exactly what
+    ///         keeps the load-bearing layout below out of reach of a governance-address change.
+    // nosemgrep: sol-safety-no-immutable-variables
     address public immutable AUTHORIZED_L1;
 
     /// @notice Exact `(from, to)` rules — the rules with **both halves non-zero**, as distinct from
@@ -308,14 +314,7 @@ contract PreconfWhitelist {
     ///                dedicated counter or from `L1CrossDomainMessenger.messageNonce()`.
     /// @param _add    Rules to authorize.
     /// @param _remove Rules to revoke.
-    function updatePreconfs(
-        uint256 _nonce,
-        Rule[] calldata _add,
-        Rule[] calldata _remove
-    )
-        external
-        onlyL1Gov
-    {
+    function updatePreconfs(uint256 _nonce, Rule[] calldata _add, Rule[] calldata _remove) external onlyL1Gov {
         require(_nonce > localNonce, "PreconfWhitelist: stale nonce");
         require(_add.length + _remove.length <= MAX_BATCH, "PreconfWhitelist: batch too large");
         localNonce = _nonce;
@@ -543,7 +542,13 @@ contract PreconfWhitelist {
     /// @param _list   Wildcard array to append to — `fromWildcards` or `toWildcards`.
     /// @param _idxMap That array's membership index, written in the same call to stay in step.
     /// @param _addr   Address to authorize, known non-zero.
-    function _addWildcard(address[] storage _list, mapping(address => uint256) storage _idxMap, address _addr) internal {
+    function _addWildcard(
+        address[] storage _list,
+        mapping(address => uint256) storage _idxMap,
+        address _addr
+    )
+        internal
+    {
         if (_idxMap[_addr] != 0) return;
         _list.push(_addr);
         _idxMap[_addr] = _list.length;

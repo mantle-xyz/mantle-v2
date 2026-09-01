@@ -43,14 +43,14 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
     }
 
     /// @notice Single-element rule array.
-    function _one(address _from, address _to) internal pure returns (PreconfWhitelist.Rule[] memory out) {
-        out = new PreconfWhitelist.Rule[](1);
-        out[0] = _p(_from, _to);
+    function _one(address _from, address _to) internal pure returns (PreconfWhitelist.Rule[] memory out_) {
+        out_ = new PreconfWhitelist.Rule[](1);
+        out_[0] = _p(_from, _to);
     }
 
     /// @notice Empty rule array.
-    function _none() internal pure returns (PreconfWhitelist.Rule[] memory out) {
-        out = new PreconfWhitelist.Rule[](0);
+    function _none() internal pure returns (PreconfWhitelist.Rule[] memory out_) {
+        out_ = new PreconfWhitelist.Rule[](0);
     }
 
     /// @notice Makes the next call look like a relayed cross-domain message from `sender`.
@@ -499,12 +499,11 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
 
     /// @notice Builds `_n` distinct exact pairs — the most expensive rule form, which is what
     ///         `MAX_BATCH` is sized against.
-    function _pairBatch(uint256 _n, uint256 _seed) internal pure returns (PreconfWhitelist.Rule[] memory out) {
-        out = new PreconfWhitelist.Rule[](_n);
+    function _pairBatch(uint256 _n, uint256 _seed) internal pure returns (PreconfWhitelist.Rule[] memory out_) {
+        out_ = new PreconfWhitelist.Rule[](_n);
         for (uint256 i = 0; i < _n; i++) {
-            out[i] = PreconfWhitelist.Rule({
-                from: address(uint160(_seed + i + 1)),
-                to: address(uint160(_seed + i + 0x100000))
+            out_[i] = PreconfWhitelist.Rule({
+                from: address(uint160(_seed + i + 1)), to: address(uint160(_seed + i + 0x100000))
             });
         }
     }
