@@ -451,9 +451,7 @@ contract L2Genesis is Script {
     function setBaseFeeVault(Input memory _input) internal {
         address vault = DeployUtils.create1({
             _name: "BaseFeeVault",
-            _args: DeployUtils.encodeConstructor(
-                abi.encodeCall(IFeeVault.__constructor__, (_input.baseFeeVaultRecipient))
-            )
+            _args: DeployUtils.encodeConstructor(abi.encodeCall(IFeeVault.__constructor__, (_input.baseFeeVaultRecipient)))
         });
 
         address impl = Predeploys.predeployToCodeNamespace(Predeploys.BASE_FEE_VAULT);
@@ -468,9 +466,7 @@ contract L2Genesis is Script {
     function setL1FeeVault(Input memory _input) internal {
         address vault = DeployUtils.create1({
             _name: "L1FeeVault",
-            _args: DeployUtils.encodeConstructor(
-                abi.encodeCall(IFeeVault.__constructor__, (_input.l1FeeVaultRecipient))
-            )
+            _args: DeployUtils.encodeConstructor(abi.encodeCall(IFeeVault.__constructor__, (_input.l1FeeVaultRecipient)))
         });
 
         address impl = Predeploys.predeployToCodeNamespace(Predeploys.L1_FEE_VAULT);
