@@ -3,14 +3,15 @@ pragma solidity 0.8.15;
 
 import { console } from "forge-std/console.sol";
 import { Vm } from "forge-std/Vm.sol";
-import { Messenger_Initializer } from "./CommonTest.t.sol";
-import { CrossDomainMessenger } from "src/universal/CrossDomainMessenger.sol";
+import { Portal_Initializer } from "./CommonTest.t.sol";
+import { AddressAliasHelper } from "src/vendor/AddressAliasHelper.sol";
+import { Predeploys } from "src/libraries/Predeploys.sol";
 import { PreconfWhitelist } from "src/L2/PreconfWhitelist.sol";
 
 /// @title PreconfWhitelist_Test
-/// @notice Tests the three-form rule routing, the two-gate cross-domain authorization, the batch
-///         guard, and — critically — the storage layout and event topic that op-reth depends on.
-contract PreconfWhitelist_Test is Messenger_Initializer {
+/// @notice Tests the three-form rule routing, the alias-based authorization gate, the batch guard,
+///         and — critically — the storage layout and event topic that op-reth depends on.
+contract PreconfWhitelist_Test is Portal_Initializer {
     /// @notice The one L1 address allowed to govern the allowlist.
     address internal constant AUTHORIZED_L1 = address(0xAbC0);
 
@@ -25,6 +26,7 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
     PreconfWhitelist internal wl;
 
     event WhitelistUpdated(uint256 exactPairCount, uint256 fromWildcardCount, uint256 toWildcardCount);
+    event AuthorizedL1Updated(address indexed previousAuthorizedL1, address indexed newAuthorizedL1);
 
     function setUp() public virtual override {
         super.setUp();
@@ -53,23 +55,19 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
         out_ = new PreconfWhitelist.Rule[](0);
     }
 
-    /// @notice Makes the next call look like a relayed cross-domain message from `sender`.
-    function _asCrossDomain(address sender) internal {
-        vm.mockCall(
-            address(L2Messenger), abi.encodeCall(CrossDomainMessenger.xDomainMessageSender, ()), abi.encode(sender)
-        );
-        vm.prank(address(L2Messenger));
+    /// @notice Makes the next call look like a deposit that `_l1Sender` originated on L1.
+    /// @dev    Pranks the **aliased** address, because that is what `msg.sender` actually is here:
+    ///         `OptimismPortal.depositTransaction` applies the alias to every contract depositor,
+    ///         and governance is a contract. Pranking the raw `_l1Sender` would exercise a gate
+    ///         this contract deliberately does not have — see `test_updatePreconfs_unaliasedAuthorizedL1_reverts`.
+    function _asL1(address _l1Sender) internal {
+        vm.prank(AddressAliasHelper.applyL1ToL2Alias(_l1Sender));
     }
 
-    /// @notice Monotonic governance nonce handed out by `_gov`, so tests that do not care about
-    ///         replay protection never have to think about it. Tests that *do* care call
-    ///         `updatePreconfs` directly with an explicit nonce.
-    uint256 internal govNonce;
-
-    /// @notice `updatePreconfs` as the authorized L1 governor, on the next nonce.
+    /// @notice `updatePreconfs` as the authorized L1 governor.
     function _gov(PreconfWhitelist.Rule[] memory _add, PreconfWhitelist.Rule[] memory _remove) internal {
-        _asCrossDomain(AUTHORIZED_L1);
-        wl.updatePreconfs(++govNonce, _add, _remove);
+        _asL1(AUTHORIZED_L1);
+        wl.updatePreconfs(_add, _remove);
     }
 
     /// @notice Reads the address stored `_off` slots past `_base`.
@@ -102,7 +100,7 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
     // ===== constructor / seeding =====
 
     function test_constructor_seedsAllThreeForms_succeeds() external view {
-        assertEq(wl.AUTHORIZED_L1(), AUTHORIZED_L1);
+        assertEq(wl.authorizedL1(), AUTHORIZED_L1);
         assertTrue(wl.isExactPair(P_FROM, P_TO));
         assertTrue(wl.isFromWildcard(FW));
         assertTrue(wl.isToWildcard(TW));
@@ -176,17 +174,17 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
     ///         governance's. Reverting also catches an uninitialized array element in a governance
     ///         script, which would otherwise vanish silently.
     function test_updatePreconfs_allZeroPair_reverts() external {
-        _asCrossDomain(AUTHORIZED_L1);
+        _asL1(AUTHORIZED_L1);
         vm.expectRevert("PreconfWhitelist: pair is all-zero");
-        wl.updatePreconfs(++govNonce, _one(address(0), address(0)), _none());
+        wl.updatePreconfs(_one(address(0), address(0)), _none());
     }
 
     /// @notice The all-zero check applies to removes as well, so a malformed revoke cannot be
     ///         mistaken for a no-op.
     function test_updatePreconfs_allZeroPairInRemove_reverts() external {
-        _asCrossDomain(AUTHORIZED_L1);
+        _asL1(AUTHORIZED_L1);
         vm.expectRevert("PreconfWhitelist: pair is all-zero");
-        wl.updatePreconfs(++govNonce, _none(), _one(address(0), address(0)));
+        wl.updatePreconfs(_none(), _one(address(0), address(0)));
     }
 
     /// @notice No normalization across the sets: an exact pair and a covering wildcard coexist, and
@@ -341,158 +339,120 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
         assertEq(wl.exactPairIndex(address(0xA1), address(0xB1)), 0);
     }
 
-    // ===== authorization: design doc §5.2 attacks B and C =====
+    // ===== authorization: the alias gate =====
 
-    /// @notice Attack B — deposit aimed straight at this contract, bypassing the messenger. This is
-    ///         the negative face of gate 1.
-    /// @dev    The positive face — that the contract's hardcoded `MESSENGER` literal really is
-    ///         `Predeploys.L2_CROSS_DOMAIN_MESSENGER` — needs no test of its own. `L2Messenger` is
-    ///         declared *as* that predeploy in `CommonTest.t.sol`, and gate 1 admits only
-    ///         `msg.sender == MESSENGER`, so every passing `_gov` call in this file already proves
-    ///         the two are equal. A separate `assertEq(Predeploys.X, 0x42..07)` would assert
-    ///         nothing about this contract, since `MESSENGER` is `internal` and unreachable here.
-    function test_updatePreconfs_notMessenger_reverts() external {
+    /// @notice An ordinary L2 caller with no alias relationship to the governor.
+    function test_updatePreconfs_arbitraryCaller_reverts() external {
         vm.prank(alice);
-        vm.expectRevert("PreconfWhitelist: caller is not the messenger");
-        wl.updatePreconfs(++govNonce, _one(address(0x9999), address(0x8888)), _none());
+        vm.expectRevert("PreconfWhitelist: caller is not the authorized L1 sender");
+        wl.updatePreconfs(_one(address(0x9999), address(0x8888)), _none());
     }
 
-    /// @notice Attack C — a legitimate but unauthorized L1 caller relaying through the messenger.
+    /// @notice A legitimate but unauthorized L1 depositor: correctly aliased, wrong address.
     function test_updatePreconfs_unauthorizedL1Sender_reverts() external {
-        _asCrossDomain(alice);
+        _asL1(alice);
         vm.expectRevert("PreconfWhitelist: caller is not the authorized L1 sender");
-        wl.updatePreconfs(++govNonce, _one(address(0x9999), address(0x8888)), _none());
+        wl.updatePreconfs(_one(address(0x9999), address(0x8888)), _none());
     }
 
-    /// @notice The messenger address itself is not privileged — reaching us with a zero
-    ///         `xDomainMessageSender` (i.e. not mid-relay) must still fail gate 2.
-    function test_updatePreconfs_zeroXDomainSender_reverts() external {
-        _asCrossDomain(address(0));
+    /// @notice **The test that pins the gate's shape.** `AUTHORIZED_L1` reaching us *unaliased* is
+    ///         refused, because the gate compares `undoL1ToL2Alias(msg.sender)` rather than
+    ///         `msg.sender`.
+    /// @dev    Not a hypothetical. An EOA depositing through the portal is the one caller that is
+    ///         **not** aliased (`msg.sender == tx.origin`), so this is exactly what an EOA
+    ///         governor's message would look like on arrival — and it must fail, or the contract
+    ///         would appear to work while `authorizedL1` was set to an unusable address.
+    ///
+    ///         It is also what makes the impersonation argument hold: were the raw address
+    ///         accepted, any L1 contract deployed at `AUTHORIZED_L1` on the L1 side could speak for
+    ///         the same address on L2. Deleting this test would leave that unguarded, since every
+    ///         other test here passes through `_asL1` and so never exercises the raw form.
+    function test_updatePreconfs_unaliasedAuthorizedL1_reverts() external {
+        vm.prank(AUTHORIZED_L1);
         vm.expectRevert("PreconfWhitelist: caller is not the authorized L1 sender");
-        wl.updatePreconfs(++govNonce, _one(address(0x9999), address(0x8888)), _none());
+        wl.updatePreconfs(_one(address(0x9999), address(0x8888)), _none());
     }
 
-    // ===== replay guard: the governance nonce =====
-    //
-    // A relayed message that fails lands in the messenger's `failedMessages` mapping, from where
-    // anyone may replay it forever. The nonce is what stops a months-old delta from being applied
-    // at a moment of the replayer's choosing. See `localNonce`'s docs for what it does not cover.
-
-    /// @notice The counter starts at zero, so the first accepted message must carry at least 1.
-    function test_updatePreconfs_nonceStartsAtZero_succeeds() external {
-        assertEq(wl.localNonce(), 0, "a fresh deployment has consumed no nonce");
-
-        _asCrossDomain(AUTHORIZED_L1);
-        wl.updatePreconfs(1, _one(address(0x5555), address(0x6666)), _none());
-        assertEq(wl.localNonce(), 1);
+    /// @notice **Channel exclusivity.** A message relayed through the CrossDomainMessenger arrives
+    ///         with the L2 messenger predeploy as `msg.sender`, whose alias preimage is an
+    ///         unrelated address — so the wrong channel reverts rather than taking effect.
+    /// @dev    The operational constraint this pins is that governance must call
+    ///         `OptimismPortal.depositTransaction` directly and never
+    ///         `L1CrossDomainMessenger.sendMessage`. Asserting it here makes the constraint
+    ///         fail-closed by test as well as by construction.
+    function test_updatePreconfs_viaCrossDomainMessenger_reverts() external {
+        vm.prank(Predeploys.L2_CROSS_DOMAIN_MESSENGER);
+        vm.expectRevert("PreconfWhitelist: caller is not the authorized L1 sender");
+        wl.updatePreconfs(_one(address(0x9999), address(0x8888)), _none());
     }
 
-    /// @notice The guard is strict: re-sending the nonce that was just consumed is refused. This is
-    ///         the case that matters, because it is exactly what a replay of the most recent
-    ///         message looks like from this contract's side.
-    function test_updatePreconfs_replayingTheConsumedNonce_reverts() external {
-        _asCrossDomain(AUTHORIZED_L1);
-        wl.updatePreconfs(5, _one(address(0xA1), address(0xB1)), _none());
+    // ===== authorization: rotation =====
 
-        _asCrossDomain(AUTHORIZED_L1);
-        vm.expectRevert("PreconfWhitelist: stale nonce");
-        wl.updatePreconfs(5, _one(address(0xA2), address(0xB2)), _none());
+    /// @notice A rotation moves the privilege wholesale: the new address gains it and the old one
+    ///         loses it in the same call. Asserting only the first half would pass for a setter
+    ///         that appended to an allowlist of governors.
+    function test_setAuthorizedL1_movesThePrivilege_succeeds() external {
+        address newGov = address(0x9E01);
+
+        _asL1(AUTHORIZED_L1);
+        wl.setAuthorizedL1(newGov);
+        assertEq(wl.authorizedL1(), newGov);
+
+        // The new governor can update ...
+        _asL1(newGov);
+        wl.updatePreconfs(_one(address(0x5555), address(0x6666)), _none());
+        assertTrue(wl.isExactPair(address(0x5555), address(0x6666)));
+
+        // ... and the old one cannot.
+        _asL1(AUTHORIZED_L1);
+        vm.expectRevert("PreconfWhitelist: caller is not the authorized L1 sender");
+        wl.updatePreconfs(_one(address(0x7777), address(0x8888)), _none());
     }
 
-    /// @notice The scenario the guard exists for: a stale delta replayed after a newer message
-    ///         moved the allowlist on. Without the nonce this would silently re-authorize traffic
-    ///         governance had revoked, at a moment the replayer picks.
-    function test_updatePreconfs_staleDeltaAfterNewerMessage_revertsAndChangesNothing() external {
-        // Governance authorizes A1 -> B1 at nonce 7 ...
-        _asCrossDomain(AUTHORIZED_L1);
-        wl.updatePreconfs(7, _one(address(0xA1), address(0xB1)), _none());
-        assertTrue(wl.isExactPair(address(0xA1), address(0xB1)));
+    function test_setAuthorizedL1_emitsBothEnds_succeeds() external {
+        address newGov = address(0x9E01);
 
-        // ... then revokes it at nonce 8.
-        _asCrossDomain(AUTHORIZED_L1);
-        wl.updatePreconfs(8, _none(), _one(address(0xA1), address(0xB1)));
-        assertFalse(wl.isExactPair(address(0xA1), address(0xB1)));
+        vm.expectEmit(true, true, true, true, address(wl));
+        emit AuthorizedL1Updated(AUTHORIZED_L1, newGov);
 
-        // Replaying the nonce-7 message would re-authorize it. It must not.
-        _asCrossDomain(AUTHORIZED_L1);
-        vm.expectRevert("PreconfWhitelist: stale nonce");
-        wl.updatePreconfs(7, _one(address(0xA1), address(0xB1)), _none());
-
-        assertFalse(wl.isExactPair(address(0xA1), address(0xB1)), "the revocation stands");
-        assertEq(wl.localNonce(), 8, "a refused message consumes nothing");
+        _asL1(AUTHORIZED_L1);
+        wl.setAuthorizedL1(newGov);
     }
 
-    /// @notice Gaps are allowed — the nonce only has to increase. Governance may therefore source
-    ///         it from `L1CrossDomainMessenger.messageNonce()`, which counts all bridge traffic and
-    ///         so advances in large jumps between two governance messages.
-    function test_updatePreconfs_nonceMayJump_succeeds() external {
-        _asCrossDomain(AUTHORIZED_L1);
-        wl.updatePreconfs(1, _one(address(0xA1), address(0xB1)), _none());
+    /// @notice The setter is gated by the same modifier as `updatePreconfs`, so an unauthorized
+    ///         caller cannot seize governance. Aliased-but-wrong is the interesting case: it proves
+    ///         the gate is checked, not merely that a raw caller is rejected.
+    function test_setAuthorizedL1_unauthorizedCaller_reverts() external {
+        _asL1(alice);
+        vm.expectRevert("PreconfWhitelist: caller is not the authorized L1 sender");
+        wl.setAuthorizedL1(alice);
 
-        _asCrossDomain(AUTHORIZED_L1);
-        wl.updatePreconfs(9_000_000, _one(address(0xA2), address(0xB2)), _none());
-
-        assertEq(wl.localNonce(), 9_000_000);
-        assertTrue(wl.isExactPair(address(0xA2), address(0xB2)));
+        assertEq(wl.authorizedL1(), AUTHORIZED_L1, "the governor is unchanged");
     }
 
-    /// @notice A legitimate retry after a failure still works. The failed message never reached
-    ///         this contract's body, so it consumed no nonce — replaying it finds the counter
-    ///         exactly where it left it. Losing this would make the guard worse than the problem,
-    ///         since out-of-gas is the one failure a replay is *supposed* to fix.
-    /// @dev    The failure is modelled with the batch guard rather than a real OOG: both leave the
-    ///         counter untouched, and the batch guard is deterministic enough to assert on.
-    function test_updatePreconfs_retryAfterFailureKeepsItsNonce_succeeds() external {
-        _asCrossDomain(AUTHORIZED_L1);
-        wl.updatePreconfs(3, _one(address(0xA1), address(0xB1)), _none());
+    /// @notice Rotating to zero would disable governance permanently, and disabling the fast path
+    ///         is the node operator's switch rather than a state this contract can enter. Matches
+    ///         the constructor's guard, so both entry points agree about the one refused value.
+    function test_setAuthorizedL1_zeroAddress_reverts() external {
+        _asL1(AUTHORIZED_L1);
+        vm.expectRevert("PreconfWhitelist: authorized L1 sender is the zero address");
+        wl.setAuthorizedL1(address(0));
 
-        PreconfWhitelist.Rule[] memory over = _pairBatch(wl.MAX_BATCH() + 1, 0);
-        _asCrossDomain(AUTHORIZED_L1);
-        vm.expectRevert("PreconfWhitelist: batch too large");
-        wl.updatePreconfs(4, over, _none());
-        assertEq(wl.localNonce(), 3, "a failed message consumes no nonce");
-
-        // The corrected message reuses nonce 4 and lands.
-        _asCrossDomain(AUTHORIZED_L1);
-        wl.updatePreconfs(4, _one(address(0xA2), address(0xB2)), _none());
-        assertEq(wl.localNonce(), 4);
-        assertTrue(wl.isExactPair(address(0xA2), address(0xB2)));
+        assertEq(wl.authorizedL1(), AUTHORIZED_L1, "the governor is unchanged");
     }
 
-    /// @notice The documented remedy for "governance failed, then reconsidered and sent nothing
-    ///         more": an empty update whose only job is to burn the nonce. Two empty arrays are
-    ///         valid input and cost almost nothing, so this message cannot itself run out of gas —
-    ///         which is what makes it a reliable way to close the replay window.
-    function test_updatePreconfs_emptyUpdateBurnsTheNonce_succeeds() external {
-        _asCrossDomain(AUTHORIZED_L1);
-        wl.updatePreconfs(10, _one(address(0xA1), address(0xB1)), _none());
+    /// @notice Rotation touches governance only — the three sets and the layout marker are not
+    ///         part of it. A setter that reset state would be a silent way to empty the allowlist.
+    function test_setAuthorizedL1_leavesTheAllowlistAlone_succeeds() external {
+        _asL1(AUTHORIZED_L1);
+        wl.setAuthorizedL1(address(0x9E01));
+
         (uint256 p, uint256 f, uint256 t) = _counts();
-
-        // Say nonce 11 failed and will never be re-sent. Burn it.
-        _asCrossDomain(AUTHORIZED_L1);
-        wl.updatePreconfs(12, _none(), _none());
-        assertEq(wl.localNonce(), 12, "the window for 11 is now closed");
-
-        (uint256 p2, uint256 f2, uint256 t2) = _counts();
-        assertEq(p2, p, "an empty update changes no rule");
-        assertEq(f2, f);
-        assertEq(t2, t);
-
-        _asCrossDomain(AUTHORIZED_L1);
-        vm.expectRevert("PreconfWhitelist: stale nonce");
-        wl.updatePreconfs(11, _one(address(0xBAD), address(0xBAD)), _none());
-    }
-
-    /// @notice The nonce guard runs before the batch guard. Both would reject an oversized *and*
-    ///         stale message; asserting the order pins which error the caller is shown.
-    function test_updatePreconfs_nonceGuardPrecedesBatchGuard_reverts() external {
-        _asCrossDomain(AUTHORIZED_L1);
-        wl.updatePreconfs(20, _none(), _none());
-
-        PreconfWhitelist.Rule[] memory over = _pairBatch(wl.MAX_BATCH() + 1, 0);
-        _asCrossDomain(AUTHORIZED_L1);
-        vm.expectRevert("PreconfWhitelist: stale nonce");
-        wl.updatePreconfs(20, over, _none());
+        assertEq(p, 1);
+        assertEq(f, 1);
+        assertEq(t, 1);
+        assertTrue(wl.isExactPair(P_FROM, P_TO));
+        assertEq(wl.layoutVersion(), 2);
     }
 
     // ===== batch guard =====
@@ -503,8 +463,7 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
         out_ = new PreconfWhitelist.Rule[](_n);
         for (uint256 i = 0; i < _n; i++) {
             out_[i] = PreconfWhitelist.Rule({
-                from: address(uint160(_seed + i + 1)),
-                to: address(uint160(_seed + i + 0x100000))
+                from: address(uint160(_seed + i + 1)), to: address(uint160(_seed + i + 0x100000))
             });
         }
     }
@@ -518,16 +477,16 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
 
     /// @notice Also asserts that nothing changed: the guard reverts before any SSTORE, so a
     ///         rejected governance message is cheap and leaves no partial application behind.
-    /// @dev    The batch is built *before* `_asCrossDomain`, deliberately. `wl.MAX_BATCH()` is an
+    /// @dev    The batch is built *before* `_asL1`, deliberately. `wl.MAX_BATCH()` is an
     ///         external call; evaluated inside the argument list it would consume the `vm.prank`
     ///         and the `vm.expectRevert`, leaving the test to assert against the wrong call. That
     ///         mistake passes as a green test, so it is worth the extra line.
     function test_updatePreconfs_overMaxBatch_revertsAndChangesNothing() external {
         PreconfWhitelist.Rule[] memory over = _pairBatch(wl.MAX_BATCH() + 1, 0);
 
-        _asCrossDomain(AUTHORIZED_L1);
+        _asL1(AUTHORIZED_L1);
         vm.expectRevert("PreconfWhitelist: batch too large");
-        wl.updatePreconfs(++govNonce, over, _none());
+        wl.updatePreconfs(over, _none());
 
         (uint256 p, uint256 f, uint256 t) = _counts();
         assertEq(p, 1);
@@ -538,9 +497,9 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
     /// @notice The cap is on the SUM across both arguments, not per-array.
     function test_updatePreconfs_sumAcrossArgsExceedsMax_reverts() external {
         uint256 max = wl.MAX_BATCH();
-        _asCrossDomain(AUTHORIZED_L1);
+        _asL1(AUTHORIZED_L1);
         vm.expectRevert("PreconfWhitelist: batch too large");
-        wl.updatePreconfs(++govNonce, _pairBatch(max / 2 + 1, 0), _pairBatch(max / 2 + 1, 0x1000000));
+        wl.updatePreconfs(_pairBatch(max / 2 + 1, 0), _pairBatch(max / 2 + 1, 0x1000000));
     }
 
     // ===== pagination =====
@@ -835,18 +794,26 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
         assertEq(wl.LAYOUT_VERSION(), 2);
     }
 
-    /// @notice `localNonce` is appended *after* `layoutVersion`, so adding it moved none of the
-    ///         slots op-reth reads — which is why it did not bump `LAYOUT_VERSION`. Asserting the
-    ///         slot number is the guard: an accidental insertion higher up would slide `layoutVersion`
-    ///         off slot 6 and every array with it, and the Rust side would read garbage while still
-    ///         seeing the version it expects.
-    function test_storageLayout_localNonceIsAppendedAtSlot7_succeeds() external {
-        _asCrossDomain(AUTHORIZED_L1);
-        wl.updatePreconfs(42, _none(), _none());
+    /// @notice `authorizedL1` is appended *after* `layoutVersion`, so it moves none of the slots
+    ///         op-reth reads — which is why it does not bump `LAYOUT_VERSION`. Asserting the slot
+    ///         number is the guard, and it matters more for this variable than for any other:
+    ///         `authorizedL1` is the one piece of configuration a reader would naturally declare at
+    ///         the *top* of the contract, next to the constants, which would put it in slot 0 and
+    ///         slide every array down one. op-reth would then read `exactPairIndex` as `exactPairs`
+    ///         and `fromWildcardIndex` as `fromWildcards`, while `layoutVersion` — moved to slot 7
+    ///         — read back as 0 and produced an error naming the wrong cause.
+    ///
+    ///         Asserted after a rotation rather than on the constructor's value, so that a setter
+    ///         writing to some other slot cannot pass by leaving the constructor's write in place.
+    function test_storageLayout_authorizedL1IsAppendedAtSlot7_succeeds() external {
+        address newGov = address(0x9E01);
+        _asL1(AUTHORIZED_L1);
+        wl.setAuthorizedL1(newGov);
 
-        assertEq(uint256(vm.load(address(wl), bytes32(uint256(7)))), 42, "localNonce must be slot 7");
-        assertEq(wl.localNonce(), 42);
+        assertEq(_addrAt(bytes32(0), 7), newGov, "authorizedL1 must be slot 7");
+        assertEq(wl.authorizedL1(), newGov);
         assertEq(uint256(vm.load(address(wl), bytes32(uint256(6)))), 2, "layoutVersion still slot 6");
+        assertEq(uint256(vm.load(address(wl), bytes32(uint256(0)))), 1, "exactPairs still slot 0");
         assertEq(wl.LAYOUT_VERSION(), 2, "appending a variable is not a layout change");
     }
 
@@ -891,40 +858,41 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
     // ===== MAX_BATCH sizing =====
     //
     // `MAX_BATCH = 256` is calibrated so that a full batch of the most expensive rule form fits in
-    // the gas a governance message can actually be given. That budget comes from **L1**, not from
-    // the L2 block: `OptimismPortal.depositTransaction` is `metered`, so `ResourceMetering` caps the
-    // deposit gas bought per L1 block at `maxResourceLimit` (20,000,000), and
-    // `CrossDomainMessenger.baseGas` spends 683,664 of it on overhead before the EIP-150 63/64 term
-    // — leaving 19,014,519 of `_minGasLimit`. The full derivation is on `MAX_BATCH` in
-    // `PreconfWhitelist.sol`; extrapolating the figures below puts the hard ceiling at 275.
+    // the gas a governance deposit can actually be given. That budget comes from **L1**, not from
+    // the L2 block: `OptimismPortal.depositTransaction` is `metered(_gasLimit)`, so it meters what
+    // governance asks for directly — no `baseGas` conversion, no EIP-150 63/64 term on this channel
+    // — and `ResourceMetering` caps the deposit gas bought per L1 block at `maxResourceLimit`
+    // (20,000,000). Subtracting the deposit's own worst-case intrinsic cost (285,256 for a full
+    // batch's 16,516 calldata bytes) leaves 19,714,744. The full derivation is on `MAX_BATCH` in
+    // `PreconfWhitelist.sol`; extrapolating the figures below puts the hard ceiling at 289.
     //
     // That justification lives entirely in the two measurements below, so they assert the ceiling
     // rather than only logging. A change that inflates per-rule cost has to either stay under the
     // bound or force whoever made it to re-derive `MAX_BATCH` — which is the point. The pair bound
-    // is the real 19,014,519 figure, which sits 6.7% above the recorded cost, so compiler-version
+    // is the real 19,714,744 figure, which sits 13.2% above the recorded cost, so compiler-version
     // noise is not a tripwire. Run with `-vv` to read the numbers; if a bound trips, re-measure and
     // update the table in `PreconfWhitelist.sol`.
 
     /// @notice A full `MAX_BATCH` of exact-pair adds — the expensive form `MAX_BATCH` is sized
-    ///         against. Recorded at 17,734,481 (69,275 per rule).
+    ///         against. Recorded at 17,419,375 (68,044 per rule).
     function test_gas_maxBatchOfPairAdds() external {
         uint256 max = wl.MAX_BATCH();
         PreconfWhitelist.Rule[] memory adds = _pairBatch(max, 0);
-        _asCrossDomain(AUTHORIZED_L1);
+        _asL1(AUTHORIZED_L1);
 
         uint256 g = gasleft();
-        wl.updatePreconfs(++govNonce, adds, _none());
+        wl.updatePreconfs(adds, _none());
         uint256 used = g - gasleft();
 
         console.log("MAX_BATCH             ", max);
         console.log("gas, all pair adds    ", used);
         console.log("gas per pair add      ", used / max);
 
-        assertLt(used, 19_014_519, "a full batch must fit in the _minGasLimit L1 can pay for -- re-derive MAX_BATCH");
+        assertLt(used, 19_714_744, "a full batch must fit in the _gasLimit L1 can sell -- re-derive MAX_BATCH");
     }
 
     /// @notice The same batch made entirely of wildcards, to confirm the pair form really is the
-    ///         expensive one. Recorded at 11,987,007 (46,824 per rule).
+    ///         expensive one. Recorded at 11,700,841 (45,706 per rule).
     /// @dev    Bounded above by the pair figure as well as by an absolute number: if a wildcard add
     ///         ever became the costlier of the two, `MAX_BATCH` would be sized against the wrong
     ///         operation and the ceiling above would stop being an upper bound at all.
@@ -934,16 +902,16 @@ contract PreconfWhitelist_Test is Messenger_Initializer {
         for (uint256 i = 0; i < max; i++) {
             adds[i] = _p(address(uint160(i + 1)), address(0));
         }
-        _asCrossDomain(AUTHORIZED_L1);
+        _asL1(AUTHORIZED_L1);
 
         uint256 g = gasleft();
-        wl.updatePreconfs(++govNonce, adds, _none());
+        wl.updatePreconfs(adds, _none());
         uint256 used = g - gasleft();
 
         console.log("gas, all wildcard adds", used);
         console.log("gas per wildcard add  ", used / max);
 
         assertLt(used, 12_400_000, "wildcard adds got more expensive -- re-measure");
-        assertLt(used, 17_734_481, "the exact-pair form must stay the expensive one");
+        assertLt(used, 17_419_375, "the exact-pair form must stay the expensive one");
     }
 }
