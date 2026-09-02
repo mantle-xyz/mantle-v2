@@ -317,7 +317,13 @@ contract PreconfWhitelist {
     /// @param _list   Wildcard array to remove from — `fromWildcards` or `toWildcards`.
     /// @param _idxMap That array's membership index, rewritten for the swapped-in element.
     /// @param _addr   Address to revoke.
-    function _rmWildcard(address[] storage _list, mapping(address => uint256) storage _idxMap, address _addr) internal {
+    function _rmWildcard(
+        address[] storage _list,
+        mapping(address => uint256) storage _idxMap,
+        address _addr
+    )
+        internal
+    {
         uint256 idx = _idxMap[_addr];
         if (idx == 0) return;
         uint256 i = idx - 1;

@@ -463,7 +463,8 @@ contract PreconfWhitelist_Test is Portal_Initializer {
         out_ = new PreconfWhitelist.Rule[](_n);
         for (uint256 i = 0; i < _n; i++) {
             out_[i] = PreconfWhitelist.Rule({
-                from: address(uint160(_seed + i + 1)), to: address(uint160(_seed + i + 0x100000))
+                from: address(uint160(_seed + i + 1)),
+                to: address(uint160(_seed + i + 0x100000))
             });
         }
     }
