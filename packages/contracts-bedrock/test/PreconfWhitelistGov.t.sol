@@ -114,9 +114,8 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
         vm.expectEmit(true, true, true, false, address(op));
         emit TransactionDeposited(expectedFrom, whitelistL2, DEPOSIT_VERSION, "");
 
-        uint64 gasLimit = 200_000;
         vm.prank(OWNER);
-        gov.updatePreconfs(_one(address(0x1111), address(0x2222)), _none(), gasLimit);
+        gov.updatePreconfs(_one(address(0x1111), address(0x2222)), _none());
 
         // And the transform `PreconfWhitelist.onlyL1Gov` applies inverts it back to this contract,
         // which is what `authorizedL1` is set to. This is the round trip the two repos share.
@@ -127,7 +126,7 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
     /// @notice The whole deposit, field by field. The four value arguments must be zero — a non-zero
     ///         `_mntValue` would make the portal pull MNT from this contract — and the calldata must
     ///         be exactly the `updatePreconfs` call, since that is what op-reth decodes.
-    function test_updatePreconfs_depositsExactPayload_succeeds() external {
+    function test_updatePreconfsWithGasLimit_depositsExactPayload_succeeds() external {
         PreconfWhitelist.Rule[] memory add = _one(address(0x1111), address(0x2222));
         uint64 gasLimit = 200_000;
         bytes memory data = abi.encodeCall(PreconfWhitelist.updatePreconfs, (add, _none()));
@@ -138,12 +137,12 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
         );
 
         vm.prank(OWNER);
-        gov.updatePreconfs(add, _none(), 200_000);
+        gov.updatePreconfsWithGasLimit(add, _none(), gasLimit);
     }
 
     /// @notice The L1-side record, so an operator can see what was asked for without decoding the
     ///         portal's packed `opaqueData`.
-    function test_updatePreconfs_emitsGovernanceDeposited_succeeds() external {
+    function test_updatePreconfsWithGasLimit_emitsGovernanceDeposited_succeeds() external {
         PreconfWhitelist.Rule[] memory add = _one(address(0x1111), address(0x2222));
         uint64 gasLimit = 200_000;
 
@@ -151,13 +150,19 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
         emit GovernanceDeposited(whitelistL2, gasLimit, abi.encodeCall(PreconfWhitelist.updatePreconfs, (add, _none())));
 
         vm.prank(OWNER);
-        gov.updatePreconfs(add, _none(), 200_000);
+        gov.updatePreconfsWithGasLimit(add, _none(), gasLimit);
     }
 
     function test_updatePreconfs_notOwner_reverts() external {
         vm.prank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
-        gov.updatePreconfs(_one(address(0x1111), address(0x2222)), _none(), 200_000);
+        gov.updatePreconfs(_one(address(0x1111), address(0x2222)), _none());
+    }
+
+    function test_updatePreconfsWithGasLimit_notOwner_reverts() external {
+        vm.prank(alice);
+        vm.expectRevert("Ownable: caller is not the owner");
+        gov.updatePreconfsWithGasLimit(_one(address(0x1111), address(0x2222)), _none(), 200_000);
     }
 
     function test_updatePreconfs_whitelistNotSet_reverts() external {
@@ -165,7 +170,7 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
 
         vm.prank(OWNER);
         vm.expectRevert("PreconfWhitelistGov: whitelist not set");
-        fresh.updatePreconfs(_one(address(0x1111), address(0x2222)), _none(), 200_000);
+        fresh.updatePreconfs(_one(address(0x1111), address(0x2222)), _none());
     }
 
     // ===== guards this side runs so L2 does not have to pay for them =====
@@ -186,7 +191,7 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
 
         vm.prank(OWNER);
         vm.expectRevert("PreconfWhitelistGov: batch too large");
-        gov.updatePreconfs(add, _none(), 200_000);
+        gov.updatePreconfs(add, _none());
     }
 
     /// @notice The cap is on the sum across both arguments, matching the L2 contract.
@@ -201,29 +206,65 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
 
         vm.prank(OWNER);
         vm.expectRevert("PreconfWhitelistGov: batch too large");
-        gov.updatePreconfs(a, b, 200_000);
+        gov.updatePreconfs(a, b);
     }
 
-    /// @notice **The only floor left on `_gasLimit`, and it is the portal's.** This contract carries
-    ///         no gas estimate of its own: what a batch costs is a property of the L2 bytecode,
-    ///         which L1 cannot measure, so a constant here would be a stale copy that fails in the
-    ///         dangerous direction — under-estimating, and being trusted while it does.
-    ///
-    ///         What survives is `OptimismPortal.minimumGasLimit`, calibrated for calldata rather
-    ///         than execution. It rules out the absurd values without pretending to know the cost;
-    ///         sufficiency is checked by governance on L2, which is the only place it is knowable.
-    function test_updatePreconfs_belowPortalGasFloor_reverts() external {
+    /// @notice **On the explicit path the only floor is the portal's**, and it is calibrated for
+    ///         calldata rather than execution: it rules out the absurd values without pretending to
+    ///         know what a batch costs on L2. Sufficiency is the caller's problem here — that is the
+    ///         whole difference from `updatePreconfs`, which sizes the gas itself.
+    function test_updatePreconfsWithGasLimit_belowPortalGasFloor_reverts() external {
         PreconfWhitelist.Rule[] memory add = _one(address(0x1111), address(0x2222));
         bytes memory data = abi.encodeCall(PreconfWhitelist.updatePreconfs, (add, _none()));
         uint64 portalFloor = op.minimumGasLimit(uint64(data.length));
 
         vm.prank(OWNER);
         vm.expectRevert("OptimismPortal: gas limit too small");
-        gov.updatePreconfs(add, _none(), portalFloor - 1);
+        gov.updatePreconfsWithGasLimit(add, _none(), portalFloor - 1);
 
-        // Exactly the portal's floor is accepted, so this contract adds nothing above it.
+        // Exactly the portal's floor is accepted, so this contract adds nothing above it — a value
+        // that passes here can still starve the L2 call, which is why the default path exists.
         vm.prank(OWNER);
-        gov.updatePreconfs(add, _none(), portalFloor);
+        gov.updatePreconfsWithGasLimit(add, _none(), portalFloor);
+    }
+
+    /// @notice Zero is rejected rather than treated as "compute it": the two functions exist so that
+    ///         the multisig queue shows which path was taken, and a sentinel would erase that.
+    function test_updatePreconfsWithGasLimit_zero_reverts() external {
+        vm.prank(OWNER);
+        vm.expectRevert("PreconfWhitelistGov: gas limit is zero");
+        gov.updatePreconfsWithGasLimit(_one(address(0x1111), address(0x2222)), _none(), 0);
+    }
+
+    // ===== the computed gas limit =====
+
+    /// @notice The default path buys the portal's calldata floor plus `GAS_PER_RULE` per rule. The
+    ///         formula is re-derived here, and the 70,000 spelled out, so that changing either side
+    ///         of it takes two edits.
+    function test_updatePreconfs_buysTheComputedGasLimit_succeeds() external {
+        PreconfWhitelist.Rule[] memory add = _one(address(0x1111), address(0x2222));
+        PreconfWhitelist.Rule[] memory remove = _one(address(0x3333), address(0x4444));
+        bytes memory data = abi.encodeCall(PreconfWhitelist.updatePreconfs, (add, remove));
+        uint64 expected = op.minimumGasLimit(uint64(data.length)) + 2 * 70_000;
+
+        assertEq(gov.GAS_PER_RULE(), 70_000);
+        vm.expectEmit(true, true, true, true, address(gov));
+        emit GovernanceDeposited(whitelistL2, expected, data);
+
+        vm.prank(OWNER);
+        gov.updatePreconfs(add, remove);
+    }
+
+    /// @notice **The coupling that would otherwise break silently.** `GAS_PER_RULE` carries a margin
+    ///         over the measured cost, so the computed limit runs into `maxResourceLimit` before the
+    ///         batch cap does — at 282 rules against `MAX_BATCH`'s 256. Raising the cap past 281
+    ///         leaves the explicit path working and the default one reverting inside `metered`.
+    function test_updatePreconfs_computedLimitAtMaxBatchFitsTheDepositCap_succeeds() external view {
+        uint256 max = gov.MAX_BATCH();
+        uint64 calldataLen = uint64(132 + 64 * max); // selector + two offsets + two lengths + 64/rule
+        uint256 computed = op.minimumGasLimit(calldataLen) + gov.GAS_PER_RULE() * max;
+
+        assertLe(computed, op.SYSTEM_CONFIG().resourceConfig().maxResourceLimit);
     }
 
     // ===== rotateAuthorizedL1 =====
@@ -236,32 +277,56 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
     function test_rotateAuthorizedL1_eoa_reverts() external {
         vm.prank(OWNER);
         vm.expectRevert("PreconfWhitelistGov: authorized L1 sender is not a contract");
-        gov.rotateAuthorizedL1(alice, uint64(60_000));
+        gov.rotateAuthorizedL1(alice);
+    }
+
+    /// @notice Rotating to this contract is a no-op that still writes the slot and emits
+    ///         `AuthorizedL1Updated(gov, gov)` on L2 — the loudest event the system has, fired for
+    ///         nothing. It is rejected on L1, where rejecting it is still free.
+    function test_rotateAuthorizedL1_self_reverts() external {
+        vm.prank(OWNER);
+        vm.expectRevert("PreconfWhitelistGov: authorized L1 sender is this contract");
+        gov.rotateAuthorizedL1(address(gov));
     }
 
     function test_rotateAuthorizedL1_zeroAddress_reverts() external {
         vm.prank(OWNER);
         vm.expectRevert("PreconfWhitelistGov: authorized L1 sender is the zero address");
-        gov.rotateAuthorizedL1(address(0), uint64(60_000));
+        gov.rotateAuthorizedL1(address(0));
     }
 
     /// @notice A contract passes, and the deposit carries the `setAuthorizedL1` call rather than an
     ///         `updatePreconfs` one — the two paths share `_deposit`, so the calldata is the only
-    ///         thing that distinguishes them.
+    ///         thing that distinguishes them. The gas is `ROTATE_GAS` over the portal's floor, with
+    ///         no input involved: a rotation's cost on L2 does not depend on what is rotated to.
     function test_rotateAuthorizedL1_contract_succeeds() external {
         address newGov = address(new PreconfWhitelistGov(op, OWNER));
-        uint64 gasLimit = 60_000;
+        bytes memory data = abi.encodeCall(PreconfWhitelist.setAuthorizedL1, (newGov));
+        uint64 gasLimit = op.minimumGasLimit(uint64(data.length)) + gov.ROTATE_GAS();
 
         vm.expectEmit(true, true, true, true, address(op));
         emit TransactionDeposited(
-            AddressAliasHelper.applyL1ToL2Alias(address(gov)),
-            whitelistL2,
-            DEPOSIT_VERSION,
-            _opaque(gasLimit, abi.encodeCall(PreconfWhitelist.setAuthorizedL1, (newGov)))
+            AddressAliasHelper.applyL1ToL2Alias(address(gov)), whitelistL2, DEPOSIT_VERSION, _opaque(gasLimit, data)
         );
 
         vm.prank(OWNER);
-        gov.rotateAuthorizedL1(newGov, gasLimit);
+        gov.rotateAuthorizedL1(newGov);
+    }
+
+    /// @notice `ROTATE_GAS` measured against the real L2 function rather than asserted from the
+    ///         comment above it. Warm, though: the constructor touched the slot in this same
+    ///         transaction, so a real deposit pays a few thousand more for cold access.
+    function test_rotateAuthorizedL1_gasCoversTheL2Call_succeeds() external {
+        PreconfWhitelist wl = new PreconfWhitelist(address(gov), _none());
+        address newGov = address(new PreconfWhitelistGov(op, OWNER));
+
+        vm.prank(AddressAliasHelper.applyL1ToL2Alias(address(gov)));
+        uint256 before = gasleft();
+        wl.setAuthorizedL1(newGov);
+        uint256 used = before - gasleft();
+
+        assertLt(used, gov.ROTATE_GAS());
+        emit log_named_uint("setAuthorizedL1 gas", used);
     }
 
     function test_rotateAuthorizedL1_notOwner_reverts() external {
@@ -269,7 +334,7 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
 
         vm.prank(alice);
         vm.expectRevert("Ownable: caller is not the owner");
-        gov.rotateAuthorizedL1(newGov, uint64(60_000));
+        gov.rotateAuthorizedL1(newGov);
     }
 
     // ===== ownership =====
