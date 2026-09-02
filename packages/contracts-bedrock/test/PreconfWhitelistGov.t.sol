@@ -209,10 +209,9 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
         gov.updatePreconfs(a, b);
     }
 
-    /// @notice **On the explicit path the only floor is the portal's**, and it is calibrated for
-    ///         calldata rather than execution: it rules out the absurd values without pretending to
-    ///         know what a batch costs on L2. Sufficiency is the caller's problem here — that is the
-    ///         whole difference from `updatePreconfs`, which sizes the gas itself.
+    /// @notice **On the explicit path the only floor is the portal's**, calibrated for calldata
+    ///         rather than execution: it rules out absurd values without knowing the L2 cost.
+    ///         Sufficiency is the caller's problem — the whole difference from `updatePreconfs`.
     function test_updatePreconfsWithGasLimit_belowPortalGasFloor_reverts() external {
         PreconfWhitelist.Rule[] memory add = _one(address(0x1111), address(0x2222));
         bytes memory data = abi.encodeCall(PreconfWhitelist.updatePreconfs, (add, _none()));
@@ -245,7 +244,7 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
         PreconfWhitelist.Rule[] memory add = _one(address(0x1111), address(0x2222));
         PreconfWhitelist.Rule[] memory remove = _one(address(0x3333), address(0x4444));
         bytes memory data = abi.encodeCall(PreconfWhitelist.updatePreconfs, (add, remove));
-        uint64 expected = op.minimumGasLimit(uint64(data.length)) + 2 * 70_000;
+        uint64 expected = op.minimumGasLimit(uint64(data.length)) + gov.BASE_GAS() + 2 * gov.GAS_PER_RULE();
 
         assertEq(gov.GAS_PER_RULE(), 70_000);
         vm.expectEmit(true, true, true, true, address(gov));
@@ -255,16 +254,38 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
         gov.updatePreconfs(add, remove);
     }
 
-    /// @notice **The coupling that would otherwise break silently.** `GAS_PER_RULE` carries a margin
-    ///         over the measured cost, so the computed limit runs into `maxResourceLimit` before the
-    ///         batch cap does — at 282 rules against `MAX_BATCH`'s 256. Raising the cap past 281
-    ///         leaves the explicit path working and the default one reverting inside `metered`.
+    /// @notice **The coupling that would otherwise break silently.** The computed limit runs into
+    ///         `maxResourceLimit` at 282 rules, before `MAX_BATCH`'s 256 does — raise the cap past
+    ///         281 and the explicit path keeps working while the default one reverts in `metered`.
     function test_updatePreconfs_computedLimitAtMaxBatchFitsTheDepositCap_succeeds() external view {
         uint256 max = gov.MAX_BATCH();
         uint64 calldataLen = uint64(132 + 64 * max); // selector + two offsets + two lengths + 64/rule
-        uint256 computed = op.minimumGasLimit(calldataLen) + gov.GAS_PER_RULE() * max;
+        uint256 computed = op.minimumGasLimit(calldataLen) + gov.BASE_GAS() + gov.GAS_PER_RULE() * max;
 
         assertLe(computed, op.SYSTEM_CONFIG().resourceConfig().maxResourceLimit);
+    }
+
+    /// @notice **Whether the formula is sufficient, not merely self-consistent.** The two above
+    ///         re-derive it or bound it from above; neither catches under-buying, which is a property
+    ///         of L2 execution. So this one measures a real rule add and asserts the limit covers it.
+    /// @dev    `gasleft()` measures execution, not intrinsic — `minimumGasLimit` covers that and
+    ///         always over-covers, charging 16 per byte where zero bytes really cost 4. One rule is
+    ///         the worst case: the fixed term is spread over nothing, so larger batches are cheaper.
+    function test_updatePreconfs_computedLimitCoversTheL2Execution_succeeds() external {
+        PreconfWhitelist wl = new PreconfWhitelist(address(gov), _none());
+        PreconfWhitelist.Rule[] memory add = _one(address(0x1111), address(0x2222));
+        bytes memory data = abi.encodeCall(PreconfWhitelist.updatePreconfs, (add, _none()));
+
+        uint256 buys = op.minimumGasLimit(uint64(data.length)) + gov.BASE_GAS() + gov.GAS_PER_RULE();
+
+        // As the portal-aliased Gov, which is the real `msg.sender` on L2.
+        vm.prank(AddressAliasHelper.applyL1ToL2Alias(address(gov)));
+        uint256 g = gasleft();
+        wl.updatePreconfs(add, _none());
+        uint256 spends = g - gasleft();
+
+        assertGt(buys, spends, "computed limit must cover a one-rule call -- raise BASE_GAS");
+        assertLt(spends, gov.BASE_GAS() + gov.GAS_PER_RULE(), "the fixed+per-rule terms alone must cover execution");
     }
 
     // ===== rotateAuthorizedL1 =====
@@ -295,10 +316,9 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
         gov.rotateAuthorizedL1(address(0));
     }
 
-    /// @notice A contract passes, and the deposit carries the `setAuthorizedL1` call rather than an
-    ///         `updatePreconfs` one — the two paths share `_deposit`, so the calldata is the only
-    ///         thing that distinguishes them. The gas is `ROTATE_GAS` over the portal's floor, with
-    ///         no input involved: a rotation's cost on L2 does not depend on what is rotated to.
+    /// @notice A contract passes, and the deposit carries `setAuthorizedL1` rather than an
+    ///         `updatePreconfs` call — the two share `_deposit`, so the calldata is all that tells
+    ///         them apart. The gas is `ROTATE_GAS` over the floor, with no input involved.
     function test_rotateAuthorizedL1_contract_succeeds() external {
         address newGov = address(new PreconfWhitelistGov(op, OWNER));
         bytes memory data = abi.encodeCall(PreconfWhitelist.setAuthorizedL1, (newGov));

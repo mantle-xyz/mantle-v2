@@ -892,6 +892,24 @@ contract PreconfWhitelist_Test is Portal_Initializer {
         assertLt(used, 19_714_744, "a full batch must fit in the _gasLimit L1 can sell -- re-derive MAX_BATCH");
     }
 
+    /// @notice A **single** pair add — the un-amortized cost. `MAX_BATCH`'s figure above is an
+    ///         average over 256 rules, which divides the per-call fixed cost (dispatch, calldata
+    ///         decode, the three cold SLOADs the event reads, the cold length SSTORE) by 256; a
+    ///         one-rule call pays all of it. This is the number `PreconfWhitelistGov.BASE_GAS`
+    ///         exists to cover, and it is measured here because only the L2 side can measure it.
+    function test_gas_singleRuleAdd() external {
+        _asL1(AUTHORIZED_L1);
+
+        uint256 g = gasleft();
+        wl.updatePreconfs(_one(address(0xA9), address(0xB9)), _none());
+        uint256 used = g - gasleft();
+
+        console.log("gas, single pair add  ", used);
+        console.log("gas, per-rule average ", uint256(68_044));
+        console.log("un-amortized excess   ", used - 68_044);
+        assertLt(used, 100_000, "single add got more expensive -- re-derive PreconfWhitelistGov.BASE_GAS");
+    }
+
     /// @notice The same batch made entirely of wildcards, to confirm the pair form really is the
     ///         expensive one. Recorded at 11,700,841 (45,706 per rule).
     /// @dev    Bounded above by the pair figure as well as by an absolute number: if a wildcard add

@@ -14,14 +14,19 @@ contract PreconfWhitelistGov is Ownable {
     ///         bought, so rejecting it here — where the length is plain calldata — is free.
     uint256 public constant MAX_BATCH = PRECONF_MAX_BATCH;
 
+    /// @notice Fixed part of the computed limit: dispatch, decode, the event's cold SLOADs and the
+    ///         cold length SSTORE are paid once per call, not per rule, so [`GAS_PER_RULE`]'s
+    ///         full-batch average under-buys small ones. One rule measures 91,597: 21,597 needed.
+    uint64 public constant BASE_GAS = 30_000;
+
     /// @notice Gas the computed limit buys per rule. A pair add measures 68,044 on L2 — the worst
     ///         per-rule cost — so this carries a 2.9% margin, and a full batch buys 18.2M of the 20M
     ///         a deposit can. Raising `MAX_BATCH` past 281 breaks that; see the test.
     uint64 public constant GAS_PER_RULE = 70_000;
 
-    /// @notice Gas a rotation buys on L2 above the portal's calldata floor. `setAuthorizedL1` is one
-    ///         SSTORE plus an event — 2,769 measured warm, so this is an order of magnitude of
-    ///         margin. It takes no array, so there is nothing for a caller to size.
+    /// @notice Gas a rotation buys above the portal's calldata floor. `setAuthorizedL1` is one SSTORE
+    ///         plus an event — 2,769 warm, so roughly 7,000 cold and about 28,400 for the whole L2
+    ///         transaction, against the 81,576 this buys. No array, so nothing for a caller to size.
     uint64 public constant ROTATE_GAS = 60_000;
 
     /// @notice The OptimismPortal this contract deposits through. Immutable — it does not move.
@@ -60,9 +65,9 @@ contract PreconfWhitelistGov is Ownable {
         emit WhitelistSet(_whitelist);
     }
 
-    /// @notice Relays a rule delta to L2, sizing the gas from the batch so that nothing about gas is
-    ///         left to the caller. Verify on L2 all the same: a starved deposit fails there while
-    ///         this L1 call still succeeds, and no permissionless replay exists to recover through.
+    /// @notice Relays a rule delta to L2, sizing the gas itself — a fixed term plus a per-rule one,
+    ///         since a per-rule term alone under-buys the common small batch. Verify on L2 anyway: a
+    ///         starved deposit fails there while this L1 call succeeds, with no replay to recover it.
     /// @param _add    Rules to authorize.
     /// @param _remove Rules to revoke.
     function updatePreconfs(
@@ -97,8 +102,8 @@ contract PreconfWhitelistGov is Ownable {
     /// @notice Bounds the batch, encodes it, and buys the deposit.
     /// @param _add      Rules to authorize.
     /// @param _remove   Rules to revoke.
-    /// @param _gasLimit L2 gas to buy, or zero to size it at [`GAS_PER_RULE`] per rule on top of the
-    ///                  portal's own calldata floor.
+    /// @param _gasLimit L2 gas to buy, or zero to size it as the portal's calldata floor plus
+    ///                  [`BASE_GAS`] plus [`GAS_PER_RULE`] per rule.
     function _update(
         PreconfWhitelist.Rule[] calldata _add,
         PreconfWhitelist.Rule[] calldata _remove,
@@ -111,7 +116,7 @@ contract PreconfWhitelistGov is Ownable {
 
         bytes memory data = abi.encodeCall(PreconfWhitelist.updatePreconfs, (_add, _remove));
         if (_gasLimit == 0) {
-            _gasLimit = PORTAL.minimumGasLimit(uint64(data.length)) + GAS_PER_RULE * uint64(count);
+            _gasLimit = PORTAL.minimumGasLimit(uint64(data.length)) + BASE_GAS + GAS_PER_RULE * uint64(count);
         }
         _deposit(data, _gasLimit);
     }
