@@ -39,6 +39,7 @@ type TestSequencerControlAPI interface {
 	Publish(ctx context.Context) error
 	Open(ctx context.Context) error
 	Seal(ctx context.Context) error
+	Cancel(ctx context.Context) error
 	Sign(ctx context.Context) error
 	Start(ctx context.Context, head common.Hash) error
 	Stop(ctx context.Context) (common.Hash, error)

@@ -63,6 +63,11 @@ func (m *mockSequencer) Seal(ctx context.Context) error {
 	return m.err
 }
 
+func (m *mockSequencer) Cancel(ctx context.Context) error {
+	m.action = "cancel"
+	return m.err
+}
+
 func (m *mockSequencer) Prebuilt(ctx context.Context, block work.Block) error {
 	m.action = "prebuilt"
 	return m.err

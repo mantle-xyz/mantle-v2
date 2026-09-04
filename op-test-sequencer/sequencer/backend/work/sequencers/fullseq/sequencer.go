@@ -123,6 +123,23 @@ func (s *Sequencer) Seal(ctx context.Context) error {
 	return nil
 }
 
+// Cancel abandons the current in-flight build job without sealing or
+// committing it. No getPayload / SealBlock is issued to the engine — the EL's
+// in-flight payload is simply orphaned (superseded by the next OpenBlock, or
+// garbage-collected), modeling a payload that is built and then dropped before
+// it is ever committed. Sequencer state is reset so a fresh New can start (e.g.
+// on the same parent with different attributes).
+func (s *Sequencer) Cancel(ctx context.Context) error {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if s.currentJob == nil && s.unsigned == nil {
+		return seqtypes.ErrUnknownJob
+	}
+	s.log.Debug("Sequencer Cancel request: abandoning in-flight build job without commit")
+	s.reset()
+	return nil
+}
+
 func (s *Sequencer) Prebuilt(ctx context.Context, block work.Block) error {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()

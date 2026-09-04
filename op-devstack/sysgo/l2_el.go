@@ -22,6 +22,17 @@ type L2ELConfig struct {
 	P2PNodeKeyHex string
 	StaticPeers   []string
 	TrustedPeers  []string
+
+	// Preconf configures the Mantle preconfirmation subsystem. It is only
+	// honoured by the op-reth EL (WithOpReth translates it into --preconf.*
+	// CLI flags); the op-geth EL ignores it. All-zero means preconf stays
+	// disabled, matching op-reth's default.
+	PreconfEnabled   bool
+	PreconfAll       bool     // --preconf.all: every tx is preconf-eligible (skip whitelist)
+	PreconfFrom      []string // --preconf.from: sender whitelist (unused when PreconfAll)
+	PreconfTo        []string // --preconf.to: recipient whitelist (unused when PreconfAll)
+	PreconfJournal   bool     // enable the on-disk journal (path chosen under the node tempdir)
+	PreconfTimeoutMs int      // --preconf.timeout-ms; 0 = leave op-reth's default
 }
 
 func L2ELWithSupervisor(supervisorID stack.SupervisorID) L2ELOption {
@@ -38,6 +49,22 @@ func L2ELWithP2PConfig(addr string, port int, nodeKeyHex string, staticPeers, tr
 		cfg.P2PNodeKeyHex = nodeKeyHex
 		cfg.StaticPeers = staticPeers
 		cfg.TrustedPeers = trustedPeers
+	})
+}
+
+// L2ELWithPreconf enables the Mantle preconf subsystem on the L2 EL. Only the
+// op-reth EL honours this (op-geth ignores it). Pass all=true to skip the
+// (from,to) whitelist, or supply from/to lists otherwise. journal=true enables
+// the on-disk commitment journal (needed to exercise the reorg/restart replay
+// paths). timeoutMs<=0 leaves op-reth's default RPC deadline.
+func L2ELWithPreconf(all, journal bool, from, to []string, timeoutMs int) L2ELOption {
+	return L2ELOptionFn(func(p devtest.P, id stack.L2ELNodeID, cfg *L2ELConfig) {
+		cfg.PreconfEnabled = true
+		cfg.PreconfAll = all
+		cfg.PreconfFrom = from
+		cfg.PreconfTo = to
+		cfg.PreconfJournal = journal
+		cfg.PreconfTimeoutMs = timeoutMs
 	})
 }
 

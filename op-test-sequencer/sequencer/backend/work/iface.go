@@ -118,6 +118,15 @@ type Sequencer interface {
 	// Returns an error if there was no block-building job open.
 	Seal(ctx context.Context) error
 
+	// Cancel abandons the current in-flight build job without sealing or
+	// committing it. No getPayload / SealBlock is issued to the engine — the
+	// EL's in-flight payload is simply orphaned (superseded by the next
+	// OpenBlock, or garbage-collected), modeling a payload that is built and
+	// then dropped before it is ever committed. Sequencer state is reset so a
+	// fresh New can start (e.g. on the same parent with different attributes).
+	// Returns seqtypes.ErrUnknownJob if there is nothing to cancel.
+	Cancel(ctx context.Context) error
+
 	// Prebuilt inserts a pre-built block, skipping block-building.
 	Prebuilt(ctx context.Context, block Block) error
 
