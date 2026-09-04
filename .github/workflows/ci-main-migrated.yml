@@ -784,12 +784,12 @@ jobs:
       # ── op-reth 获取:唯一旋钮。reth 一旦能正常发布,只改这几个 env、job 逻辑不动即可通过 ──
       # OP_RETH_SOURCE = 从哪拿 op-reth 二进制:
       #   release-tarball = 从 mantle-xyz/reth Releases 下 x86_64-linux tar.gz。
-      #                     需 reth 先修好 release.yml(把 revm 依赖从私有 GHSA fork 指回公开 mantle-xyz/revm);
-      #                     当前该 tag 无二进制资产,故此路径现在拉不到——这是 reth 侧的分发缺口,非本仓。
+      #                     自 op-reth-v2.2.1-mantle-arsia.2 起可用(reth#99 把 revm 依赖指回公开
+      #                     mantle-xyz/revm 后 release.yml 恢复出二进制资产)。
       #   ghcr-image      = 从 op-reth Docker 镜像 copy 出二进制(DevOps 实际走的分发:镜像在私有 mantle-config 构建)。
       #                     切换:设 OP_RETH_SOURCE=ghcr-image + OP_RETH_IMAGE=<镜像坐标>,私有镜像再配下方拉取密钥。
       OP_RETH_SOURCE: "release-tarball"
-      OP_RETH_VERSION: "op-reth-v2.2.1-mantle-arsia.1"   # release-tarball 用:reth release tag
+      OP_RETH_VERSION: "op-reth-v2.2.1-mantle-arsia.2"   # release-tarball 用:reth release tag
       OP_RETH_IMAGE: ""                                  # ghcr-image 用:如 ghcr.io/mantle-xyz/op-reth:<tag>
     steps:
       - name: Checkout
