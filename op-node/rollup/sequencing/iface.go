@@ -21,5 +21,6 @@ type SequencerIface interface {
 	OverrideLeader(ctx context.Context) error
 	ConductorEnabled(ctx context.Context) bool
 	SetRecoverMode(mode bool)
+	SetEagerBuild(mode bool)
 	Close()
 }
