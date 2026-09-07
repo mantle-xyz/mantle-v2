@@ -38,6 +38,7 @@ func TestBuilder(t *testing.T) {
 	// Configure L1
 	pragueOffset := uint64(0)
 	osakaOffset := uint64(1)
+	amsterdamOffset := uint64(2)
 	alice := common.HexToAddress("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	aliceFunds := uint256.NewInt(10000)
 	l1Params := state.L1DevGenesisParams{
@@ -46,8 +47,9 @@ func TestBuilder(t *testing.T) {
 			GasLimit:      42_000_000,
 			ExcessBlobGas: 123,
 		},
-		PragueTimeOffset: &pragueOffset,
-		OsakaTimeOffset:  &osakaOffset,
+		PragueTimeOffset:    &pragueOffset,
+		OsakaTimeOffset:     &osakaOffset,
+		AmsterdamTimeOffset: &amsterdamOffset,
 		Prefund: map[common.Address]*hexutil.U256{
 			alice: (*hexutil.U256)(aliceFunds),
 		},
@@ -59,6 +61,7 @@ func TestBuilder(t *testing.T) {
 	l1Config.WithExcessBlobGas(l1Params.BlockParams.ExcessBlobGas)
 	l1Config.WithL1ForkAtGenesis(forks.Prague)
 	l1Config.WithL1ForkAtOffset(forks.Osaka, l1Params.OsakaTimeOffset)
+	l1Config.WithL1ForkAtOffset(forks.Amsterdam, l1Params.AmsterdamTimeOffset)
 	l1Config.WithPrefundedAccount(alice, *aliceFunds)
 
 	// Configure L2
