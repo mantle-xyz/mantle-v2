@@ -133,7 +133,7 @@ func (mbf *minBaseFeeEnv) waitForMinBaseFeeConfigChangeOnL2(t devtest.T, expecte
 	t.Logf("actual chain EIP-1559 params from block header: denominator: %d, elasticity: %d", denominator, elasticity)
 
 	expectedExtraData := eth.BytesMax32(eip1559.EncodeMinBaseFeeExtraData(uint64(denominator), uint64(elasticity), expected))
-	t.Require().Equal(expectedExtraData, eth.BytesMax32(actualBlockExtraData), "block header extradata doesnt match")
+	t.Require().Equal(expectedExtraData, eth.BytesMax32(actualBlockExtraData), "block header extradata doesn't match")
 }
 
 // TestMinBaseFee verifies configurable minimum base fee using devstack presets.
