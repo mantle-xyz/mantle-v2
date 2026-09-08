@@ -34,7 +34,7 @@ compilation_restrictions = [
 extra_output = ['devdoc', 'userdoc', 'metadata', 'storageLayout']
 bytecode_hash = 'none'
 ast = true
-evm_version = 'cancun'
+evm_version = 'amsterdam'
 
 remappings = [
   '@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts',
@@ -73,6 +73,14 @@ fs_permissions = [
 ignored_error_codes = ["transient-storage", "code-size", "init-code-size", "too-many-warnings", 5159, 8429, 2424]
 deny = "warnings"
 ffi = true
+
+# foundry >= 1.8 turns `--isolate` on by default, which runs every top-level call as its own
+# transaction. The deploy scripts break under it: contracts created by a broadcast are not
+# visible to the calls that follow, so the post-deploy upgrade steps hit code-less addresses
+# ("Proxy: implementation not initialized", "call to non-contract address") and the run dies
+# with "Simulated execution failed" before broadcasting anything. Pin it off to keep the
+# pre-1.8 execution model, which is also what the forge version in mise.toml uses.
+isolate = false
 
 # We set the gas limit to max int64 to avoid running out of gas during testing, since the default
 # gas limit is 1B and some of our tests require more gas than that, such as
