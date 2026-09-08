@@ -89,8 +89,7 @@ RUN <<-EOF
     # Create svm directory structure
     mkdir -p /root/.svm
 
-    # Download and install each solc version
-    for version in 0.8.15 0.8.30 0.5.17; do
+    for version in 0.8.15 0.8.30 0.8.33 0.5.17; do
         VERSION_DIR="/root/.svm/${version}"
         mkdir -p "${VERSION_DIR}"
         SOLC_BINARY="${VERSION_DIR}/solc-${version}"
