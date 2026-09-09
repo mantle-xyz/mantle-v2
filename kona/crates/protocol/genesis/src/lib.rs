@@ -9,6 +9,9 @@
 
 extern crate alloc;
 
+mod predeploys;
+pub use predeploys::Predeploys;
+
 mod params;
 pub use params::{
     BASE_MAINNET_BASE_FEE_CONFIG, BASE_MAINNET_EIP1559_BASE_FEE_MAX_CHANGE_DENOMINATOR_CANYON,
@@ -31,7 +34,7 @@ pub use params::{
 
 mod superchain;
 pub use superchain::{
-    Chain, ChainList, FaultProofs, Superchain, SuperchainConfig, SuperchainL1Info, SuperchainLevel,
+    Chain, ChainList, FaultProofs, Superchain, SuperchainConfig, SuperchainL1Info,
     SuperchainParent, Superchains,
 };
 
@@ -59,7 +62,7 @@ pub use chain::{
 pub mod interop;
 pub use interop::{
     ChainDependency, ClusterError, DependencySet, InteropConfig, MESSAGE_EXPIRY_WINDOW,
-    aggregate_clusters,
+    aggregate_clusters, with_single_chain_defaults,
 };
 
 mod genesis;

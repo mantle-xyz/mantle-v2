@@ -8,7 +8,7 @@ use super::{
     error::EngineError,
     persistence::{PersistenceHandle, error::PersistenceError},
 };
-use crate::{OpProofStoragePruner, OpProofsProviderRO, OpProofsStorageError, OpProofsStore};
+use crate::{OpProofStoragePruner, OpProofsProviderRO, OpProofsStore};
 use alloy_eips::{NumHash, eip1898::BlockWithParent};
 use crossbeam_channel::{Receiver, RecvError, RecvTimeoutError, bounded};
 use reth_evm::ConfigureEvm;
@@ -45,7 +45,7 @@ impl PersistenceState {
         match rx.recv_timeout(Duration::from_secs(DEFAULT_PERSISTENCE_TIMEOUT_SECS)) {
             Ok(Ok(Some(last_persisted))) => {
                 info!(
-                    target: "live-trie::engine",
+                    target: "trie::engine::state",
                     block_number = last_persisted,
                     "Persistence completed (waited), pruning memory"
                 );
@@ -53,13 +53,13 @@ impl PersistenceState {
             }
             Ok(Ok(None)) => {}
             Ok(Err(e)) => {
-                error!(target: "live-trie::engine", ?e, "Persistence save failed while waiting");
+                error!(target: "trie::engine::state", ?e, "Persistence save failed while waiting");
             }
             Err(RecvTimeoutError::Timeout) => {
-                error!(target: "live-trie::engine", "Persistence timeout while waiting");
+                error!(target: "trie::engine::state", "Persistence timeout while waiting");
             }
             Err(RecvTimeoutError::Disconnected) => {
-                error!(target: "live-trie::engine", "Persistence service disconnected while waiting");
+                error!(target: "trie::engine::state", "Persistence service disconnected while waiting");
             }
         }
     }
@@ -76,7 +76,7 @@ impl PersistenceState {
         match result {
             Ok(Ok(Some(last_persisted))) => {
                 info!(
-                    target: "live-trie::engine",
+                    target: "trie::engine::state",
                     block_number = last_persisted,
                     "Background persistence completed, pruning memory"
                 );
@@ -84,10 +84,10 @@ impl PersistenceState {
             }
             Ok(Ok(None)) => {}
             Ok(Err(e)) => {
-                error!(target: "live-trie::engine", ?e, "Background persistence save failed");
+                error!(target: "trie::engine::state", ?e, "Background persistence save failed");
             }
             Err(_) => {
-                error!(target: "live-trie::engine", "Persistence service disconnected unexpectedly");
+                error!(target: "trie::engine::state", "Persistence service disconnected unexpectedly");
             }
         }
     }
@@ -110,7 +110,7 @@ impl PersistenceState {
         }
 
         info!(
-            target: "live-trie::engine",
+            target: "trie::engine::state",
             count = blocks.len(),
             start_block = blocks.first().map(|arc| arc.0.block.number),
             end_block = blocks.last().map(|arc| arc.0.block.number),
@@ -132,7 +132,7 @@ impl PersistenceState {
         memory: &TrieBufferState,
     ) -> Result<(), EngineError> {
         if self.in_flight.is_some() {
-            info!(target: "live-trie::engine", "Unwind waiting for in-flight persistence...");
+            info!(target: "trie::engine::state", "Unwind waiting for in-flight persistence...");
             self.wait(memory);
         }
 
@@ -219,6 +219,10 @@ where
         let start = Instant::now();
         self.persistence.unwind(to, &self.memory)?;
         self.memory.unwind(to.block.number);
+        // Clamp `sync_target` to the post-unwind tip. Without this, a stale target left over
+        // from before a deep FCU rewind keeps `needs_sync()` perpetually true and spins the
+        // runner on `BlockNotFound` for blocks the provider no longer has.
+        self.sync_target = self.sync_target.min(to.block.number.saturating_sub(1));
         #[cfg(feature = "metrics")]
         self.metrics.unwind_duration_seconds.record(start.elapsed());
         Ok(())
@@ -237,11 +241,91 @@ where
             return Ok(tip);
         }
 
-        self.storage
-            .provider_ro()?
-            .get_latest_block_number()?
-            .map(|(n, h)| NumHash::new(n, h))
-            .ok_or(OpProofsStorageError::NoBlocksFound)
-            .map_err(Into::into)
+        Ok(self.storage.provider_ro()?.get_latest_block()?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{OpProofsInitProvider, db::MdbxProofsStorage};
+    use alloy_eips::{BlockNumHash, NumHash, eip1898::BlockWithParent};
+    use alloy_primitives::B256;
+    use reth_chainspec::MAINNET;
+    use reth_db_common::init::init_genesis;
+    use reth_evm_ethereum::EthEvmConfig;
+    use reth_provider::{
+        providers::BlockchainProvider,
+        test_utils::{MockNodeTypesWithDB, create_test_provider_factory_with_chain_spec},
+    };
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    type TestEngineState =
+        EngineState<EthEvmConfig, BlockchainProvider<MockNodeTypesWithDB>, Arc<MdbxProofsStorage>>;
+
+    fn bootstrap_storage() -> Arc<MdbxProofsStorage> {
+        let dir = TempDir::new().unwrap().keep();
+        let store = Arc::new(MdbxProofsStorage::new(&dir).unwrap());
+        let init = store.initialization_provider().expect("init provider");
+        init.set_initial_state_anchor(BlockNumHash { number: 0, hash: B256::ZERO })
+            .expect("set anchor");
+        init.commit_initial_state().expect("commit initial state");
+        OpProofsInitProvider::commit(init).expect("commit tx");
+        store
+    }
+
+    fn make_engine_state() -> TestEngineState {
+        let chain_spec = MAINNET.clone();
+        let factory = create_test_provider_factory_with_chain_spec(chain_spec.clone());
+        init_genesis(&factory).expect("init genesis");
+        let blockchain_db = BlockchainProvider::new(factory).expect("blockchain provider");
+        let storage = bootstrap_storage();
+        let pruner = OpProofStoragePruner::new(storage.clone(), blockchain_db.clone(), 1000);
+        let evm_config = EthEvmConfig::ethereum(chain_spec);
+        EngineState::new(evm_config, blockchain_db, storage, pruner)
+    }
+
+    fn unwind_target(block_number: u64) -> BlockWithParent {
+        BlockWithParent::new(
+            B256::repeat_byte(0xAA),
+            NumHash::new(block_number, B256::repeat_byte(0x50)),
+        )
+    }
+
+    #[test]
+    fn unwind_clamps_stale_sync_target_down_to_new_tip() {
+        let mut state = make_engine_state();
+        state.sync_target = 100;
+        state.unwind(unwind_target(50)).expect("unwind");
+        assert_eq!(state.sync_target, 49);
+    }
+
+    #[test]
+    fn unwind_leaves_sync_target_alone_when_at_new_tip() {
+        // sync_target already at the new tip: idempotent.
+        let mut state = make_engine_state();
+        state.sync_target = 49;
+        state.unwind(unwind_target(50)).expect("unwind");
+        assert_eq!(state.sync_target, 49);
+    }
+
+    #[test]
+    fn unwind_leaves_sync_target_alone_when_below_new_tip() {
+        // Engine was behind both before and after the unwind. Don't bump it down further.
+        let mut state = make_engine_state();
+        state.sync_target = 10;
+        state.unwind(unwind_target(50)).expect("unwind");
+        assert_eq!(state.sync_target, 10);
+    }
+
+    #[test]
+    fn unwind_to_block_one_clamps_target_to_zero_without_underflow() {
+        // The original bug scenario at its sharpest: deep rewind all the way back.
+        // `saturating_sub(1)` must not underflow when unwinding to block 1.
+        let mut state = make_engine_state();
+        state.sync_target = 1_000_000;
+        state.unwind(unwind_target(1)).expect("unwind");
+        assert_eq!(state.sync_target, 0);
     }
 }

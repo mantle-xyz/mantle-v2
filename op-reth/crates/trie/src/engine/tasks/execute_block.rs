@@ -5,14 +5,15 @@ use crate::{
 use alloy_eips::{NumHash, eip1898::BlockWithParent};
 use crossbeam_channel::Sender;
 use reth_evm::{ConfigureEvm, execute::Executor};
-use reth_primitives_traits::{AlloyBlockHeader, NodePrimitives, RecoveredBlock};
+use reth_primitives_traits::{AlloyBlockHeader, BlockBody, NodePrimitives, RecoveredBlock};
 use reth_provider::{
     BlockHashReader, BlockReader, DatabaseProviderFactory, HashedPostStateProvider, ProviderError,
     StateProviderFactory, StateReader, StateRootProvider,
 };
 use reth_revm::database::StateProviderDatabase;
+use reth_trie_common::EMPTY_ROOT_HASH;
 use std::time::Instant;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 pub(crate) struct ExecuteBlockTask<Block: reth_primitives_traits::Block> {
     pub(crate) block: RecoveredBlock<Block>,
@@ -54,11 +55,23 @@ where
     Store: OpProofsStore + Clone + 'static,
 {
     let start = Instant::now();
+
+    // Body-pruned guard: reth returns `Some(block)` with an empty body when transaction data has
+    // been pruned but body indices remain. Covers the sync path (advance_sync calls this task)
+    // and any direct EngineHandle::execute_block caller, so both get an accurate error rather
+    // than a downstream [`EngineError::StateRootMismatch`].
+    if block.header().transactions_root() != EMPTY_ROOT_HASH &&
+        block.body().transactions().is_empty()
+    {
+        return Err(EngineError::BlockBodyPruned(block.number()));
+    }
+
     let tip = state.get_tip()?;
     let parent_block_number = block.number().saturating_sub(1);
 
     if block.number() <= tip.number {
         debug!(
+            target: "trie::engine::task",
             block_number = block.number(),
             tip_number = tip.number,
             "Block already covered by tip, skipping execute_and_store",
@@ -68,6 +81,7 @@ where
 
     if block.number() > tip.number.saturating_add(1) {
         debug!(
+            target: "trie::engine::task",
             block_number = block.number(),
             tip_number = tip.number,
             "Gap detected, updating sync target",
@@ -90,10 +104,11 @@ where
     let parent_state = match state.provider.state_by_block_hash(block.parent_hash()) {
         Ok(p) => p,
         Err(ProviderError::StateForHashNotFound(hash)) => {
-            // Likely a transient reorg race: reth no longer has state for what we believe is the
-            // parent. Skip gracefully; subsequent ChainCommitted/ChainReorged notifications will
-            // resync us.
-            warn!(
+            // Recoverable: either a transient reorg race or reth still materializing state
+            // (staged sync mid-flight). Skip; subsequent notifications will resync us.
+            // Logged at debug to avoid flooding during long catch-up phases
+            debug!(
+                target: "trie::engine::task",
                 block_number = block.number(),
                 parent_hash = ?hash,
                 "Parent state not available in reth; skipping execute_block",
@@ -143,6 +158,7 @@ where
     }
 
     info!(
+        target: "trie::engine::task",
         block_number = block.number(),
         ?total_duration,
         ?execution_duration,

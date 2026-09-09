@@ -14,6 +14,8 @@ pub mod app;
 pub mod chainspec;
 /// Optimism CLI commands.
 pub mod commands;
+/// Optimism CLI metrics.
+pub mod metrics;
 /// Module with a codec for reading and encoding receipts in files.
 ///
 /// Enables decoding and encoding `OpGethReceipt` type. See <https://github.com/testinprod-io/op-geth/pull/1>.
@@ -61,6 +63,17 @@ use reth_node_metrics as _;
 /// The main op-reth cli interface.
 ///
 /// This is the entrypoint to the executable.
+///
+/// # Parsing
+///
+/// Production callers must use [`Cli::parse_args`] / [`Cli::try_parse_args_from`] when using the
+/// default type parameters, or [`Cli::parse_with_denied_args`] /
+/// [`Cli::try_parse_with_denied_args_from`] for a customized CLI. These methods hide and reject
+/// unsupported upstream arguments from `DENIED_ARGS`.
+///
+/// Do not use the plain parsing methods from [`clap::Parser`] in production. They build the
+/// upstream clap command directly and therefore neither hide nor reject denied arguments. Plain
+/// parsing remains useful in tests that construct controlled inputs without denied arguments.
 #[derive(Debug, Parser)]
 #[command(author, name = version_metadata().name_client.as_ref(), version = version_metadata().short_version.as_ref(), long_version = version_metadata().long_version.as_ref(), about = "Reth", long_about = None)]
 pub struct Cli<
@@ -85,19 +98,89 @@ pub struct Cli<
     _phantom: PhantomData<Rpc>,
 }
 
+/// Upstream reth CLI arguments that op-reth does not support, as
+/// `(subcommand, argument id, error shown when used)` entries.
+///
+/// These arguments live in upstream arg structs that op-reth reuses, so they cannot be removed at
+/// the type level. They are hidden from all help output and rejected with a hard error after
+/// parsing. Add new entries here as further unsupported upstream options are identified
+/// (tracked in [#21687](https://github.com/ethereum-optimism/optimism/issues/21687)).
+const DENIED_ARGS: &[(&str, &str, &str)] = &[("node", "minimal", MINIMAL_REMOVED_HELP)];
+
+/// Startup error for `--minimal`, which configures pruning (including block-body pruning) that
+/// op-node derivation cannot tolerate.
+const MINIMAL_REMOVED_HELP: &str = "--minimal is not supported by op-reth and has been removed.\n\nIt prunes block bodies to a fixed 10,064-block window, which breaks op-node derivation\n(op-node reads the L1-info deposit transaction from historical block bodies).\n\nFor a pruned (non-archive) node, use the supported pruning recipe instead:\n  --prune.minimum-distance <BLOCKS>\n  --prune.receipts.distance <BLOCKS>\n  --prune.account-history.distance <BLOCKS>\n  --prune.storage-history.distance <BLOCKS>\nDo NOT prune block bodies.\n\nSee https://docs.optimism.io/node-operators/guides/management/archive-node#pruning-op-reth";
+
 impl Cli {
-    /// Parsers only the default CLI arguments
+    /// Parses only the default CLI arguments, rejecting `DENIED_ARGS`
     pub fn parse_args() -> Self {
-        Self::parse()
+        Self::parse_with_denied_args()
     }
 
-    /// Parsers only the default CLI arguments from the given iterator
+    /// Parses only the default CLI arguments from the given iterator, rejecting `DENIED_ARGS`
     pub fn try_parse_args_from<I, T>(itr: I) -> Result<Self, clap::error::Error>
     where
         I: IntoIterator<Item = T>,
         T: Into<OsString> + Clone,
     {
-        Self::try_parse_from(itr)
+        Self::try_parse_with_denied_args_from(itr)
+    }
+}
+
+impl<C, Ext, Rpc> Cli<C, Ext, Rpc>
+where
+    C: ChainSpecParser,
+    Ext: clap::Args + fmt::Debug,
+    Rpc: RpcModuleValidator,
+{
+    /// Returns the clap command with all `DENIED_ARGS` hidden from help output.
+    pub fn command_with_denied_args_hidden() -> clap::Command {
+        // `mut_subcommand`/`mut_arg` move the modified entry to the end of help output, so use
+        // the order-preserving `mut_subcommands`/`mut_args` instead.
+        <Self as clap::CommandFactory>::command().mut_subcommands(|sc| {
+            let name = sc.get_name().to_string();
+            sc.mut_args(|arg| {
+                if DENIED_ARGS
+                    .iter()
+                    .any(|(sub, arg_id, _)| *sub == name && *arg_id == arg.get_id().as_str())
+                {
+                    arg.hide(true)
+                } else {
+                    arg
+                }
+            })
+        })
+    }
+
+    /// Parses the CLI from the process arguments, hiding `DENIED_ARGS` from help output and
+    /// exiting with a hard error when one is used.
+    ///
+    /// This is the entrypoint used by the `op-reth` binary.
+    pub fn parse_with_denied_args() -> Self {
+        match Self::try_parse_with_denied_args_from(std::env::args_os()) {
+            Ok(cli) => cli,
+            Err(err) => err.exit(),
+        }
+    }
+
+    /// Parses the CLI from the given iterator, hiding `DENIED_ARGS` from help output and
+    /// returning a hard error when one is used.
+    pub fn try_parse_with_denied_args_from<I, T>(itr: I) -> Result<Self, clap::error::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone,
+    {
+        let mut cmd = Self::command_with_denied_args_hidden();
+        let mut matches = cmd.try_get_matches_from_mut(itr)?;
+        // Clap still accepts hidden arguments, so denied ones are rejected post-parse.
+        for (subcommand, arg_id, help) in DENIED_ARGS {
+            if let Some(sub) = matches.subcommand_matches(subcommand) &&
+                sub.value_source(arg_id) == Some(clap::parser::ValueSource::CommandLine)
+            {
+                return Err(cmd.error(clap::error::ErrorKind::ValueValidation, *help));
+            }
+        }
+        <Self as clap::FromArgMatches>::from_arg_matches_mut(&mut matches)
     }
 }
 
@@ -146,8 +229,50 @@ mod test {
     use crate::{Cli, chainspec::OpChainSpecParser, commands::Commands};
     use clap::Parser;
     use reth_cli_commands::{NodeCommand, node::NoArgs};
-    use reth_optimism_chainspec::{BASE_MAINNET, OP_DEV};
+    use reth_optimism_chainspec::{OP_DEV, OP_MAINNET};
     use reth_optimism_node::args::RollupArgs;
+
+    #[test]
+    fn deny_minimal_on_parse() {
+        let err = Cli::<OpChainSpecParser, RollupArgs>::try_parse_with_denied_args_from([
+            "op-reth",
+            "node",
+            "--minimal",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+        let msg = err.to_string();
+        assert!(msg.contains("--minimal is not supported by op-reth"), "{msg}");
+        assert!(msg.contains("--prune.minimum-distance"), "{msg}");
+        assert!(msg.contains("--prune.receipts.distance"), "{msg}");
+    }
+
+    #[test]
+    fn deny_minimal_hidden_from_help() {
+        let mut cmd = Cli::<OpChainSpecParser, RollupArgs>::command_with_denied_args_hidden();
+        let help = cmd
+            .find_subcommand_mut("node")
+            .expect("node subcommand")
+            .render_long_help()
+            .to_string();
+        assert!(!help.contains("--minimal"), "--minimal must be hidden from node help:\n{help}");
+        assert!(help.contains("--full"), "other pruning args must stay visible:\n{help}");
+    }
+
+    #[test]
+    fn deny_list_does_not_affect_other_args() {
+        let cli = Cli::<OpChainSpecParser, RollupArgs>::try_parse_with_denied_args_from([
+            "op-reth", "node", "--full",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Node(command) => {
+                assert!(command.pruning.full);
+                assert!(!command.pruning.minimal);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
 
     #[test]
     fn parse_dev() {
@@ -173,9 +298,9 @@ mod test {
             "op-reth",
             "node",
             "--chain",
-            "base",
+            "op-mainnet",
             "--datadir",
-            "/mnt/datadirs/base",
+            "/mnt/datadirs/optimism",
             "--instance",
             "2",
             "--http",
@@ -187,7 +312,7 @@ mod test {
             "--http.api",
             "admin,debug,eth,net,trace,txpool,web3,rpc,reth,ots",
             "--rollup.sequencer-http",
-            "https://mainnet-sequencer.base.org",
+            "https://mainnet-sequencer.optimism.io",
             "--rpc-max-tracing-requests",
             "1000000",
             "--rpc.gascap",
@@ -207,7 +332,7 @@ mod test {
 
         match cmd.command {
             Commands::Node(command) => {
-                assert_eq!(command.chain.as_ref(), BASE_MAINNET.as_ref());
+                assert_eq!(command.chain.as_ref(), OP_MAINNET.as_ref());
             }
             _ => panic!("unexpected command"),
         }

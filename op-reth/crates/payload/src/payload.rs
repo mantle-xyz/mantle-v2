@@ -4,7 +4,10 @@ use std::{fmt::Debug, sync::Arc};
 
 use alloy_consensus::{Block, BlockHeader};
 use alloy_eips::{
-    eip1559::BaseFeeParams, eip2718::Decodable2718, eip4895::Withdrawals, eip7685::Requests,
+    eip1559::BaseFeeParams,
+    eip2718::{Decodable2718, Encodable2718},
+    eip4895::Withdrawals,
+    eip7685::Requests,
 };
 use alloy_primitives::{Address, B64, B256, Bytes, U256, keccak256};
 use alloy_rlp::Encodable;
@@ -12,9 +15,12 @@ use alloy_rpc_types_engine::{
     BlobsBundleV1, ExecutionPayloadEnvelopeV2, ExecutionPayloadFieldV2, ExecutionPayloadV1,
     ExecutionPayloadV3, PayloadId,
 };
-use op_alloy_consensus::{EIP1559ParamError, encode_holocene_extra_data, encode_jovian_extra_data};
+use op_alloy_consensus::{
+    EIP1559ParamError, decode_2718_canonical, encode_holocene_extra_data, encode_jovian_extra_data,
+};
 use op_alloy_rpc_types_engine::{
-    OpExecutionPayloadEnvelopeV3, OpExecutionPayloadEnvelopeV4, OpExecutionPayloadV4,
+    OpExecutionPayloadEnvelope, OpExecutionPayloadEnvelopeV3, OpExecutionPayloadEnvelopeV4,
+    OpExecutionPayloadV4,
 };
 use reth_chainspec::EthChainSpec;
 use reth_optimism_evm::OpNextBlockEnvAttributes;
@@ -22,7 +28,7 @@ use reth_optimism_forks::OpHardforks;
 use reth_payload_builder_primitives::PayloadBuilderError;
 use reth_payload_primitives::{BuildNextEnv, BuiltPayload, BuiltPayloadExecutedBlock};
 use reth_primitives_traits::{
-    NodePrimitives, SealedBlock, SealedHeader, SignedTransaction, WithEncoded,
+    Block as _, NodePrimitives, SealedBlock, SealedHeader, SignedTransaction, WithEncoded,
 };
 
 /// Re-export for use in downstream arguments.
@@ -63,7 +69,7 @@ impl reth_payload_primitives::ExecutionPayload for OpExecData {
     }
 
     fn withdrawals(&self) -> Option<&Vec<alloy_eips::eip4895::Withdrawal>> {
-        self.0.withdrawals()
+        self.0.payload.as_v2().map(|payload| &payload.withdrawals)
     }
 
     fn block_access_list(&self) -> Option<&Bytes> {
@@ -208,8 +214,8 @@ impl<T> serde::Serialize for OpPayloadBuilderAttributes<T> {
     }
 }
 
-impl<'de, T: Decodable2718 + Send + Sync + Debug + Unpin + 'static> serde::Deserialize<'de>
-    for OpPayloadBuilderAttributes<T>
+impl<'de, T: Decodable2718 + Encodable2718 + Send + Sync + Debug + Unpin + 'static>
+    serde::Deserialize<'de> for OpPayloadBuilderAttributes<T>
 {
     fn deserialize<D: serde::Deserializer<'de>>(_deserializer: D) -> Result<Self, D::Error> {
         // This type is never deserialized in practice; the PayloadAttributes trait bound
@@ -222,7 +228,7 @@ impl<'de, T: Decodable2718 + Send + Sync + Debug + Unpin + 'static> serde::Deser
     }
 }
 
-impl<T: Decodable2718 + Send + Sync + Debug + Clone + Unpin + 'static>
+impl<T: Decodable2718 + Encodable2718 + Send + Sync + Debug + Clone + Unpin + 'static>
     reth_payload_primitives::PayloadAttributes for OpPayloadBuilderAttributes<T>
 {
     fn payload_id(&self, _parent_hash: &B256) -> PayloadId {
@@ -291,7 +297,9 @@ impl<T> OpPayloadBuilderAttributes<T> {
     }
 }
 
-impl<T: Decodable2718 + Send + Sync + Debug + Unpin + 'static> OpPayloadBuilderAttributes<T> {
+impl<T: Decodable2718 + Encodable2718 + Send + Sync + Debug + Unpin + 'static>
+    OpPayloadBuilderAttributes<T>
+{
     /// Creates a new payload builder for the given parent block and the attributes.
     ///
     /// Derives the unique [`PayloadId`] for the given parent and attributes
@@ -301,30 +309,7 @@ impl<T: Decodable2718 + Send + Sync + Debug + Unpin + 'static> OpPayloadBuilderA
         version: u8,
     ) -> Result<Self, alloy_rlp::Error> {
         let id = payload_id_optimism(&parent, &attributes, version);
-
-        let transactions = attributes
-            .transactions
-            .unwrap_or_default()
-            .into_iter()
-            .map(|data| {
-                Decodable2718::decode_2718_exact(data.as_ref()).map(|tx| WithEncoded::new(data, tx))
-            })
-            .collect::<Result<_, _>>()?;
-
-        Ok(Self {
-            id,
-            parent,
-            timestamp: attributes.payload_attributes.timestamp,
-            suggested_fee_recipient: attributes.payload_attributes.suggested_fee_recipient,
-            prev_randao: attributes.payload_attributes.prev_randao,
-            withdrawals: attributes.payload_attributes.withdrawals.unwrap_or_default().into(),
-            parent_beacon_block_root: attributes.payload_attributes.parent_beacon_block_root,
-            no_tx_pool: attributes.no_tx_pool.unwrap_or_default(),
-            transactions,
-            gas_limit: attributes.gas_limit,
-            eip_1559_params: attributes.eip_1559_params,
-            min_base_fee: attributes.min_base_fee,
-        })
+        Self::from_rpc_attrs(parent, id, attributes)
     }
 
     /// Creates a new payload builder from RPC attributes with a pre-computed payload ID.
@@ -340,9 +325,7 @@ impl<T: Decodable2718 + Send + Sync + Debug + Unpin + 'static> OpPayloadBuilderA
             .transactions
             .unwrap_or_default()
             .into_iter()
-            .map(|data| {
-                Decodable2718::decode_2718_exact(data.as_ref()).map(|tx| WithEncoded::new(data, tx))
-            })
+            .map(|data| decode_2718_canonical(data.as_ref()).map(|tx| WithEncoded::new(data, tx)))
             .collect::<Result<_, _>>()?;
 
         Ok(Self {
@@ -461,6 +444,28 @@ impl<N: NodePrimitives> BuiltPayload for OpBuiltPayload<N> {
 
     fn requests(&self) -> Option<Requests> {
         None
+    }
+}
+
+// Counterpart to `OpPayloadTypes::block_to_payload`. The two are intentionally
+// parallel: this path receives the BAL via the payload's own field once OP
+// gains BAL support, while `block_to_payload` receives it as a separate arg.
+// See the comment on `OpPayloadTypes::block_to_payload` in `lib.rs`.
+impl<T, N> From<OpBuiltPayload<N>> for OpExecData
+where
+    T: SignedTransaction,
+    N: NodePrimitives<Block = Block<T>>,
+{
+    fn from(value: OpBuiltPayload<N>) -> Self {
+        let block = Arc::unwrap_or_clone(value.block);
+        let hash = block.hash();
+        Self(OpExecutionData::from(
+            OpExecutionPayloadEnvelope::from_block_unchecked(
+                hash,
+                &block.into_block().into_ethereum_block(),
+            )
+            .expect("built OP blocks must normalize"),
+        ))
     }
 }
 
@@ -693,6 +698,7 @@ mod tests {
                 withdrawals: Some([].into()),
                 parent_beacon_block_root: b256!("0x8fe0193b9bf83cb7e5a08538e494fecc23046aab9a497af3704f4afdae3250ff").into(),
                 slot_number: None,
+                target_gas_limit: None,
             },
             transactions: Some([bytes!("7ef8f8a0dc19cfa777d90980e4875d0a548a881baaa3f83f14d1bc0d3038bc329350e54194deaddeaddeaddeaddeaddeaddeaddeaddead00019442000000000000000000000000000000000000158080830f424080b8a4440a5e20000f424000000000000000000000000300000000670d6d890000000000000125000000000000000000000000000000000000000000000000000000000000000700000000000000000000000000000000000000000000000000000000000000014bf9181db6e381d4384bbf69c48b0ee0eed23c6ca26143c6d2544f9d39997a590000000000000000000000007f83d659683caf2767fd3c720981d51f5bc365bc")].into()),
             no_tx_pool: None,
@@ -725,6 +731,7 @@ mod tests {
                 withdrawals: Some([].into()),
                 parent_beacon_block_root: b256!("0x8fe0193b9bf83cb7e5a08538e494fecc23046aab9a497af3704f4afdae3250ff").into(),
                 slot_number: None,
+                target_gas_limit: None,
             },
             transactions: Some([bytes!("7ef8f8a0dc19cfa777d90980e4875d0a548a881baaa3f83f14d1bc0d3038bc329350e54194deaddeaddeaddeaddeaddeaddeaddeaddead00019442000000000000000000000000000000000000158080830f424080b8a4440a5e20000f424000000000000000000000000300000000670d6d890000000000000125000000000000000000000000000000000000000000000000000000000000000700000000000000000000000000000000000000000000000000000000000000014bf9181db6e381d4384bbf69c48b0ee0eed23c6ca26143c6d2544f9d39997a590000000000000000000000007f83d659683caf2767fd3c720981d51f5bc365bc")].into()),
             no_tx_pool: None,
@@ -807,5 +814,59 @@ mod tests {
             };
         let extra_data = attributes.get_jovian_extra_data(BaseFeeParams::new(80, 60));
         assert_eq!(extra_data.unwrap_err(), EIP1559ParamError::MinBaseFeeNotSet);
+    }
+
+    /// A transaction that decodes but does not re-encode to the same bytes (here: an EIP-1559
+    /// body with its type byte stripped) must be rejected, not silently canonicalised.
+    #[test]
+    fn try_new_rejects_non_canonical_transaction_encoding() {
+        use alloy_consensus::SignableTransaction;
+        use alloy_eips::eip2718::Encodable2718;
+        let typed = alloy_consensus::TxEip1559 {
+            chain_id: 10,
+            nonce: 1,
+            gas_limit: 21_000,
+            max_fee_per_gas: 2,
+            max_priority_fee_per_gas: 1,
+            to: Address::ZERO.into(),
+            value: Default::default(),
+            access_list: Default::default(),
+            input: Default::default(),
+        }
+        .into_signed(alloy_primitives::Signature::test_signature())
+        .encoded_2718();
+        assert_eq!(typed[0], 0x02);
+        let bare = Bytes::copy_from_slice(&typed[1..]);
+
+        let attrs = OpPayloadAttributes {
+            payload_attributes: PayloadAttributes {
+                timestamp: 1,
+                prev_randao: B256::ZERO,
+                suggested_fee_recipient: Address::ZERO,
+                withdrawals: Some(vec![]),
+                parent_beacon_block_root: Some(B256::ZERO),
+                slot_number: None,
+                target_gas_limit: None,
+            },
+            transactions: Some(vec![bare]),
+            no_tx_pool: Some(true),
+            gas_limit: Some(30_000_000),
+            eip_1559_params: None,
+            min_base_fee: None,
+        };
+        let err = OpPayloadBuilderAttributes::<OpTransactionSigned>::try_new(
+            B256::ZERO,
+            attrs.clone(),
+            3,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("non-canonical"), "{err}");
+        let err = OpPayloadBuilderAttributes::<OpTransactionSigned>::from_rpc_attrs(
+            B256::ZERO,
+            PayloadId::new([0; 8]),
+            attrs,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("non-canonical"), "{err}");
     }
 }

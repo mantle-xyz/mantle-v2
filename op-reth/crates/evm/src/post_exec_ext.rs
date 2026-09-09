@@ -2,7 +2,7 @@ use alloc::{sync::Arc, vec::Vec};
 use alloy_consensus::Header;
 use alloy_evm::{FromRecoveredTx, FromTxWithEncoded, block::BlockExecutor};
 use alloy_op_evm::{
-    OpBlockExecutor,
+    OpBlockExecutor, PreRefundGasUsed,
     block::{OpTxEnv, receipt_builder::OpReceiptBuilder},
     post_exec::{PostExecEvmFactoryAdapter, PostExecEvmFactoryHooks, PostExecExecutorExt},
 };
@@ -23,7 +23,12 @@ use revm::{context::BlockEnv, database::State};
 use crate::{OpBlockExecutorFactory, OpEvmConfig, OpEvmFactory, OpTx, PostExecMode};
 
 /// Optimism-specific EVM helpers that expose post-exec-aware executors and builders.
+#[allow(clippy::type_complexity)]
 pub trait ConfigurePostExecEvm: ConfigureEvm {
+    /// Opaque block-scoped carry-forward state of the refund inspector the produced executors run.
+    /// Matches [`PostExecExecutorExt::Snapshot`] of those executors.
+    type Snapshot: Clone;
+
     /// Returns a block executor for the given block with explicit post-exec entry access.
     ///
     /// # Errors
@@ -38,7 +43,7 @@ pub trait ConfigurePostExecEvm: ConfigureEvm {
         impl BlockExecutor<
             Transaction = <Self::Primitives as NodePrimitives>::SignedTx,
             Receipt = <Self::Primitives as NodePrimitives>::Receipt,
-        > + PostExecExecutorExt
+        > + PostExecExecutorExt<Snapshot = Self::Snapshot>
         + 'a,
         Self::Error,
     >;
@@ -55,7 +60,14 @@ pub trait ConfigurePostExecEvm: ConfigureEvm {
         attributes: Self::NextBlockEnvCtx,
         post_exec_mode: PostExecMode,
     ) -> Result<
-        impl BlockBuilder<Primitives = Self::Primitives, Executor: PostExecExecutorExt> + 'a,
+        impl BlockBuilder<
+            Primitives = Self::Primitives,
+            Executor: PostExecExecutorExt<Snapshot = Self::Snapshot>
+                          + BlockExecutor<
+                Evm: alloy_evm::Evm<DB: core::ops::DerefMut<Target = State<DB>>>,
+                Result: PreRefundGasUsed,
+            >,
+        > + 'a,
         Self::Error,
     >;
 }
@@ -81,6 +93,8 @@ where
         + 'static,
     Self: Send + Sync + Unpin + Clone + 'static,
 {
+    type Snapshot = ();
+
     fn post_exec_executor_for_block<'a, DB: Database>(
         &'a self,
         db: &'a mut State<DB>,
@@ -90,7 +104,7 @@ where
         impl BlockExecutor<
             Transaction = <Self::Primitives as NodePrimitives>::SignedTx,
             Receipt = <Self::Primitives as NodePrimitives>::Receipt,
-        > + PostExecExecutorExt
+        > + PostExecExecutorExt<Snapshot = Self::Snapshot>
         + 'a,
         Self::Error,
     > {
@@ -112,7 +126,14 @@ where
         attributes: Self::NextBlockEnvCtx,
         post_exec_mode: PostExecMode,
     ) -> Result<
-        impl BlockBuilder<Primitives = Self::Primitives, Executor: PostExecExecutorExt> + 'a,
+        impl BlockBuilder<
+            Primitives = Self::Primitives,
+            Executor: PostExecExecutorExt<Snapshot = Self::Snapshot>
+                          + BlockExecutor<
+                Evm: alloy_evm::Evm<DB: core::ops::DerefMut<Target = State<DB>>>,
+                Result: PreRefundGasUsed,
+            >,
+        > + 'a,
         Self::Error,
     > {
         let evm_env = self.next_evm_env(parent, &attributes)?;
@@ -178,6 +199,8 @@ where
         + 'static,
     Self: Send + Sync + Unpin + Clone + 'static,
 {
+    type Snapshot = F::Snapshot;
+
     fn post_exec_executor_for_block<'a, DB: Database>(
         &'a self,
         db: &'a mut State<DB>,
@@ -187,7 +210,7 @@ where
         impl BlockExecutor<
             Transaction = <Self::Primitives as NodePrimitives>::SignedTx,
             Receipt = <Self::Primitives as NodePrimitives>::Receipt,
-        > + PostExecExecutorExt
+        > + PostExecExecutorExt<Snapshot = Self::Snapshot>
         + 'a,
         Self::Error,
     > {
@@ -209,7 +232,14 @@ where
         attributes: Self::NextBlockEnvCtx,
         post_exec_mode: PostExecMode,
     ) -> Result<
-        impl BlockBuilder<Primitives = Self::Primitives, Executor: PostExecExecutorExt> + 'a,
+        impl BlockBuilder<
+            Primitives = Self::Primitives,
+            Executor: PostExecExecutorExt<Snapshot = Self::Snapshot>
+                          + BlockExecutor<
+                Evm: alloy_evm::Evm<DB: core::ops::DerefMut<Target = State<DB>>>,
+                Result: PreRefundGasUsed,
+            >,
+        > + 'a,
         Self::Error,
     > {
         let evm_env = self.next_evm_env(parent, &attributes)?;

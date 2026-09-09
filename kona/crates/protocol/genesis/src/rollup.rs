@@ -156,40 +156,6 @@ impl Default for RollupConfig {
     }
 }
 
-#[cfg(feature = "revm")]
-impl RollupConfig {
-    /// Returns the active [`op_revm::OpSpecId`] for the executor.
-    ///
-    /// ## Takes
-    /// - `timestamp`: The timestamp of the executing block.
-    ///
-    /// ## Returns
-    /// The active [`op_revm::OpSpecId`] for the executor.
-    pub fn spec_id(&self, timestamp: u64) -> op_revm::OpSpecId {
-        if self.is_interop_active(timestamp) {
-            op_revm::OpSpecId::INTEROP
-        } else if self.is_karst_active(timestamp) {
-            op_revm::OpSpecId::KARST
-        } else if self.is_jovian_active(timestamp) {
-            op_revm::OpSpecId::JOVIAN
-        } else if self.is_isthmus_active(timestamp) {
-            op_revm::OpSpecId::ISTHMUS
-        } else if self.is_holocene_active(timestamp) {
-            op_revm::OpSpecId::HOLOCENE
-        } else if self.is_fjord_active(timestamp) {
-            op_revm::OpSpecId::FJORD
-        } else if self.is_ecotone_active(timestamp) {
-            op_revm::OpSpecId::ECOTONE
-        } else if self.is_canyon_active(timestamp) {
-            op_revm::OpSpecId::CANYON
-        } else if self.is_regolith_active(timestamp) {
-            op_revm::OpSpecId::REGOLITH
-        } else {
-            op_revm::OpSpecId::BEDROCK
-        }
-    }
-}
-
 impl RollupConfig {
     /// Returns true if Regolith is active at the given timestamp.
     pub fn is_regolith_active(&self, timestamp: u64) -> bool {
@@ -300,10 +266,10 @@ impl RollupConfig {
 
     /// Returns true if SDM post-exec transactions are active at the given timestamp.
     ///
-    /// SDM is currently unscheduled and must not activate as part of Jovian or Karst.
+    /// Defers to the hardfork where SDM is activated, matching op-node's `IsSDM`.
     #[must_use]
-    pub const fn is_sdm_active(&self, _timestamp: u64) -> bool {
-        false
+    pub fn is_sdm_active(&self, timestamp: u64) -> bool {
+        self.is_lagoon_active(timestamp)
     }
 
     /// Returns true if Jovian is active at the given timestamp.
@@ -321,7 +287,7 @@ impl RollupConfig {
     /// Returns true if Karst is active at the given timestamp.
     pub fn is_karst_active(&self, timestamp: u64) -> bool {
         self.hardforks.karst_time.is_some_and(|t| timestamp >= t) ||
-            self.is_interop_active(timestamp)
+            self.is_lagoon_active(timestamp)
     }
 
     /// Returns true if the timestamp marks the first Karst block.
@@ -330,12 +296,35 @@ impl RollupConfig {
             !self.is_karst_active(timestamp.saturating_sub(self.block_time))
     }
 
-    /// Returns true if Interop is active at the given timestamp.
-    pub fn is_interop_active(&self, timestamp: u64) -> bool {
-        self.hardforks.interop_time.is_some_and(|t| timestamp >= t)
+    /// Returns true if Lagoon is active at the given timestamp.
+    pub fn is_lagoon_active(&self, timestamp: u64) -> bool {
+        self.hardforks.lagoon_time.is_some_and(|t| timestamp >= t)
     }
 
-    /// Returns true if the timestamp marks the first Interop block.
+    /// Returns true if `timestamp` is `fork`'s activation block — `fork` is active at `timestamp`
+    /// but was not active at the previous block. Mirrors op-node's `IsActivationBlockForFork`.
+    pub fn is_fork_activation_block(&self, fork: OpHardfork, timestamp: u64) -> bool {
+        let activation = self.op_fork_activation(fork);
+        activation.active_at_timestamp(timestamp) &&
+            !activation.active_at_timestamp(timestamp.saturating_sub(self.block_time))
+    }
+
+    /// Returns true if the timestamp marks the first Lagoon block.
+    pub fn is_first_lagoon_block(&self, timestamp: u64) -> bool {
+        self.is_lagoon_active(timestamp) &&
+            !self.is_lagoon_active(timestamp.saturating_sub(self.block_time))
+    }
+
+    /// Returns true if the interop feature is active at the given timestamp.
+    ///
+    /// Defers to the hardfork where interop is activated, but kept as a separate feature gate —
+    /// mirroring op-node's `IsInterop` — so interop can diverge from the fork if its activation is
+    /// ever decoupled. Interop-feature code should gate on this, not on the raw fork accessor.
+    pub fn is_interop_active(&self, timestamp: u64) -> bool {
+        self.is_lagoon_active(timestamp)
+    }
+
+    /// Returns true if the timestamp marks the first interop-active block.
     pub fn is_first_interop_block(&self, timestamp: u64) -> bool {
         self.is_interop_active(timestamp) &&
             !self.is_interop_active(timestamp.saturating_sub(self.block_time))
@@ -382,13 +371,14 @@ impl RollupConfig {
         self.hardforks
     }
 
-    /// Computes a block number from a timestamp, relative to the L2 genesis time and the block
-    /// time.
+    /// Computes the absolute L2 block number that a timestamp falls in.
     ///
-    /// This function assumes that the timestamp is aligned with the block time, and uses floor
-    /// division in its computation.
+    /// The computation uses floor division. A timestamp between two blocks therefore resolves
+    /// to the earlier block.
     pub const fn block_number_from_timestamp(&self, timestamp: u64) -> u64 {
-        timestamp.saturating_sub(self.genesis.l2_time).saturating_div(self.block_time)
+        self.genesis.l2.number.saturating_add(
+            timestamp.saturating_sub(self.genesis.l2_time).saturating_div(self.block_time),
+        )
     }
 
     /// Checks the scalar value in Ecotone.
@@ -420,20 +410,12 @@ impl EthereumHardforks for RollupConfig {
         if fork <= EthereumHardfork::Berlin {
             // We assume that OP chains were launched with all forks before Berlin activated.
             ForkCondition::Block(0)
-        } else if fork <= EthereumHardfork::Paris {
-            // Bedrock activates all hardforks up to Paris.
-            self.op_fork_activation(OpHardfork::Bedrock)
-        } else if fork <= EthereumHardfork::Shanghai {
-            // Canyon activates Shanghai hardfork.
-            self.op_fork_activation(OpHardfork::Canyon)
-        } else if fork <= EthereumHardfork::Cancun {
-            // Ecotone activates Cancun hardfork.
-            self.op_fork_activation(OpHardfork::Ecotone)
-        } else if fork <= EthereumHardfork::Prague {
-            // Isthmus activates Prague hardfork.
-            self.op_fork_activation(OpHardfork::Isthmus)
         } else {
-            ForkCondition::Never
+            // Every later L1 fork activates with the OP fork that implies it (Bedrock for
+            // London through Paris); L1 forks without an L2 equivalent never activate.
+            OpHardfork::activating_op_fork(fork)
+                .map(|op_fork| self.op_fork_activation(op_fork))
+                .unwrap_or(ForkCondition::Never)
         }
     }
 }
@@ -486,10 +468,10 @@ impl OpHardforks for RollupConfig {
                 .hardforks
                 .karst_time
                 .map(ForkCondition::Timestamp)
-                .unwrap_or_else(|| self.op_fork_activation(OpHardfork::Interop)),
-            OpHardfork::Interop => self
+                .unwrap_or_else(|| self.op_fork_activation(OpHardfork::Lagoon)),
+            OpHardfork::Lagoon => self
                 .hardforks
-                .interop_time
+                .lagoon_time
                 .map(ForkCondition::Timestamp)
                 .unwrap_or(ForkCondition::Never),
             _ => ForkCondition::Never,
@@ -500,7 +482,6 @@ impl OpHardforks for RollupConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "serde")]
     use alloy_eips::BlockNumHash;
     use alloy_primitives::address;
     #[cfg(feature = "serde")]
@@ -517,31 +498,45 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "revm")]
-    fn test_revm_spec_id() {
-        // By default, the spec ID should be BEDROCK.
-        let mut config = RollupConfig {
-            hardforks: HardForkConfig { regolith_time: Some(10), ..Default::default() },
+    fn test_ethereum_fork_activation_follows_op_forks() {
+        let config = RollupConfig {
+            hardforks: HardForkConfig {
+                canyon_time: Some(10),
+                ecotone_time: Some(20),
+                isthmus_time: Some(30),
+                karst_time: Some(40),
+                ..Default::default()
+            },
             ..Default::default()
         };
-        assert_eq!(config.spec_id(0), op_revm::OpSpecId::BEDROCK);
-        assert_eq!(config.spec_id(10), op_revm::OpSpecId::REGOLITH);
-        config.hardforks.canyon_time = Some(20);
-        assert_eq!(config.spec_id(20), op_revm::OpSpecId::CANYON);
-        config.hardforks.ecotone_time = Some(30);
-        assert_eq!(config.spec_id(30), op_revm::OpSpecId::ECOTONE);
-        config.hardforks.fjord_time = Some(40);
-        assert_eq!(config.spec_id(40), op_revm::OpSpecId::FJORD);
-        config.hardforks.holocene_time = Some(50);
-        assert_eq!(config.spec_id(50), op_revm::OpSpecId::HOLOCENE);
-        config.hardforks.isthmus_time = Some(60);
-        assert_eq!(config.spec_id(60), op_revm::OpSpecId::ISTHMUS);
-        config.hardforks.jovian_time = Some(70);
-        assert_eq!(config.spec_id(70), op_revm::OpSpecId::JOVIAN);
-        config.hardforks.karst_time = Some(80);
-        assert_eq!(config.spec_id(80), op_revm::OpSpecId::KARST);
-        config.hardforks.interop_time = Some(90);
-        assert_eq!(config.spec_id(90), op_revm::OpSpecId::INTEROP);
+        // Bedrock activates all L1 forks up to and including Paris.
+        assert_eq!(
+            config.ethereum_fork_activation(EthereumHardfork::London),
+            ForkCondition::Block(0)
+        );
+        assert_eq!(
+            config.ethereum_fork_activation(EthereumHardfork::Paris),
+            config.op_fork_activation(OpHardfork::Bedrock)
+        );
+        assert_eq!(
+            config.ethereum_fork_activation(EthereumHardfork::Shanghai),
+            ForkCondition::Timestamp(10)
+        );
+        assert_eq!(
+            config.ethereum_fork_activation(EthereumHardfork::Cancun),
+            ForkCondition::Timestamp(20)
+        );
+        assert_eq!(
+            config.ethereum_fork_activation(EthereumHardfork::Prague),
+            ForkCondition::Timestamp(30)
+        );
+        // Karst activates the Osaka hardfork.
+        assert_eq!(
+            config.ethereum_fork_activation(EthereumHardfork::Osaka),
+            ForkCondition::Timestamp(40)
+        );
+        // L1 forks without an L2 equivalent never activate.
+        assert_eq!(config.ethereum_fork_activation(EthereumHardfork::Bpo1), ForkCondition::Never);
     }
 
     #[test]
@@ -665,7 +660,7 @@ mod tests {
     #[test]
     fn test_jovian_active() {
         let mut config = RollupConfig::default();
-        assert!(!config.is_interop_active(0));
+        assert!(!config.is_lagoon_active(0));
         config.hardforks.jovian_time = Some(10);
         assert!(config.is_regolith_active(10));
         assert!(config.is_canyon_active(10));
@@ -700,22 +695,57 @@ mod tests {
     }
 
     #[test]
-    fn test_sdm_disabled_after_jovian_and_karst() {
+    fn test_lagoon_active() {
         let mut config = RollupConfig::default();
+        assert!(!config.is_lagoon_active(0));
+        config.hardforks.lagoon_time = Some(10);
+        assert!(config.is_lagoon_active(10));
+        assert!(!config.is_lagoon_active(9));
+    }
+
+    #[test]
+    fn test_first_lagoon_block() {
+        let mut config = RollupConfig { block_time: 2, ..Default::default() };
+        config.hardforks.lagoon_time = Some(120);
+        assert!(!config.is_first_lagoon_block(118));
+        assert!(config.is_first_lagoon_block(120));
+        assert!(!config.is_first_lagoon_block(122));
+    }
+
+    #[test]
+    fn test_interop_feature_tracks_lagoon() {
+        // The interop feature gate rides Lagoon today.
+        let mut config = RollupConfig { block_time: 2, ..Default::default() };
+        config.hardforks.lagoon_time = Some(120);
+        assert_eq!(config.is_interop_active(119), config.is_lagoon_active(119));
+        assert_eq!(config.is_interop_active(120), config.is_lagoon_active(120));
+        assert!(config.is_first_interop_block(120));
+        assert!(!config.is_first_interop_block(122));
+    }
+
+    #[test]
+    fn test_sdm_rides_lagoon() {
+        let mut config = RollupConfig::default();
+        // Jovian/Karst alone must not activate SDM — only Lagoon does.
         config.hardforks.jovian_time = Some(10);
         config.hardforks.karst_time = Some(20);
-
         assert!(config.is_jovian_active(10));
         assert!(!config.is_sdm_active(10));
         assert!(config.is_karst_active(20));
         assert!(!config.is_sdm_active(20));
+
+        // Schedule Lagoon and SDM must follow.
+        config.hardforks.lagoon_time = Some(30);
+        assert!(!config.is_sdm_active(29));
+        assert!(config.is_sdm_active(30));
+        assert!(config.is_sdm_active(31));
     }
 
     #[test]
-    fn test_interop_active() {
+    fn test_lagoon_stacks_prior_forks() {
         let mut config = RollupConfig::default();
-        assert!(!config.is_interop_active(0));
-        config.hardforks.interop_time = Some(10);
+        assert!(!config.is_lagoon_active(0));
+        config.hardforks.lagoon_time = Some(10);
         assert!(config.is_regolith_active(10));
         assert!(config.is_canyon_active(10));
         assert!(config.is_delta_active(10));
@@ -726,8 +756,8 @@ mod tests {
         assert!(!config.is_pectra_blob_schedule_active(10));
         assert!(config.is_isthmus_active(10));
         assert!(config.is_karst_active(10));
-        assert!(config.is_interop_active(10));
-        assert!(!config.is_interop_active(9));
+        assert!(config.is_lagoon_active(10));
+        assert!(!config.is_lagoon_active(9));
     }
 
     #[test]
@@ -745,7 +775,8 @@ mod tests {
                 isthmus_time: Some(90),
                 jovian_time: Some(100),
                 karst_time: Some(110),
-                interop_time: Some(120),
+                keep_karst_upgrade_gas: false,
+                lagoon_time: Some(120),
             },
             block_time: 2,
             ..Default::default()
@@ -806,10 +837,10 @@ mod tests {
         assert!(cfg.is_first_karst_block(110));
         assert!(!cfg.is_first_karst_block(112));
 
-        // Interop
-        assert!(!cfg.is_first_interop_block(118));
-        assert!(cfg.is_first_interop_block(120));
-        assert!(!cfg.is_first_interop_block(122));
+        // Lagoon
+        assert!(!cfg.is_first_lagoon_block(118));
+        assert!(cfg.is_first_lagoon_block(120));
+        assert!(!cfg.is_first_lagoon_block(122));
     }
 
     #[test]
@@ -1025,6 +1056,28 @@ mod tests {
 
         assert_eq!(cfg.block_number_from_timestamp(20), 5);
         assert_eq!(cfg.block_number_from_timestamp(30), 10);
+    }
+
+    #[test]
+    fn test_compute_block_number_from_time_non_zero_genesis() {
+        // OP Mainnet, whose L2 genesis is the last block of the legacy OVM chain.
+        let cfg = RollupConfig {
+            genesis: ChainGenesis {
+                l2: BlockNumHash { number: 105235063, ..Default::default() },
+                l2_time: 1686068903,
+                ..Default::default()
+            },
+            block_time: 2,
+            ..Default::default()
+        };
+
+        assert_eq!(cfg.block_number_from_timestamp(1686068903), 105235063);
+        assert_eq!(cfg.block_number_from_timestamp(1686068905), 105235064);
+        // 1788303126 falls between two blocks.
+        assert_eq!(cfg.block_number_from_timestamp(1788303126), 156352174);
+        assert_eq!(cfg.block_number_from_timestamp(1788303127), 156352175);
+        // A timestamp before genesis clamps to the genesis block.
+        assert_eq!(cfg.block_number_from_timestamp(0), 105235063);
     }
 
     #[cfg(feature = "rollup_config_override")]

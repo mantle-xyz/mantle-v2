@@ -19,12 +19,6 @@ pub use cursor::{
 mod store_v2;
 pub use store_v2::{
     MdbxProofsProviderV2, MdbxProofsStorageV2, V2AccountCursor, V2AccountTrieCursor,
-    V2StorageCursor, V2StorageTrieCursor,
+    V2AccountTrieSnapshotCursor, V2HashedAccountSnapshotCursor, V2HashedStorageSnapshotCursor,
+    V2StorageCursor, V2StorageTrieCursor, V2StorageTrieSnapshotCursor,
 };
-
-use alloy_eips::NumHash;
-
-pub(crate) struct ProofWindowValue {
-    pub earliest: NumHash,
-    pub latest: NumHash,
-}
