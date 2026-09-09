@@ -1,6 +1,11 @@
 //! Post-exec execution extensions.
 
 mod inspector;
+mod null;
+mod refund;
+
+pub use null::NullRefundPolicy;
+pub use refund::PostExecRefundInspector;
 
 use alloc::vec::Vec;
 use alloy_evm::{Database, Evm, EvmEnv, EvmFactory};
@@ -9,31 +14,41 @@ use core::{
     ops::{Deref, DerefMut},
 };
 use op_alloy::consensus::post_exec::SDMGasEntry;
-use revm::{Inspector, inspector::NoOpInspector};
+use revm::{Inspector, context::DBErrorMarker, inspector::NoOpInspector};
 
 pub use inspector::{
-    PostExecCompositeInspector, PostExecExecutedTx, PostExecTxContext, PostExecTxKind,
-    SDMWarmingInspector,
+    PostExecCompositeInspector, PostExecExecutedTx, PostExecRefundEvent, PostExecRefundKind,
+    PostExecTxContext, PostExecTxKind,
 };
 
 use crate::block::{OpBlockExecutor, receipt_builder::OpReceiptBuilder};
 
 /// Extension trait for EVMs that can track post-exec per-transaction warming results.
 pub trait PostExecEvm: alloy_evm::Evm {
+    /// Opaque block-scoped refund state.
+    type Snapshot: Clone;
+
     /// Begin post-exec tracking for the next transaction.
     fn begin_post_exec_tx(&mut self, ctx: PostExecTxContext);
 
     /// Take the extracted post-exec result for the most recently executed transaction.
     fn take_last_post_exec_tx_result(&mut self) -> PostExecExecutedTx;
+
+    /// Snapshot refund state to carry across subblock executors.
+    fn refund_snapshot(&self) -> Self::Snapshot;
+
+    /// Seed refund state captured from a prior subblock.
+    fn seed_refund_snapshot(&mut self, state: Self::Snapshot);
 }
 
 /// Extension trait for EVM factories whose produced EVMs support post-exec tracking.
 ///
-/// This bridges generic custom [`EvmFactory`] implementations into the concrete [`PostExecEvm`]
-/// bound used by the OP block executor. The adapter keeps post-exec capability explicit on the EVM
-/// itself without requiring the compiler to prove that every `EvmFactory::Evm<DB, I>` associated
-/// type directly implements [`PostExecEvm`].
+/// This exposes factory hooks through [`PostExecEvm`] without constraining every generic EVM
+/// associated type directly.
 pub trait PostExecEvmFactoryHooks: EvmFactory {
+    /// Opaque block-scoped refund state produced by this factory.
+    type Snapshot: Clone;
+
     /// Begin post-exec tracking for the next transaction.
     fn begin_post_exec_tx<DB, I>(evm: &mut Self::Evm<DB, I>, ctx: PostExecTxContext)
     where
@@ -42,6 +57,18 @@ pub trait PostExecEvmFactoryHooks: EvmFactory {
 
     /// Take the extracted post-exec result for the most recently executed transaction.
     fn take_last_post_exec_tx_result<DB, I>(evm: &mut Self::Evm<DB, I>) -> PostExecExecutedTx
+    where
+        DB: Database,
+        I: Inspector<Self::Context<DB>>;
+
+    /// Snapshot refund state to carry across subblock executors.
+    fn refund_snapshot<DB, I>(evm: &Self::Evm<DB, I>) -> Self::Snapshot
+    where
+        DB: Database,
+        I: Inspector<Self::Context<DB>>;
+
+    /// Seed refund state captured from a prior subblock.
+    fn seed_refund_snapshot<DB, I>(evm: &mut Self::Evm<DB, I>, state: Self::Snapshot)
     where
         DB: Database,
         I: Inspector<Self::Context<DB>>;
@@ -146,12 +173,22 @@ where
     DB: Database,
     I: Inspector<F::Context<DB>>,
 {
+    type Snapshot = F::Snapshot;
+
     fn begin_post_exec_tx(&mut self, ctx: PostExecTxContext) {
         F::begin_post_exec_tx(&mut self.inner, ctx);
     }
 
     fn take_last_post_exec_tx_result(&mut self) -> PostExecExecutedTx {
         F::take_last_post_exec_tx_result(&mut self.inner)
+    }
+
+    fn refund_snapshot(&self) -> Self::Snapshot {
+        F::refund_snapshot(&self.inner)
+    }
+
+    fn seed_refund_snapshot(&mut self, state: Self::Snapshot) {
+        F::seed_refund_snapshot(&mut self.inner, state);
     }
 }
 
@@ -192,7 +229,7 @@ where
         PostExecEvmAdapter<F::Evm<DB, I>, F, DB, I>;
     type Context<DB: Database> = F::Context<DB>;
     type Tx = F::Tx;
-    type Error<DBError: core::error::Error + Send + Sync + 'static> = F::Error<DBError>;
+    type Error<DBError: DBErrorMarker> = F::Error<DBError>;
     type HaltReason = F::HaltReason;
     type Spec = F::Spec;
     type BlockEnv = F::BlockEnv;
@@ -218,17 +255,50 @@ where
 
 /// Extension trait for block executors that collect post-exec payload entries.
 pub trait PostExecExecutorExt {
+    /// Opaque block-scoped refund state.
+    type Snapshot: Clone;
+
+    /// Returns the accumulated post-exec entries for the current block without clearing them.
+    fn post_exec_entries(&self) -> &[SDMGasEntry];
+
     /// Take the accumulated post-exec entries for the current block.
     fn take_post_exec_entries(&mut self) -> Vec<SDMGasEntry>;
+
+    /// Take the exact per-transaction policy-provided refund events aligned with receipts.
+    fn take_refund_events_by_tx(&mut self) -> Vec<Vec<PostExecRefundEvent>>;
+
+    /// Snapshot refund state to carry across subblock executors.
+    fn refund_snapshot(&self) -> Self::Snapshot;
+
+    /// Seed refund state captured from a prior subblock.
+    fn seed_refund_snapshot(&mut self, state: Self::Snapshot);
 }
 
 impl<E, R, Spec> PostExecExecutorExt for OpBlockExecutor<E, R, Spec>
 where
-    E: alloy_evm::Evm,
+    E: PostExecEvm,
     R: OpReceiptBuilder,
     Spec: alloy_op_hardforks::OpHardforks + Clone,
 {
+    type Snapshot = E::Snapshot;
+
+    fn post_exec_entries(&self) -> &[SDMGasEntry] {
+        Self::post_exec_entries(self)
+    }
+
     fn take_post_exec_entries(&mut self) -> Vec<SDMGasEntry> {
         Self::take_post_exec_entries(self)
+    }
+
+    fn take_refund_events_by_tx(&mut self) -> Vec<Vec<PostExecRefundEvent>> {
+        Self::take_refund_events_by_tx(self)
+    }
+
+    fn refund_snapshot(&self) -> Self::Snapshot {
+        Self::refund_snapshot(self)
+    }
+
+    fn seed_refund_snapshot(&mut self, state: Self::Snapshot) {
+        Self::seed_refund_snapshot(self, state);
     }
 }

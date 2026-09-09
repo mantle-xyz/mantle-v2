@@ -133,6 +133,13 @@ check-no-std:
     alloy-op-evm
     alloy-op-hardforks
 
+    # revm
+    # [MANTLE] op-revm is `#![cfg_attr(not(feature = "std"), no_std)]` and became a workspace
+    # member when it moved in from mantle-xyz/revm; while it was `exclude`d it was never built
+    # at all, so it was missing here. A no_std-only breakage (bare `Vec` with no
+    # `use std::vec::Vec;`) did in fact slip through before this line existed.
+    op-revm
+
     # op-alloy
     op-alloy
     op-alloy-consensus
