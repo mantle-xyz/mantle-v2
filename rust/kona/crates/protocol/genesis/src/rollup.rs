@@ -201,10 +201,11 @@ impl RollupConfig {
     /// The active [`op_revm::OpSpecId`] for the executor.
     pub fn spec_id(&self, timestamp: u64) -> op_revm::OpSpecId {
         if self.is_interop_active(timestamp) {
-            op_revm::OpSpecId::INTEROP
-        // [MANTLE] mantle-elysium op-revm v19 has no `KARST` variant (added in v20).
-        // Skip the KARST arm so post-Karst timestamps fall through to JOVIAN. See
-        // MANTLE_CHANGES.md §2.2 for the wider op-revm v19↔v20 reconciliation rule.
+            op_revm::OpSpecId::LAGOON
+        // [MANTLE] The KARST arm stays commented out on purpose: Mantle does not open any
+        // newly added eth/op hardfork, so post-Karst timestamps must fall through to JOVIAN.
+        // (The original reason — "op-revm v19 has no KARST variant" — is obsolete since the
+        // op-revm 20 bump; the variant now exists but must not become reachable.)
         // } else if self.is_karst_active(timestamp) {
         //     op_revm::OpSpecId::KARST
         } else if self.is_jovian_active(timestamp) {
@@ -251,7 +252,7 @@ impl RollupConfig {
 
         // Standard OP Stack logic
         if self.is_interop_active(timestamp) {
-            op_revm::OpSpecId::INTEROP
+            op_revm::OpSpecId::LAGOON
         } else if self.is_jovian_active(timestamp) {
             op_revm::OpSpecId::JOVIAN
         } else if self.is_isthmus_active(timestamp) {
@@ -638,8 +639,13 @@ impl OpHardforks for RollupConfig {
                 .hardforks
                 .karst_time
                 .map(ForkCondition::Timestamp)
-                .unwrap_or_else(|| self.op_fork_activation(OpHardfork::Interop)),
-            OpHardfork::Interop => self
+                .unwrap_or_else(|| self.op_fork_activation(OpHardfork::Lagoon)),
+            // [MANTLE] Upstream renamed the OP Stack's upgrade #20 from Interop to Lagoon, so
+            // `OpHardfork::Interop` no longer exists in alloy-op-hardforks. This workspace syncs
+            // alloy-* to op-reth/v2.4.2 but deliberately does not sync kona, so the enum variant
+            // is the new name while `RollupConfig`'s field keeps kona's old `interop_time` name.
+            // Same upgrade, same activation timestamp — only the spelling differs.
+            OpHardfork::Lagoon => self
                 .hardforks
                 .interop_time
                 .map(ForkCondition::Timestamp)
@@ -693,7 +699,7 @@ mod tests {
         config.hardforks.karst_time = Some(80);
         assert_eq!(config.spec_id(80), op_revm::OpSpecId::KARST);
         config.hardforks.interop_time = Some(90);
-        assert_eq!(config.spec_id(90), op_revm::OpSpecId::INTEROP);
+        assert_eq!(config.spec_id(90), op_revm::OpSpecId::LAGOON);
     }
 
     #[test]

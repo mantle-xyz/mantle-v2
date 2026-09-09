@@ -43,7 +43,10 @@ pub enum OpTxEnvelope {
     Deposit(Sealed<TxDeposit>),
     /// A [`TxPostExec`] tagged with type 0x7D.
     #[envelope(ty = 0x7D)]
-    #[serde(serialize_with = "crate::post_exec::serde_post_exec_tx_rpc")]
+    #[serde(
+        serialize_with = "crate::post_exec::serde_post_exec_tx_rpc",
+        deserialize_with = "crate::post_exec::serde_post_exec_tx_rpc_de"
+    )]
     PostExec(Sealed<TxPostExec>),
 }
 
@@ -73,6 +76,25 @@ impl OpTransaction for OpTxEnvelope {
 
     fn as_post_exec(&self) -> Option<&Sealed<TxPostExec>> {
         self.as_post_exec()
+    }
+}
+
+// Unused in-tree (callers lower to `OpTxEnvelope` first), but required by downstream chains with
+// their own extended envelope: once that envelope implements `OpTransaction`, it gets
+// `Recovered<_>` for free. The orphan rule forbids the downstream crate from writing this impl
+// itself — both the trait and `Recovered` are foreign there, and the local envelope only appears
+// in a covered position. Do not remove as dead code.
+impl<T: OpTransaction> OpTransaction for alloy_consensus::transaction::Recovered<T> {
+    fn is_deposit(&self) -> bool {
+        self.inner().is_deposit()
+    }
+
+    fn as_deposit(&self) -> Option<&Sealed<TxDeposit>> {
+        self.inner().as_deposit()
+    }
+
+    fn as_post_exec(&self) -> Option<&Sealed<TxPostExec>> {
+        self.inner().as_post_exec()
     }
 }
 

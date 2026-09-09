@@ -248,8 +248,8 @@ impl FromTxWithEncoded<TxDeposit> for OpTx {
             source_hash: tx.source_hash,
             mint: Some(tx.mint),
             is_system_transaction: tx.is_system_transaction,
-            // Mantle BVM_ETH: TxDeposit.eth_value (u128) -> DepositTransactionParts.eth_value (Option<u128>)
-            // Treat 0 as "no mint" -> None; otherwise Some(...).
+            // Mantle BVM_ETH: TxDeposit.eth_value (u128) -> DepositTransactionParts.eth_value
+            // (Option<u128>) Treat 0 as "no mint" -> None; otherwise Some(...).
             eth_value: if tx.eth_value == 0 { None } else { Some(tx.eth_value) },
             eth_tx_value: tx.eth_tx_value,
         };

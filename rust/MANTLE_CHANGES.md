@@ -18,6 +18,22 @@ when synchronizing future upstream changes via `git subtree pull`.
 | Last subtree-pull merge commit | `5a629e1a` ("rust: subtree pull from bridge (sync-kona-client-v1.5.1)") |
 | Rust toolchain | 1.94 (see `rust/rust-toolchain.toml`) |
 
+**In-flight sync (op-reth v2.4.2 / revm 41 line) — NOT a `git subtree pull`.** The baseline
+rows above describe the *bridge-mediated* history and are still correct for it. The
+current in-flight work was synced differently and the next syncer must know:
+
+| Item | Value |
+|---|---|
+| Sync source | **`ethereum-optimism/optimism` at tag `op-reth/v2.4.2`** (tag object `82bf399f4df7a669…`), the crates under `rust/`. *Not* the bridge repo: the bridge has only `main` + `sync-kona-client-v1.5.1` and its newest tag is still `rust-kona-client-v1.5.1`. |
+| Evidence for the base | Three markers that exist **only** after v2.4.2 are absent from this tree: `op-revm/src/lib.rs` does not re-export `encoded_tx_da_footprint` / `tx_da_footprint`; `alloy-op-evm/src/tests.rs` does not exist; `noop_post_exec_result` does not appear. `alloy-op-evm/src/block/mod.rs` also keeps v2.4.2's `estimate_tx_compressed_size(..).saturating_div(1_000_000)` DA-footprint form rather than `develop`'s helper refactor. |
+| Residual uncertainty | The exact source SHA was **not recorded at sync time**. The markers above only bound it at *≤ v2.4.2-era*; an intermediate ref between `op-reth/v2.4.2` and `develop` cannot be excluded. **Record the SHA next time.** |
+| Method | **Selective 3-way merge of the vendored crates**, not `git subtree pull` and not a whole-directory replacement. Proof it was selective: `rust/UPDATING-RETH.md` exists upstream but **not here**, and `rust/deny.toml` matches *neither* v2.4.2 nor develop (it is still the older bridge-era Mantle state). So there is no subtree merge commit and no single upstream tree to diff against. |
+| Version anchor cross-check | That tree declares `revm = "41.0.0"`, `op-revm = { version = "20.0.0", path = "op-revm/" }`, `revm-inspectors = "0.41.0"`, `alloy-evm = "0.37.0"`, `alloy-op-evm = "0.32.0"`, toolchain `1.95`. Diffing `rust/Cargo.toml` between `op-reth/v2.4.2` and `develop` shows 25 changed lines — all in kona/sp1 members, `lokahi`, `kona-safedb`, `sp1-sdk`, `opentelemetry`, `libp2p`, `lru`, `cargo_metadata`, `num-format` — and **not one `revm-*` / `alloy-*` line**. |
+| ⚠️ `op-revm` version trap | optimism's in-tree `op-revm` is a **path crate whose version string (20.0.0) is behind its content**. crates.io's published `op-revm 20.0.0` is *older* and **lacks** `catch_error_tx_error` / `catch_error_failed_deposit` / `discard_and_surface_error` / the `PostExec` arm. **Do not use the crates.io crate as "upstream" when auditing** — use the optimism tree at the anchor tag. |
+| ⚠️ `?ref=` trap | `gh api repos/ethereum-optimism/optimism/contents/rust/...` **without `?ref=`** returns the default branch, which is `develop`, not the anchor tag. An audit that omits `?ref=` will silently compare against `develop` and mis-attribute the base. |
+| New workspace members | `op-revm/` (moved in from `mantle-xyz/revm`) and `revm-ee-tests/` (new upstream crate; 26 `op_revm_testdata/*.json` regenerated against revm 41). `exclude = ["op-revm"]` is gone. |
+
+
 ### Migration status
 
 | Phase | Scope | Status |
@@ -47,7 +63,19 @@ revm-precompile, revm-primitives, revm-state, op-revm
 
 `mantle-elysium` ships revm v38 plus Mantle protocol changes (ARSIA/JOVIAN hardforks,
 BVM_ETH, token_ratio, DA footprint, Arsia fee validation). This avoids re-implementing
-those changes inside `rust/op-revm/`; that subtree is excluded from the workspace.
+those changes inside `rust/op-revm/`.
+
+> **Superseded by the op-reth v2.4.2 / revm 41 line (in progress).** `op-revm` is no
+> longer an excluded orphan subtree: upstream bluealloy removed `crates/op-revm` after
+> v107, so it now lives here as the workspace member `op-revm/` (path crate, version
+> 20.0.0) and is patched in as `op-revm = { path = "op-revm/" }`. Consequences that
+> matter for a future sync: (a) it is compiled for the first time, so lints/`no_std`
+> now apply to it — it has been added to `justfile`'s `check-no-std`
+> `no_std_packages`; (b) its own `ee-tests` moved to the new workspace member
+> `revm-ee-tests/`; (c) the 26 `op_revm_testdata/*.json` snapshots were regenerated
+> against revm 41 (the imported ones encoded a third revm's `ResultGas` shape). See
+> the op-reth v2.2.1 -> v2.4.2 upgrade runbook under `rde-v3/docs/`, sections 4.3
+> and 5.6.
 
 `reth-revm` is a reth-internal wrapper (from `paradigmxyz/reth`); not a member of the
 bluealloy revm family. Its internal `revm` dependency is still patched to mantle-elysium
@@ -61,10 +89,13 @@ via `[patch.crates-io]`, so the actual EVM execution path is 100% on mantle-elys
 | op-revm major version | v20 | v19 ⚠️ | Adapt Mantle consumers to v19 API |
 | `OpSpecId` variants | Includes `KARST` | No `KARST`; includes `OSAKA` + `ARSIA` | Replace KARST references with OSAKA/JOVIAN/ARSIA fallbacks or comment them out |
 
-### 2.3 alloy-evm sourced from upstream alloy-rs/evm v0.34.0 (crates.io)
+### 2.3 alloy-evm sourced from upstream alloy-rs/evm (crates.io)
 
 `alloy-evm` is **not** patched in `[patch.crates-io]`; it resolves straight from
-crates.io at `0.34.0`, which is pristine upstream `alloy-rs/evm` v0.34.0.
+crates.io, i.e. pristine upstream `alloy-rs/evm`. Phase 5 pinned `0.34.0`; the
+op-reth v2.4.2 / revm 41 line moved it to `0.37.x` (whatever op-reth v2.4.2's
+`Cargo.toml` says — that file is the version anchor, see §1). Keep this section
+version-agnostic; the pin lives in `Cargo.toml`, not here.
 
 **History (Phase 4 → reverted in Phase 5).** Previously `alloy-evm` was redirected to the
 `mantle-v0.34.0` branch of `mantle-xyz/evm`, a fork whose only delta over upstream
@@ -122,8 +153,8 @@ grep -rn "\[MANTLE\]" rust/ --include="*.rs" --include="*.toml"
 | File | Change |
 |---|---|
 | `Cargo.toml` | `[patch.crates-io]` redirects all 13 revm-family crates to `mantle-xyz/revm@mantle-elysium`. |
-| `Cargo.toml` | Workspace `members` drops `"op-revm/"`; `exclude = ["op-revm"]` keeps the orphan subtree out of the build. |
-| `Cargo.toml` | `alloy-evm` is **not** patched — resolves from crates.io = upstream alloy-rs/evm v0.34.0 (Phase 5; see §2.3). |
+| `Cargo.toml` | Workspace `members` drops `"op-revm/"`; `exclude = ["op-revm"]` keeps the orphan subtree out of the build. **Superseded on the revm-41 line** — `op-revm/` and `revm-ee-tests/` are now `members`, the `exclude` is gone, and `op-revm` is patched to `{ path = "op-revm/" }`. See §2.1's note. |
+| `Cargo.toml` | `alloy-evm` is **not** patched — resolves from crates.io = upstream alloy-rs/evm. Was v0.34.0 (Phase 5; see §2.3); **on the revm-41 line it is v0.37.x**, aligned to op-reth v2.4.2 together with 35 other `alloy-*` crates. Note `alloy-op-evm` is *not* released in lockstep — its latest crates.io version is 0.32.0, which is what the vendored copy here declares; that is current, not stale. |
 | `Cargo.toml` | Workspace `members` / `default-members` drop every `op-reth/*` entry, and the `reth-optimism-* / op-reth / reth-op` block is removed from `[workspace.dependencies]`; the `op-reth/` subtree is deleted (Phase 5; EL node now lives in `mantle-xyz/reth`, see §3.9 / §3.11). |
 
 ### 3.2 op-alloy — TxDeposit gains BVM_ETH fields + L1BlockInfo gains token_ratio

@@ -32,6 +32,12 @@ pub trait OpTxTr: Transaction {
     fn is_deposit(&self) -> bool {
         self.tx_type() == DEPOSIT_TRANSACTION_TYPE
     }
+
+    /// Returns the eth value of the deposit transaction
+    fn eth_value(&self) -> Option<u128>;
+
+    /// Returns the eth tx value of the deposit transaction
+    fn eth_tx_value(&self) -> Option<u128>;
 }
 
 /// Optimism transaction.
@@ -202,6 +208,14 @@ impl<T: Transaction> OpTxTr for OpTransaction<T> {
     fn is_system_transaction(&self) -> bool {
         self.deposit.is_system_transaction
     }
+
+    fn eth_value(&self) -> Option<u128> {
+        self.deposit.eth_value.filter(|&v| v != 0)
+    }
+
+    fn eth_tx_value(&self) -> Option<u128> {
+        self.deposit.eth_tx_value.filter(|&v| v != 0)
+    }
 }
 
 /// Builder for constructing [`OpTransaction`] instances
@@ -358,18 +372,25 @@ mod tests {
 
     #[test]
     fn test_deposit_transaction_fields() {
-        let base_tx = TxEnv::builder().gas_limit(10).gas_price(100).gas_priority_fee(Some(5));
-
-        let op_tx = OpTransaction::builder()
-            .base(base_tx)
-            .enveloped_tx(None)
-            .not_system_transaction()
-            .mint(0u128)
-            .source_hash(B256::from([1u8; 32]))
-            .build()
-            .unwrap();
-        // Verify transaction type (deposit transactions should have tx_type based on OpSpecId)
-        // The tx_type is derived from the transaction structure, not set manually
+        let op_tx = OpTransaction {
+            base: TxEnv {
+                tx_type: DEPOSIT_TRANSACTION_TYPE,
+                gas_limit: 10,
+                gas_price: 100,
+                gas_priority_fee: Some(5),
+                ..Default::default()
+            },
+            enveloped_tx: None,
+            deposit: DepositTransactionParts {
+                is_system_transaction: false,
+                mint: Some(0u128),
+                source_hash: B256::default(),
+                eth_value: Some(100),
+                eth_tx_value: Some(100),
+            },
+        };
+        // Verify transaction type
+        assert_eq!(op_tx.tx_type(), DEPOSIT_TRANSACTION_TYPE);
         // Verify common fields access
         assert_eq!(op_tx.gas_limit(), 10);
         assert_eq!(op_tx.kind(), revm::primitives::TxKind::Call(Address::ZERO));
@@ -377,5 +398,22 @@ mod tests {
         // price
         assert_eq!(op_tx.effective_gas_price(90), 100);
         assert_eq!(op_tx.max_fee_per_gas(), 100);
+    }
+
+    #[test]
+    fn test_eth_value_filtering() {
+        let op_tx = OpTransaction {
+            base: TxEnv::default(),
+            enveloped_tx: None,
+            deposit: DepositTransactionParts {
+                source_hash: B256::ZERO,
+                mint: None,
+                is_system_transaction: false,
+                eth_tx_value: Some(0),
+                eth_value: Some(0),
+            },
+        };
+        assert_eq!(op_tx.eth_value(), None);
+        assert_eq!(op_tx.eth_tx_value(), None);
     }
 }
