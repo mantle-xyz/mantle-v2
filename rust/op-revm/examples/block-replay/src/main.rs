@@ -4,7 +4,8 @@
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 use alloy_consensus::{
-    Eip658Value, Receipt, TxEip1559, TxEip2930, TxEip7702, TxLegacy, transaction::SignerRecoverable,
+    Eip658Value, Receipt, ReceiptWithBloom, TxEip1559, TxEip2930, TxEip7702, TxLegacy,
+    proofs::calculate_receipt_root, transaction::SignerRecoverable,
 };
 use alloy_eips::{BlockId, Decodable2718, Typed2718};
 use alloy_op_hardforks::{
@@ -16,7 +17,7 @@ use alloy_provider::{Provider, ProviderBuilder, network::primitives::BlockTransa
 use alloy_rpc_types::eth::EIP1186AccountProofResponse;
 use dotenv::dotenv;
 use futures::stream::{self, StreamExt};
-use op_alloy_consensus::{OpTxEnvelope, TxDeposit};
+use op_alloy_consensus::{OpDepositReceipt, OpReceiptEnvelope, OpTxEnvelope, TxDeposit};
 use op_alloy_network::Optimism;
 use op_revm::{
     OpTransaction,
@@ -27,7 +28,7 @@ use op_revm::{
 use revm::{
     Context, ExecuteCommitEvm,
     context::tx::TxEnv,
-    context_interface::either::Either,
+    context_interface::{ContextTr, JournalTr, either::Either},
     database::{AlloyDB, CacheDB, StateBuilder},
     database_interface::WrapDatabaseAsync,
     primitives::{KECCAK_EMPTY, TxKind},
@@ -280,6 +281,12 @@ async fn process_block(
     // Running cumulative gas used, mirroring how op-reth fills receipts.
     let mut cumulative_gas_used: u64 = 0;
     let mut all_receipts_match = true;
+    // [MANTLE] Collected to compute `receiptsRoot` and compare it with the block header.
+    // The per-field checks below (status / cumulativeGasUsed / logs / logsBloom) do NOT
+    // cover the RLP encoding, the transaction-type byte, or the deposit-only
+    // `depositNonce` / `depositReceiptVersion` fields -- all three land in the root and
+    // nowhere else.
+    let mut local_receipts: Vec<OpReceiptEnvelope> = Vec::with_capacity(transactions.len());
 
     for tx_hash in transactions.iter() {
         logln!(out, "tx_hash: {tx_hash}");
@@ -291,13 +298,33 @@ async fn process_block(
             .expect("Block not found");
         let tx = OpTxEnvelope::decode_2718(&mut raw_tx.as_ref()).unwrap();
 
-        let optx = prepare_tx_env(&tx, tx.recover_signer().unwrap(), raw_tx)?;
+        let caller = tx.recover_signer().unwrap();
+        let optx = prepare_tx_env(&tx, caller, raw_tx)?;
         evm.0.modify_tx(|etx| {
             *etx = optx;
         });
 
         let is_deposit = tx.is_deposit();
         logln!(out, "is_deposit: {is_deposit}");
+
+        // [MANTLE] `depositNonce` must be DERIVED, not read back from the canonical receipt
+        // -- reading it would make the root comparison circular. Read BEFORE executing:
+        // verified on mainnet block 89,718,944 that the receipt's `depositNonce` (143581)
+        // equals the sender's nonce in the parent block, and one less than its nonce after
+        // this block.
+        let deposit_nonce = if tx.is_deposit() {
+            Some(
+                evm.0
+                    .ctx
+                    .journal_mut()
+                    .load_account(caller)
+                    .map_err(|e| anyhow::anyhow!("block {block_number}: load caller: {e:?}"))?
+                    .info
+                    .nonce,
+            )
+        } else {
+            None
+        };
 
         let res = evm.replay_commit();
 
@@ -329,6 +356,14 @@ async fn process_block(
             logs: receipt_logs.clone(),
         };
         let local_bloom = local_receipt.bloom_slow();
+
+        // [MANTLE] Build the typed envelope so `receiptsRoot` can be derived. The type byte
+        // and, for deposits, `depositNonce` / `depositReceiptVersion` are part of the RLP and
+        // are not checked by any of the per-field comparisons below.
+        // `deposit_receipt_version` is `None` on Mantle -- see MANTLE_CHANGES.md 3.7
+        // (commit 760129f), and confirmed by the canonical receipts, which carry
+        // `depositNonce` but no `depositReceiptVersion`.
+        local_receipts.push(build_receipt_envelope(&tx, local_receipt.clone(), local_bloom)?);
         let local_bloom_hex = format!("0x{}", alloy_primitives::hex::encode(local_bloom));
 
         // Fetch the canonical on-chain receipt and compare field-by-field.
@@ -363,7 +398,26 @@ async fn process_block(
         // and a wrong topic. Do not reuse op-revm's fixture-test unordered matching here.
         let logs_ok = compare_logs_ordered(&receipt_logs, oc["logs"].as_array());
         let bloom_ok = local_bloom_hex.eq_ignore_ascii_case(&oc_bloom);
-        let receipt_ok = status_ok && gas_ok && cum_ok && logs_ok && bloom_ok;
+        // [MANTLE] `depositNonce` is not in the receipt RLP (see `build_receipt_envelope`),
+        // so `receiptsRoot` cannot check it. Compare it directly: the harness derives it from
+        // the sender's pre-execution nonce and the canonical receipt reports it.
+        let deposit_nonce_ok = match deposit_nonce {
+            Some(local) => {
+                let onchain = oc["depositNonce"]
+                    .as_str()
+                    .and_then(|v| u64::from_str_radix(v.trim_start_matches("0x"), 16).ok());
+                let ok = onchain == Some(local);
+                logln!(
+                    out,
+                    "  depNonce local={local} onchain={} {}",
+                    onchain.map_or_else(|| "-".to_string(), |v| v.to_string()),
+                    if ok { "✅" } else { "❌" }
+                );
+                ok
+            }
+            None => true,
+        };
+        let receipt_ok = status_ok && gas_ok && cum_ok && logs_ok && bloom_ok && deposit_nonce_ok;
         all_receipts_match &= receipt_ok;
 
         logln!(out, "RECEIPT_CHECK tx={tx_hash} is_deposit={is_deposit}");
@@ -405,11 +459,24 @@ async fn process_block(
         logln!(out, "  --- receipt {}", if receipt_ok { "MATCH✅" } else { "MISMATCH❌" });
     }
 
+    // [MANTLE] The claim that used to sit here -- "receiptsRoot will equal on-chain" -- was
+    // never verified: the four per-field checks miss the RLP encoding, the type byte and the
+    // deposit-only fields. Compute the root and compare it with the header instead.
+    let local_receipts_root = calculate_receipt_root(&local_receipts);
+    let root_ok = local_receipts_root == block.header.receipts_root;
+    all_receipts_match &= root_ok;
+    logln!(
+        out,
+        "  receiptsRoot local={local_receipts_root} onchain={} {}",
+        block.header.receipts_root,
+        if root_ok { "✅" } else { "❌" }
+    );
+
     logln!(
         out,
         "==== BLOCK {block_number} ALL RECEIPTS {} ====",
         if all_receipts_match {
-            "MATCH ✅ (receiptsRoot will equal on-chain)"
+            "MATCH ✅ (receiptsRoot verified against the header)"
         } else {
             "MISMATCH ❌"
         }
@@ -493,6 +560,50 @@ fn record_progress(
     writeln!(f, "{block} {outcome}")?;
     f.flush()?;
     Ok(())
+}
+
+/// Wrap a receipt in its typed OP envelope so `calculate_receipt_root` produces the same
+/// RLP the chain does.
+///
+/// `[MANTLE]` `deposit_receipt_version` is always `None` here: Mantle sets it to `None`
+/// (MANTLE_CHANGES.md 3.7, commit 760129f) and the canonical receipts confirm it -- they
+/// carry `depositNonce` but no `depositReceiptVersion`.
+fn build_receipt_envelope(
+    tx: &OpTxEnvelope,
+    receipt: Receipt,
+    bloom: alloy_primitives::Bloom,
+) -> anyhow::Result<OpReceiptEnvelope> {
+    let with_bloom = ReceiptWithBloom { receipt, logs_bloom: bloom };
+    Ok(match tx {
+        OpTxEnvelope::Legacy(_) => OpReceiptEnvelope::Legacy(with_bloom),
+        OpTxEnvelope::Eip2930(_) => OpReceiptEnvelope::Eip2930(with_bloom),
+        OpTxEnvelope::Eip1559(_) => OpReceiptEnvelope::Eip1559(with_bloom),
+        OpTxEnvelope::Eip7702(_) => OpReceiptEnvelope::Eip7702(with_bloom),
+        OpTxEnvelope::Deposit(_) => OpReceiptEnvelope::Deposit(ReceiptWithBloom {
+            receipt: OpDepositReceipt {
+                inner: with_bloom.receipt,
+                // [MANTLE] BOTH must be `None`, and they are bound together: op-alloy's
+                // `rlp_encode_fields_with_bloom` emits each field only when it is `Some`, so
+                // a `Some` nonce adds a field to the receipt RLP and changes `receiptsRoot`.
+                // Canyon introduced `depositReceiptVersion` precisely to stop the
+                // Regolith-era nonce from entering the root, and Mantle's canonical receipts
+                // carry `depositNonce` in the RPC response but no `depositReceiptVersion` --
+                // so the nonce is NOT part of the root here. Measured: filling `Some(nonce)`
+                // produced 0xb6ba6253... for block 89,718,944 against the header's
+                // 0x9e201354....
+                //
+                // The derived nonce is still verified, just not through the root -- see
+                // `deposit_nonce_ok` in the per-transaction comparison.
+                deposit_nonce: None,
+                deposit_receipt_version: None,
+            },
+            logs_bloom: with_bloom.logs_bloom,
+        }),
+        OpTxEnvelope::PostExec(_) => anyhow::bail!(
+            "SDM PostExec receipt encountered; SDM is Karst+ and Mantle registers neither \
+             Karst nor Lagoon, so this should be unreachable"
+        ),
+    })
 }
 
 /// Byte-for-byte, order-sensitive comparison of locally produced logs against the canonical
