@@ -7,7 +7,11 @@ use alloy_consensus::{
     Eip658Value, Receipt, ReceiptWithBloom, Transaction as _, TxEip1559, TxEip2930, TxEip7702,
     TxLegacy, proofs::calculate_receipt_root, transaction::SignerRecoverable,
 };
-use alloy_eips::{BlockId, Decodable2718, Typed2718};
+use alloy_eips::{
+    BlockId, Decodable2718, Typed2718,
+    eip2935::{HISTORY_SERVE_WINDOW, HISTORY_STORAGE_ADDRESS},
+    eip4788::BEACON_ROOTS_ADDRESS,
+};
 use alloy_op_hardforks::{
     MANTLE_MAINNET_ARSIA_TIMESTAMP, MANTLE_MAINNET_LIMB_TIMESTAMP, MANTLE_MAINNET_SKADI_TIMESTAMP,
     MANTLE_SEPOLIA_ARSIA_TIMESTAMP, MANTLE_SEPOLIA_LIMB_TIMESTAMP, MANTLE_SEPOLIA_SKADI_TIMESTAMP,
@@ -38,7 +42,10 @@ use revm::{
     context_interface::{ContextTr, JournalTr, either::Either},
     database::{AlloyDB, CacheDB, StateBuilder},
     database_interface::{DatabaseRef, WrapDatabaseAsync},
-    primitives::{KECCAK_EMPTY, StorageKey, StorageValue, TxKind},
+    primitives::{
+        KECCAK_EMPTY, StorageKey, StorageValue, TxKind,
+        eip4844::BLOB_BASE_FEE_UPDATE_FRACTION_PRAGUE, hardfork::SpecId,
+    },
     state::{AccountInfo, Bytecode},
 };
 use serde_json::Value;
@@ -53,6 +60,8 @@ const DEFAULT_BLOCK_TIMEOUT_SECS: u64 = 300;
 const TCP_KEEPALIVE_SECS: u64 = 30;
 /// Recycle pooled connections; a long run otherwise keeps stale ones around.
 const POOL_IDLE_TIMEOUT_SECS: u64 = 60;
+/// EIP-4788 ring-buffer length. Not exported by `alloy-eips`.
+const BEACON_ROOTS_HISTORY_BUFFER_LENGTH: u64 = 8191;
 /// Consecutive block failures before the shard gives up. A node that has gone away fails
 /// every block; the progress file makes resuming cheap once it is back.
 const MAX_CONSECUTIVE_ERRORS: usize = 50;
@@ -367,7 +376,43 @@ async fn process_block(
     // SAFETY: This cannot fail since this is in the top-level tokio runtime
 
     let state_db = WrapDatabaseAsync::new(AlloyDB::new(client.clone(), prev_id)).unwrap();
-    let cache_db: CacheDB<_> = CacheDB::new(AbsentIfEmpty(state_db));
+    let mut cache_db: CacheDB<_> = CacheDB::new(AbsentIfEmpty(state_db));
+
+    // Pre-block system writes. A node applies these before any transaction, so a replay
+    // that starts from the parent state and only executes transactions feeds the previous
+    // block's values to anything that reads them. Same shape as an unset `prevrandao`:
+    // identical gas, a different result, so no gas mismatch points at it.
+    //
+    // Writing the storage slots is equivalent to the system call: both predeploys reject
+    // every non-system caller, so nothing but this write can change them. That also makes
+    // the result checkable -- these slots must equal what the node reports for this block.
+    let eth_spec = spec.into_eth_spec();
+    if eth_spec.is_enabled_in(SpecId::CANCUN) &&
+        let Some(parent_beacon_root) = block.header.parent_beacon_block_root
+    {
+        // EIP-4788: timestamp at `timestamp % N`, parent beacon root at `timestamp % N + N`.
+        let idx = block.header.timestamp % BEACON_ROOTS_HISTORY_BUFFER_LENGTH;
+        cache_db.insert_account_storage(
+            BEACON_ROOTS_ADDRESS,
+            StorageKey::from(idx),
+            StorageValue::from(block.header.timestamp),
+        )?;
+        cache_db.insert_account_storage(
+            BEACON_ROOTS_ADDRESS,
+            StorageKey::from(idx + BEACON_ROOTS_HISTORY_BUFFER_LENGTH),
+            StorageValue::from_be_bytes(parent_beacon_root.0),
+        )?;
+    }
+    if eth_spec.is_enabled_in(SpecId::PRAGUE) {
+        // EIP-2935: parent block hash at `(block.number - 1) % HISTORY_SERVE_WINDOW`.
+        let idx = (block.header.number - 1) % HISTORY_SERVE_WINDOW as u64;
+        cache_db.insert_account_storage(
+            HISTORY_STORAGE_ADDRESS,
+            StorageKey::from(idx),
+            StorageValue::from_be_bytes(block.header.parent_hash.0),
+        )?;
+    }
+
     let mut state = StateBuilder::new_with_database(cache_db).build();
     let ctx = Context::op()
         .with_db(&mut state)
@@ -384,6 +429,14 @@ async fn process_block(
             // the same, so a contract that hashes it produces a different log topic with
             // matching gas -- a `receiptsRoot` mismatch with no gas mismatch to point at it.
             b.prevrandao = Some(block.header.mix_hash);
+            // Mantle's headers carry `excessBlobGas = 0`, which happens to equal revm's
+            // default, so this changes nothing today -- but the value belongs to the header,
+            // not to a default. `slot_num` is deliberately left alone: EIP-7843 arrives with
+            // Amsterdam and Mantle's top fork maps to `SpecId::OSAKA`, so nothing reads it.
+            b.set_blob_excess_gas_and_price(
+                block.header.excess_blob_gas.unwrap_or_default(),
+                BLOB_BASE_FEE_UPDATE_FRACTION_PRAGUE,
+            );
         })
         .modify_cfg_chained(|c| {
             c.chain_id = chain_id;
