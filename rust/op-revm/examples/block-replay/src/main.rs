@@ -111,6 +111,29 @@ impl<DB: DatabaseRef> DatabaseRef for AbsentIfEmpty<DB> {
     }
 }
 
+/// The endpoint in a form that is safe to log.
+///
+/// Scheme, host and port are what an operator needs and carry nothing secret. The rest is
+/// dropped unless the path is empty, because a proxied endpoint can put a bearer token in
+/// the path -- and a credential written to a log outlives the log. Erring towards dropping
+/// costs a path; erring the other way costs the token. A direct node URL has no path, so
+/// the common case still prints in full.
+fn loggable_endpoint(url: &reqwest::Url) -> String {
+    let host = url.host_str().unwrap_or("<unparsed-host>");
+    let mut out = match url.port() {
+        Some(port) => format!("{}://{host}:{port}", url.scheme()),
+        None => format!("{}://{host}", url.scheme()),
+    };
+    let bare = url.path().trim_matches('/').is_empty() &&
+        url.query().is_none() &&
+        url.username().is_empty() &&
+        url.password().is_none();
+    if !bare {
+        out.push_str("/<redacted>");
+    }
+    out
+}
+
 /// Buffer one block's output instead of printing it. With concurrent workers, direct
 /// `println!` from inside a block interleaves with every other in-flight block and the log
 /// becomes unreadable -- so each block builds its own buffer and the driver emits it whole.
@@ -153,11 +176,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // Keep a loggable form of the endpoint before the URL is consumed; see the startup line.
-    let endpoint = match (rpc_url.host_str(), rpc_url.port_or_known_default()) {
-        (Some(host), Some(port)) => format!("{host}:{port}"),
-        (Some(host), None) => host.to_string(),
-        _ => "<unparsed>".to_string(),
-    };
+    let endpoint = loggable_endpoint(&rpc_url);
 
     // Create a provider
     let client = ProviderBuilder::<_, _, Optimism>::default()
@@ -1241,4 +1260,45 @@ async fn verify_state_with_plain_reads<DB>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::loggable_endpoint;
+
+    #[track_caller]
+    fn check(url: &str, expected: &str) {
+        assert_eq!(loggable_endpoint(&url.parse().unwrap()), expected, "for {url}");
+    }
+
+    #[test]
+    fn direct_endpoints_are_logged_in_full() {
+        check(
+            "http://mantle-op-reth-rpc41.mainnet-qa1:8545",
+            "http://mantle-op-reth-rpc41.mainnet-qa1:8545",
+        );
+        check(
+            "http://mantle-op-reth-rpc41.mainnet-qa1:8545/",
+            "http://mantle-op-reth-rpc41.mainnet-qa1:8545",
+        );
+        check("https://rpc.example.org", "https://rpc.example.org");
+    }
+
+    #[test]
+    fn anything_that_could_carry_a_credential_is_redacted() {
+        // A token in the path, which is what an authenticating proxy does.
+        check(
+            "https://proxy.example.org/target/node:8545/eyJhbGciOiJFZERTQSJ9.e30.sig",
+            "https://proxy.example.org/<redacted>",
+        );
+        // A key in the path, the shape most hosted providers use.
+        check("https://eth.example.org/v2/0123456789abcdef", "https://eth.example.org/<redacted>");
+        // A key in the query.
+        check(
+            "https://eth.example.org/?apikey=0123456789abcdef",
+            "https://eth.example.org/<redacted>",
+        );
+        // Credentials in userinfo.
+        check("https://user:pass@eth.example.org", "https://eth.example.org/<redacted>");
+    }
 }
