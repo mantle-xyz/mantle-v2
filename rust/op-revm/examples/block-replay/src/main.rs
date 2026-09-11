@@ -53,6 +53,9 @@ const DEFAULT_BLOCK_TIMEOUT_SECS: u64 = 300;
 const TCP_KEEPALIVE_SECS: u64 = 30;
 /// Recycle pooled connections; a long run otherwise keeps stale ones around.
 const POOL_IDLE_TIMEOUT_SECS: u64 = 60;
+/// Consecutive block failures before the shard gives up. A node that has gone away fails
+/// every block; the progress file makes resuming cheap once it is back.
+const MAX_CONSECUTIVE_ERRORS: usize = 50;
 /// Retries per request. A read is idempotent, so the only cost of retrying is latency.
 const MAX_RPC_RETRIES: u32 = 5;
 /// Fixed base delay before the first retry, in milliseconds.
@@ -226,6 +229,7 @@ async fn main() -> anyhow::Result<()> {
     let started = Instant::now();
     let mut mismatched: Vec<u64> = Vec::new();
     let mut errored: Vec<u64> = Vec::new();
+    let mut consecutive_errors = 0usize;
     let mut n = 0usize;
 
     let mut stream = stream::iter(todo.iter().copied())
@@ -269,21 +273,33 @@ async fn main() -> anyhow::Result<()> {
         n += 1;
         match res {
             Ok(true) => {
+                consecutive_errors = 0;
                 record_progress(&progress, block, "OK")?;
                 if verbose {
                     print!("{out}");
                 }
             }
             Ok(false) => {
+                consecutive_errors = 0;
                 mismatched.push(block);
                 record_progress(&progress, block, "MISMATCH")?;
                 println!("{out}");
             }
             Err(e) => {
-                // A failing block is a finding, not a reason to abandon the range.
+                // A failing block is a finding, not a reason to abandon the range -- but a
+                // reference node that has gone away fails every block, and marking millions
+                // of them ERROR is worse than stopping.
                 println!("{out}\n==== BLOCK {block} ERROR ====\n{e}");
                 errored.push(block);
                 record_progress(&progress, block, "ERROR")?;
+                consecutive_errors += 1;
+                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                    anyhow::bail!(
+                        "aborting: {consecutive_errors} consecutive block failures, last at \
+                         {block}. The reference node is probably unreachable; the progress \
+                         file lets this resume once it is back."
+                    );
+                }
             }
         }
         if n % 100 == 0 || n == todo.len() {
@@ -324,12 +340,14 @@ async fn process_block(
     client: impl Provider<Optimism> + Clone,
     out: &mut String,
 ) -> anyhow::Result<bool> {
-    // Fetch the transaction-rich block
+    // Fetch the transaction-rich block. Errors, not panics: a reference node that goes
+    // away mid-run would otherwise kill the whole shard, bypassing the per-block error
+    // handling that exists precisely so a long range survives a transient outage.
     let block = client
         .get_block_by_number(block_number.into())
         .await
-        .expect("Failed to get parent block")
-        .expect("Block not found");
+        .map_err(|e| anyhow::anyhow!("block {block_number}: fetch failed: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("block {block_number}: not found"))?;
 
     // Pick the fork from the block's own timestamp. `OP_SPEC` is only an override
     // for experiments -- a range that crosses a fork boundary cannot be replayed with one
@@ -361,6 +379,11 @@ async fn process_block(
             b.difficulty = block.header.difficulty;
             b.gas_limit = block.header.gas_limit;
             b.basefee = block.header.base_fee_per_gas.unwrap_or_default();
+            // `block.prevrandao` is post-Merge randomness, not a derived value: leaving it
+            // unset feeds the EVM zero instead of the header's `mixHash`. Execution costs
+            // the same, so a contract that hashes it produces a different log topic with
+            // matching gas -- a `receiptsRoot` mismatch with no gas mismatch to point at it.
+            b.prevrandao = Some(block.header.mix_hash);
         })
         .modify_cfg_chained(|c| {
             c.chain_id = chain_id;
