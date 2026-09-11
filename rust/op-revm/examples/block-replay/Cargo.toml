@@ -32,8 +32,10 @@ alloy-eips.workspace = true
 alloy-op-hardforks.workspace = true
 alloy-primitives.workspace = true
 alloy-provider = { workspace = true, default-features = true }
-alloy-rpc-types = { workspace = true, features = ["eth"] }
-alloy-trie.workspace = true
+# Needed to build the RPC client by hand instead of `connect_http`, so that a request
+# timeout, retries and TCP keepalive can be set -- see the comment at the call site.
+alloy-rpc-client.workspace = true
+reqwest.workspace = true
 
 anyhow.workspace = true
 futures.workspace = true

@@ -1,20 +1,27 @@
-//! Example that show how to replay a block and trace the execution of each transaction.
-//!
-//! The EIP3155 trace of each transaction is saved into file `traces/{tx_number}.json`.
+//! Replays a range of Mantle blocks through the local `op-revm` and compares receipts,
+//! `receiptsRoot`, logs, deposit nonces and post-state against a reference archive node.
+//! Configured entirely through the environment; see `.env.example`.
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 use alloy_consensus::{
-    Eip658Value, Receipt, ReceiptWithBloom, TxEip1559, TxEip2930, TxEip7702, TxLegacy,
-    proofs::calculate_receipt_root, transaction::SignerRecoverable,
+    Eip658Value, Receipt, ReceiptWithBloom, Transaction as _, TxEip1559, TxEip2930, TxEip7702,
+    TxLegacy, proofs::calculate_receipt_root, transaction::SignerRecoverable,
 };
 use alloy_eips::{BlockId, Decodable2718, Typed2718};
 use alloy_op_hardforks::{
     MANTLE_MAINNET_ARSIA_TIMESTAMP, MANTLE_MAINNET_LIMB_TIMESTAMP, MANTLE_MAINNET_SKADI_TIMESTAMP,
     MANTLE_SEPOLIA_ARSIA_TIMESTAMP, MANTLE_SEPOLIA_LIMB_TIMESTAMP, MANTLE_SEPOLIA_SKADI_TIMESTAMP,
 };
-use alloy_primitives::{Address, B256, Bytes, U256};
-use alloy_provider::{Provider, ProviderBuilder, network::primitives::BlockTransactions};
-use alloy_rpc_types::eth::EIP1186AccountProofResponse;
+use alloy_primitives::{Address, B256, Bytes, U256, keccak256};
+use alloy_provider::{
+    Provider, ProviderBuilder,
+    network::primitives::BlockTransactions,
+    transport::{
+        RpcError, TransportError,
+        layers::{RateLimitRetryPolicy, RetryBackoffLayer},
+    },
+};
+use alloy_rpc_client::RpcClient;
 use dotenv::dotenv;
 use futures::stream::{self, StreamExt};
 use op_alloy_consensus::{OpDepositReceipt, OpReceiptEnvelope, OpTxEnvelope, TxDeposit};
@@ -30,11 +37,67 @@ use revm::{
     context::tx::TxEnv,
     context_interface::{ContextTr, JournalTr, either::Either},
     database::{AlloyDB, CacheDB, StateBuilder},
-    database_interface::WrapDatabaseAsync,
-    primitives::{KECCAK_EMPTY, TxKind},
+    database_interface::{DatabaseRef, WrapDatabaseAsync},
+    primitives::{KECCAK_EMPTY, StorageKey, StorageValue, TxKind},
+    state::{AccountInfo, Bytecode},
 };
 use serde_json::Value;
-use std::{fmt::Write as _, fs, path::Path, time::Instant};
+use std::{fmt::Write as _, fs, future::IntoFuture, path::Path, time::Instant};
+
+/// Per-request timeout. Long enough that a genuinely slow historical read still lands,
+/// short enough that a lost response is noticed within one block's worth of work.
+const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;
+/// Ceiling on a whole block. Generous: it exists to break a hang, not to pace the run.
+const DEFAULT_BLOCK_TIMEOUT_SECS: u64 = 300;
+/// Detect a silently dead connection instead of waiting for the request timeout.
+const TCP_KEEPALIVE_SECS: u64 = 30;
+/// Recycle pooled connections; a long run otherwise keeps stale ones around.
+const POOL_IDLE_TIMEOUT_SECS: u64 = 60;
+/// Retries per request. A read is idempotent, so the only cost of retrying is latency.
+const MAX_RPC_RETRIES: u32 = 5;
+/// Fixed base delay before the first retry, in milliseconds.
+const RETRY_INITIAL_BACKOFF_MS: u64 = 200;
+/// The retry layer doubles as a client-side rate limiter. This tool talks to a dedicated
+/// reference node, so the limiter is deliberately set high enough to never bind.
+const RETRY_COMPUTE_UNITS_PER_SECOND: u64 = 1_000_000;
+
+/// Reports an empty account as absent.
+///
+/// `AlloyDB` answers `basic_ref` with `Some(AccountInfo)` for every address, because
+/// `eth_getBalance` / `eth_getTransactionCount` / `eth_getCode` return zeros for an address
+/// that is not in the trie -- JSON-RPC cannot express "absent". revm then journals such an
+/// account as loaded and existing, and every rule keyed on existence takes the wrong
+/// branch: EIP-7702's authority refund, EIP-161 empty-account deletion, CREATE collision
+/// checks, SELFDESTRUCT.
+///
+/// Post-EIP-161 the mapping is exact rather than heuristic: an account present in the trie
+/// cannot be empty, so empty and absent are the same state.
+#[derive(Debug, Clone)]
+struct AbsentIfEmpty<DB>(DB);
+
+impl<DB: DatabaseRef> DatabaseRef for AbsentIfEmpty<DB> {
+    type Error = DB::Error;
+
+    fn basic_ref(&self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
+        Ok(self.0.basic_ref(address)?.filter(|info| !info.is_empty()))
+    }
+
+    fn code_by_hash_ref(&self, code_hash: B256) -> Result<Bytecode, Self::Error> {
+        self.0.code_by_hash_ref(code_hash)
+    }
+
+    fn storage_ref(
+        &self,
+        address: Address,
+        index: StorageKey,
+    ) -> Result<StorageValue, Self::Error> {
+        self.0.storage_ref(address, index)
+    }
+
+    fn block_hash_ref(&self, number: u64) -> Result<B256, Self::Error> {
+        self.0.block_hash_ref(number)
+    }
+}
 
 /// Buffer one block's output instead of printing it. With concurrent workers, direct
 /// `println!` from inside a block interleaves with every other in-flight block and the log
@@ -51,8 +114,35 @@ async fn main() -> anyhow::Result<()> {
     let chain_id = std::env::var("CHAIN_ID").unwrap().parse()?;
     let rpc_url = mantle_url.parse()?;
 
+    // The default client has no request timeout, no retries and no TCP keepalive. Without
+    // them one lost response hangs the whole run: the process sleeps on an established
+    // socket, the progress file stops growing, and nothing is logged.
+    let timeout_secs: u64 = std::env::var("REQUEST_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(DEFAULT_REQUEST_TIMEOUT_SECS);
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .tcp_keepalive(std::time::Duration::from_secs(TCP_KEEPALIVE_SECS))
+        .pool_idle_timeout(std::time::Duration::from_secs(POOL_IDLE_TIMEOUT_SECS))
+        .build()?;
+
+    // The default `RateLimitRetryPolicy` retries only HTTP 429/503 and a `Custom` error
+    // whose message contains "429 Too Many Requests"; a reqwest timeout is a `Custom` error
+    // with a different message and would not be retried. Every request here is a read, so
+    // retrying any transport failure is safe.
+    let retry = RetryBackoffLayer::new_with_policy(
+        MAX_RPC_RETRIES,
+        RETRY_INITIAL_BACKOFF_MS,
+        RETRY_COMPUTE_UNITS_PER_SECOND,
+        RateLimitRetryPolicy::default()
+            .or(|err: &TransportError| matches!(err, RpcError::Transport(_))),
+    );
+
     // Create a provider
-    let client = ProviderBuilder::<_, _, Optimism>::default().connect_http(rpc_url);
+    let client = ProviderBuilder::<_, _, Optimism>::default()
+        .connect_client(RpcClient::builder().layer(retry).http_with_client(http, rpc_url));
 
     // Params
     let start_block =
@@ -95,6 +185,9 @@ async fn main() -> anyhow::Result<()> {
     // `tokio::task::block_in_place`, which occupies a whole worker thread for its duration,
     // so in-process concurrency is capped by the worker count (`hw.ncpu`). Beyond ~8 it
     // stops helping; running several processes over disjoint ranges scales linearly instead.
+    //
+    // Values above 1 also put every buffered block in one task (see the stream below),
+    // which is where `block_in_place` can lose a wakeup. Prefer more processes.
     let concurrency: usize = std::env::var("CONCURRENCY")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -111,6 +204,14 @@ async fn main() -> anyhow::Result<()> {
     // Only mismatching blocks print detail; a full-range run would otherwise emit tens of GB,
     // most of it two 512-char bloom strings per transaction that only matter on failure.
     let verbose = std::env::var("VERBOSE").map(|v| v == "true").unwrap_or(false);
+
+    // Ceiling on one block, not one request: a block issues one round of reads per touched
+    // account, so a legitimately heavy block needs far longer than `REQUEST_TIMEOUT_SECS`.
+    let block_timeout_secs: u64 = std::env::var("BLOCK_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(DEFAULT_BLOCK_TIMEOUT_SECS);
 
     println!(
         "range [{start_block}..={end_block}] = {total_range} blocks; {} already done, {} to \
@@ -130,18 +231,35 @@ async fn main() -> anyhow::Result<()> {
     let mut stream = stream::iter(todo.iter().copied())
         .map(|i| {
             let client = client.clone();
+            // Hard per-block timeout.
+            //
+            // `buffer_unordered` does not spawn: every buffered block is polled inside the
+            // single consuming task, while `AlloyDB`'s reads go through `WrapDatabaseAsync`
+            // -> `tokio::task::block_in_place`. That combination can lose a wakeup and stall
+            // the run with nothing in flight, which a per-request timeout cannot catch.
+            // `tokio::spawn` is not an alternative: revm's `Context` is `!Send`.
+            //
+            // The timeout registers a timer, so a stuck block becomes a recorded error and
+            // the range carries on instead of stalling silently.
             async move {
                 let mut out = String::new();
-                let r = process_block(
-                    i,
-                    chain_id,
-                    spec_override,
-                    state_verify,
-                    export_cache_db,
-                    client,
-                    &mut out,
+                let r = match tokio::time::timeout(
+                    std::time::Duration::from_secs(block_timeout_secs),
+                    process_block(
+                        i,
+                        chain_id,
+                        spec_override,
+                        state_verify,
+                        export_cache_db,
+                        client,
+                        &mut out,
+                    ),
                 )
-                .await;
+                .await
+                {
+                    Ok(r) => r,
+                    Err(_) => Err(anyhow::anyhow!("block timed out after {block_timeout_secs}s")),
+                };
                 (i, r, out)
             }
         })
@@ -213,7 +331,7 @@ async fn process_block(
         .expect("Failed to get parent block")
         .expect("Block not found");
 
-    // [MANTLE] Pick the fork from the block's own timestamp. `OP_SPEC` is only an override
+    // Pick the fork from the block's own timestamp. `OP_SPEC` is only an override
     // for experiments -- a range that crosses a fork boundary cannot be replayed with one
     // hard-coded spec.
     let spec =
@@ -231,7 +349,7 @@ async fn process_block(
     // SAFETY: This cannot fail since this is in the top-level tokio runtime
 
     let state_db = WrapDatabaseAsync::new(AlloyDB::new(client.clone(), prev_id)).unwrap();
-    let cache_db: CacheDB<_> = CacheDB::new(state_db);
+    let cache_db: CacheDB<_> = CacheDB::new(AbsentIfEmpty(state_db));
     let mut state = StateBuilder::new_with_database(cache_db).build();
     let ctx = Context::op()
         .with_db(&mut state)
@@ -246,7 +364,7 @@ async fn process_block(
         })
         .modify_cfg_chained(|c| {
             c.chain_id = chain_id;
-            // [MANTLE] Must be `set_spec_and_mainnet_gas_params`, NOT `c.spec = spec`.
+            // Must be `set_spec_and_mainnet_gas_params`, NOT `c.spec = spec`.
             // revm 40 split the gas parameters out of the spec: assigning the field on an
             // already-built `CfgEnv` leaves `gas_params` at `OpSpecId::default()`'s values,
             // so the EIP-7623 calldata floor never applies and every gas comparison this
@@ -254,14 +372,11 @@ async fn process_block(
             // in op-revm's bvm_eth replay fixtures). Upstream marks the bare setter
             // `#[deprecated(note = "Use CfgEnv::set_spec_and_mainnet_gas_params instead")]`.
             c.set_spec_and_mainnet_gas_params(spec);
-            // [MANTLE] EIP-7825 override -- NOT optional. The revm fork used to patch the
-            // accessor to return `u64::MAX`; that patch was removed (revm `1903a86a`) and the
-            // override moved downstream, so every site that builds its own `CfgEnv` must set
-            // it. Replaying mainnet block 100,437,956 hit a real transaction with
-            // `gas_limit = 54_000_000` and died with
-            //   Transaction(Base(TxGasLimitGreaterThanCap { gas_limit: 54000000, cap: 16777216 }))
-            // Mantle has no per-transaction cap, so leaving this unset rejects transactions
-            // the chain actually accepted.
+            // EIP-7825 override -- NOT optional. Mantle has no per-transaction gas cap, and
+            // the override lives downstream of revm, so every site building its own `CfgEnv`
+            // must set it. Left unset, real transactions are rejected: mainnet block
+            // 100,437,956 carries one with `gas_limit = 54_000_000` against a cap of
+            // 16,777,216.
             c.tx_gas_limit_cap = Some(u64::MAX);
         });
 
@@ -281,7 +396,7 @@ async fn process_block(
     // Running cumulative gas used, mirroring how op-reth fills receipts.
     let mut cumulative_gas_used: u64 = 0;
     let mut all_receipts_match = true;
-    // [MANTLE] Collected to compute `receiptsRoot` and compare it with the block header.
+    // Collected to compute `receiptsRoot` and compare it with the block header.
     // The per-field checks below (status / cumulativeGasUsed / logs / logsBloom) do NOT
     // cover the RLP encoding, the transaction-type byte, or the deposit-only
     // `depositNonce` / `depositReceiptVersion` fields -- all three land in the root and
@@ -307,7 +422,7 @@ async fn process_block(
         let is_deposit = tx.is_deposit();
         logln!(out, "is_deposit: {is_deposit}");
 
-        // [MANTLE] `depositNonce` must be DERIVED, not read back from the canonical receipt
+        // `depositNonce` must be DERIVED, not read back from the canonical receipt
         // -- reading it would make the root comparison circular. Read BEFORE executing:
         // verified on mainnet block 89,718,944 that the receipt's `depositNonce` (143581)
         // equals the sender's nonce in the parent block, and one less than its nonce after
@@ -339,6 +454,15 @@ async fn process_block(
         })?;
         let actual_gas_used = exec.tx_gas_used();
         let is_success = exec.is_success();
+        // Terms behind `tx_gas_used`, reported when the gas comparison fails.
+        //
+        // `tx_gas_used()` is `max(total_gas_spent - inner_refunded, floor_gas)`, so a gas
+        // mismatch is one of three things: a different spend, a different refund, or the
+        // floor binding differently. Reading the accessors the implementation itself uses
+        // keeps the breakdown from drifting away from it.
+        let gas_spent = exec.gas().total_gas_spent();
+        let gas_refunded = exec.gas().inner_refunded();
+        let gas_floor = exec.gas().floor_gas();
 
         // Extract logs exactly as op-reth's receipt builder does: `result.into_logs()`.
         // A failed deposit's persisted BVM_ETH mint/transfer logs live in
@@ -357,7 +481,7 @@ async fn process_block(
         };
         let local_bloom = local_receipt.bloom_slow();
 
-        // [MANTLE] Build the typed envelope so `receiptsRoot` can be derived. The type byte
+        // Build the typed envelope so `receiptsRoot` can be derived. The type byte
         // and, for deposits, `depositNonce` / `depositReceiptVersion` are part of the RLP and
         // are not checked by any of the per-field comparisons below.
         // `deposit_receipt_version` is `None` on Mantle -- see MANTLE_CHANGES.md 3.7
@@ -392,13 +516,13 @@ async fn process_block(
         let status_ok = (is_success as u64) == oc_status;
         let gas_ok = actual_gas_used == oc_gas;
         let cum_ok = cumulative_gas_used == oc_cum;
-        // [MANTLE] Compare logs BYTE-FOR-BYTE and IN ORDER, not by count. Receipt RLP is
+        // Compare logs BYTE-FOR-BYTE and IN ORDER, not by count. Receipt RLP is
         // order-sensitive; `logsBloom` is NOT (a permuted log list yields an identical
         // bloom). So counting alone, even next to the bloom check, blesses both a permutation
         // and a wrong topic. Do not reuse op-revm's fixture-test unordered matching here.
         let logs_ok = compare_logs_ordered(&receipt_logs, oc["logs"].as_array());
         let bloom_ok = local_bloom_hex.eq_ignore_ascii_case(&oc_bloom);
-        // [MANTLE] `depositNonce` is not in the receipt RLP (see `build_receipt_envelope`),
+        // `depositNonce` is not in the receipt RLP (see `build_receipt_envelope`),
         // so `receiptsRoot` cannot check it. Compare it directly: the harness derives it from
         // the sender's pre-execution nonce and the canonical receipt reports it.
         let deposit_nonce_ok = match deposit_nonce {
@@ -435,6 +559,39 @@ async fn process_block(
             oc_gas,
             if gas_ok { "✅" } else { "❌" }
         );
+        if !gas_ok {
+            // Which term diverged, plus the inputs behind intrinsic gas so the numbers can
+            // be recomputed by hand. Computed here so a matching block pays nothing.
+            let input = tx.input();
+            let nonzero = input.iter().filter(|b| **b != 0).count() as u64;
+            let zero = input.len() as u64 - nonzero;
+            let access_list = tx.access_list();
+            let (al_addrs, al_slots) = access_list.map_or((0, 0), |l| {
+                (l.len(), l.iter().map(|item| item.storage_keys.len()).sum::<usize>())
+            });
+            logln!(
+                out,
+                "          spent={} refunded={} floor={} -> max(spent-refunded, floor); \
+                 delta={}",
+                gas_spent,
+                gas_refunded,
+                gas_floor,
+                actual_gas_used as i128 - oc_gas as i128
+            );
+            logln!(
+                out,
+                "          tx_type={:#04x} calldata={}B nonzero={} zero={} tokens={} \
+                 access_list={}/{} auths={}",
+                tx.ty(),
+                input.len(),
+                nonzero,
+                zero,
+                4 * nonzero + zero,
+                al_addrs,
+                al_slots,
+                tx.authorization_list().map_or(0, |a| a.len())
+            );
+        }
         logln!(
             out,
             "  cumGas  local={} onchain={} {}",
@@ -459,9 +616,8 @@ async fn process_block(
         logln!(out, "  --- receipt {}", if receipt_ok { "MATCH✅" } else { "MISMATCH❌" });
     }
 
-    // [MANTLE] The claim that used to sit here -- "receiptsRoot will equal on-chain" -- was
-    // never verified: the four per-field checks miss the RLP encoding, the type byte and the
-    // deposit-only fields. Compute the root and compare it with the header instead.
+    // Compare the root itself, not just the per-field checks: those miss the RLP encoding,
+    // the type byte and the deposit-only fields.
     let local_receipts_root = calculate_receipt_root(&local_receipts);
     let root_ok = local_receipts_root == block.header.receipts_root;
     all_receipts_match &= root_ok;
@@ -482,9 +638,11 @@ async fn process_block(
         }
     );
 
-    // Verify account states using eth_getProof if enabled
+    // Verify account states against the reference node if enabled
     if state_verify {
-        if let Err(e) = verify_storage_with_proof(&state, client.clone(), block_number, out).await {
+        if let Err(e) =
+            verify_state_with_plain_reads(&state, client.clone(), block_number, out).await
+        {
             logln!(out, "⚠️  Error during verification: {}", e);
         }
     }
@@ -508,8 +666,10 @@ async fn process_block(
 async fn export_cache_db_data<P: alloy_provider::Provider<op_alloy_network::Optimism> + Clone>(
     state: &revm::database::State<
         revm::database::CacheDB<
-            revm::database_interface::WrapDatabaseAsync<
-                revm::database::AlloyDB<op_alloy_network::Optimism, P>,
+            AbsentIfEmpty<
+                revm::database_interface::WrapDatabaseAsync<
+                    revm::database::AlloyDB<op_alloy_network::Optimism, P>,
+                >,
             >,
         >,
     >,
@@ -565,7 +725,7 @@ fn record_progress(
 /// Wrap a receipt in its typed OP envelope so `calculate_receipt_root` produces the same
 /// RLP the chain does.
 ///
-/// `[MANTLE]` `deposit_receipt_version` is always `None` here: Mantle sets it to `None`
+/// `deposit_receipt_version` is always `None` here: Mantle sets it to `None`
 /// (MANTLE_CHANGES.md 3.7, commit 760129f) and the canonical receipts confirm it -- they
 /// carry `depositNonce` but no `depositReceiptVersion`.
 fn build_receipt_envelope(
@@ -582,7 +742,7 @@ fn build_receipt_envelope(
         OpTxEnvelope::Deposit(_) => OpReceiptEnvelope::Deposit(ReceiptWithBloom {
             receipt: OpDepositReceipt {
                 inner: with_bloom.receipt,
-                // [MANTLE] BOTH must be `None`, and they are bound together: op-alloy's
+                // BOTH must be `None`, and they are bound together: op-alloy's
                 // `rlp_encode_fields_with_bloom` emits each field only when it is `Some`, so
                 // a `Some` nonce adds a field to the receipt RLP and changes `receiptsRoot`.
                 // Canyon introduced `depositReceiptVersion` precisely to stop the
@@ -664,7 +824,7 @@ fn report_log_diff(local: &[alloy_primitives::Log], onchain: Option<&Vec<Value>>
 
 /// Map a block timestamp to the Mantle fork active at it.
 ///
-/// `[MANTLE]` Mantle's ladder is Skadi -> Limb -> Arsia and does NOT line up with upstream
+/// Mantle's ladder is Skadi -> Limb -> Arsia and does NOT line up with upstream
 /// OP's: Skadi maps to `ISTHMUS`, **Limb maps to `OSAKA`**, Arsia to `ARSIA`. The copy of
 /// this function in `mantle-reth/crates/integration-tests/tests/replay.rs` handles only
 /// Skadi and Arsia -- replaying a Limb-era block with that version picks `ISTHMUS` and gets
@@ -737,7 +897,7 @@ pub fn prepare_tx_env(
                 ..Default::default()
             }
         }
-        // [MANTLE] The SDM post-exec transaction type. SDM is a Karst+ feature and Mantle
+        // The SDM post-exec transaction type. SDM is a Karst+ feature and Mantle
         // registers neither Karst nor Lagoon, so a real Mantle block can never contain one.
         // If this fires, an assumption behind the whole replay is wrong -- surface it loudly
         // rather than replaying it as something else.
@@ -850,7 +1010,7 @@ impl ToTxEnv for TxEip7702 {
 // ============================================================================
 
 /// Batch verify account storage slots and state using eth_getProof
-async fn verify_storage_with_proof<DB>(
+async fn verify_state_with_plain_reads<DB>(
     state: &revm::database::State<DB>,
     client: impl Provider<Optimism> + Clone,
     block_number: u64,
@@ -866,87 +1026,104 @@ async fn verify_storage_with_proof<DB>(
 
     for (address, cache_account) in accounts {
         if let Some(account) = &cache_account.account {
-            // Collect all storage slot keys (batch query)
-            let storage_keys: Vec<B256> = account.storage.keys().map(|k| B256::from(*k)).collect();
+            let slots: Vec<U256> = account.storage.keys().copied().collect();
+            let local_code_hash = account.info.code_hash;
+            // Both KECCAK_EMPTY and the zero hash mean "no code". EOAs are the majority,
+            // and for them there is nothing to fetch.
+            let local_is_empty = local_code_hash == KECCAK_EMPTY || local_code_hash == B256::ZERO;
 
-            // Call eth_getProof once to get account state and all storage slot proofs
-            let proof_result: Result<EIP1186AccountProofResponse, _> =
-                client.get_proof(*address, storage_keys.clone()).block_id(block_id).await;
-
-            match proof_result {
-                Ok(proof) => {
-                    // Verify basic account information
-                    if proof.balance != account.info.balance {
-                        balance_mismatches += 1;
-                        logln!(
-                            out,
-                            "  ❌ Balance mismatch for {}: remote={}, local={}",
-                            address,
-                            proof.balance,
-                            account.info.balance
-                        );
+            // One round of parallel plain reads, replacing one `eth_getProof`. Only the
+            // values inside the proof response were ever read, never the proof itself, so
+            // the server-side trie work was wasted; plain reads return the same values, keep
+            // one round per account, and are served from plain-state/changeset tables. The
+            // slot key also stays the `U256` we asked for instead of being parsed back out
+            // of `JsonStorageKey`'s `Debug` form.
+            let (balance, nonce, code, slot_values) = tokio::join!(
+                client.get_balance(*address).block_id(block_id).into_future(),
+                client.get_transaction_count(*address).block_id(block_id).into_future(),
+                async {
+                    if local_is_empty {
+                        None
+                    } else {
+                        Some(client.get_code_at(*address).block_id(block_id).await)
                     }
-                    if proof.nonce != account.info.nonce {
-                        nonce_mismatches += 1;
-                        logln!(
-                            out,
-                            "  ❌ Nonce mismatch for {}: remote={}, local={}",
-                            address,
-                            proof.nonce,
-                            account.info.nonce
-                        );
-                    }
+                },
+                futures::future::join_all(slots.iter().map(|slot| {
+                    client.get_storage_at(*address, *slot).block_id(block_id).into_future()
+                }))
+            );
 
-                    // Compare code_hash with compatibility for empty code representations
-                    // Both KECCAK_EMPTY and zero hash represent "no code"
-                    let remote_is_empty =
-                        proof.code_hash == KECCAK_EMPTY || proof.code_hash == B256::ZERO;
-                    let local_is_empty = account.info.code_hash == KECCAK_EMPTY ||
-                        account.info.code_hash == B256::ZERO;
+            match balance {
+                Ok(remote) if remote != account.info.balance => {
+                    balance_mismatches += 1;
+                    logln!(
+                        out,
+                        "  ❌ Balance mismatch for {}: remote={}, local={}",
+                        address,
+                        remote,
+                        account.info.balance
+                    );
+                }
+                Err(e) => logln!(out, "⚠️  Failed to read balance of {}: {}", address, e),
+                _ => {}
+            }
 
-                    if !(remote_is_empty && local_is_empty) &&
-                        proof.code_hash != account.info.code_hash
-                    {
+            match nonce {
+                Ok(remote) if remote != account.info.nonce => {
+                    nonce_mismatches += 1;
+                    logln!(
+                        out,
+                        "  ❌ Nonce mismatch for {}: remote={}, local={}",
+                        address,
+                        remote,
+                        account.info.nonce
+                    );
+                }
+                Err(e) => logln!(out, "⚠️  Failed to read nonce of {}: {}", address, e),
+                _ => {}
+            }
+
+            match code {
+                Some(Ok(bytes)) => {
+                    let remote_code_hash =
+                        if bytes.is_empty() { KECCAK_EMPTY } else { keccak256(&bytes) };
+                    if remote_code_hash != local_code_hash {
                         code_hash_mismatches += 1;
                         logln!(
                             out,
                             "  ❌ Code hash mismatch for {}: remote={}, local={}",
                             address,
-                            proof.code_hash,
-                            account.info.code_hash
+                            remote_code_hash,
+                            local_code_hash
                         );
                     }
+                }
+                Some(Err(e)) => {
+                    logln!(out, "⚠️  Failed to read code of {}: {}", address, e)
+                }
+                None => {}
+            }
 
-                    // Verify each storage slot (if any)
-                    if !storage_keys.is_empty() {
-                        for storage_proof in &proof.storage_proof {
-                            let key = storage_proof.key;
-                            let value_from_proof = storage_proof.value;
-
-                            let key_str = format!("{:?}", key);
-                            let key_str_clean =
-                                key_str.trim_start_matches("Hash(0x").trim_end_matches(")");
-
-                            if let Ok(key_u256) = U256::from_str_radix(key_str_clean, 16) {
-                                if let Some(cached_value) = account.storage.get(&key_u256) {
-                                    if value_from_proof != *cached_value {
-                                        total_failed += 1;
-                                        logln!(
-                                            out,
-                                            "  ❌ Storage mismatch for {} at slot {}: remote={}, local={}",
-                                            address,
-                                            key,
-                                            value_from_proof,
-                                            cached_value
-                                        );
-                                    }
-                                }
-                            }
+            for (slot, value) in slots.iter().zip(slot_values) {
+                match value {
+                    Ok(remote) => {
+                        if let Some(local) = account.storage.get(slot) &&
+                            remote != *local
+                        {
+                            total_failed += 1;
+                            logln!(
+                                out,
+                                "  ❌ Storage mismatch for {} at slot {}: remote={}, local={}",
+                                address,
+                                slot,
+                                remote,
+                                local
+                            );
                         }
                     }
-                }
-                Err(e) => {
-                    logln!(out, "⚠️  Failed to get proof for account {}: {}", address, e);
+                    Err(e) => {
+                        logln!(out, "⚠️  Failed to read slot {} of {}: {}", slot, address, e)
+                    }
                 }
             }
         }
