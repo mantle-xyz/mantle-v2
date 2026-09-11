@@ -146,7 +146,6 @@ async fn main() -> anyhow::Result<()> {
     // Set up the HTTP transport which is consumed by the RPC client.
     dotenv().ok();
     let mantle_url = std::env::var("MANTLE_URL").unwrap();
-    let chain_id = std::env::var("CHAIN_ID").unwrap().parse()?;
     let rpc_url: reqwest::Url = mantle_url.parse()?;
 
     // The default client has no request timeout, no retries and no TCP keepalive. Without
@@ -181,6 +180,28 @@ async fn main() -> anyhow::Result<()> {
     // Create a provider
     let client = ProviderBuilder::<_, _, Optimism>::default()
         .connect_client(RpcClient::builder().layer(retry).http_with_client(http, rpc_url));
+
+    // The node knows its own chain id, so asking removes a knob that can be set wrong.
+    // Set wrong it is silent: the id goes into `CfgEnv` for EIP-155 and selects the fork
+    // schedule, so the replay would run against a different chain's rules and simply report
+    // mismatches. `CHAIN_ID` is still honoured when set, as a stated expectation that is
+    // checked rather than trusted.
+    let node_chain_id = client
+        .get_chain_id()
+        .await
+        .map_err(|e| anyhow::anyhow!("could not read the endpoint's chain id: {e}"))?;
+    let chain_id = match std::env::var("CHAIN_ID") {
+        Ok(v) if !v.trim().is_empty() => {
+            let declared: u64 = v.trim().parse()?;
+            anyhow::ensure!(
+                declared == node_chain_id,
+                "CHAIN_ID={declared} but the endpoint reports {node_chain_id}; \
+                 the endpoint and the range have to belong to the same chain"
+            );
+            declared
+        }
+        _ => node_chain_id,
+    };
 
     // Params
     let start_block =
