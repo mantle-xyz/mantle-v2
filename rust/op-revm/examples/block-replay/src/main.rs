@@ -124,7 +124,7 @@ async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     let mantle_url = std::env::var("MANTLE_URL").unwrap();
     let chain_id = std::env::var("CHAIN_ID").unwrap().parse()?;
-    let rpc_url = mantle_url.parse()?;
+    let rpc_url: reqwest::Url = mantle_url.parse()?;
 
     // The default client has no request timeout, no retries and no TCP keepalive. Without
     // them one lost response hangs the whole run: the process sleeps on an established
@@ -151,6 +151,13 @@ async fn main() -> anyhow::Result<()> {
         RateLimitRetryPolicy::default()
             .or(|err: &TransportError| matches!(err, RpcError::Transport(_))),
     );
+
+    // Keep a loggable form of the endpoint before the URL is consumed; see the startup line.
+    let endpoint = match (rpc_url.host_str(), rpc_url.port_or_known_default()) {
+        (Some(host), Some(port)) => format!("{host}:{port}"),
+        (Some(host), None) => host.to_string(),
+        _ => "<unparsed>".to_string(),
+    };
 
     // Create a provider
     let client = ProviderBuilder::<_, _, Optimism>::default()
@@ -225,9 +232,17 @@ async fn main() -> anyhow::Result<()> {
         .filter(|v| *v > 0)
         .unwrap_or(DEFAULT_BLOCK_TIMEOUT_SECS);
 
+    // Everything this process was told to do, on one line. Shards are distinguished only by
+    // their environment, which `ps` does not show, so without this the only way to tell what
+    // a running shard is working on is to read /proc/<pid>/environ.
+    //
+    // Host and port only, never the whole URL: behind an authenticating proxy the path
+    // carries a bearer token, and a URL in a log or in an error message leaks it.
     println!(
-        "range [{start_block}..={end_block}] = {total_range} blocks; {} already done, {} to \
+        "chain={chain_id} endpoint={endpoint} spec={} state_verify={state_verify} \
+         range [{start_block}..={end_block}] = {total_range} blocks; {} already done, {} to \
          go; concurrency={concurrency}; progress={progress_path}",
+        spec_override.map_or_else(|| "per-block".to_string(), |s| format!("{s:?}")),
         total_range - todo.len(),
         todo.len()
     );
