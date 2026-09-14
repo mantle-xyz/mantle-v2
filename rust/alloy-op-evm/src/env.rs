@@ -189,6 +189,47 @@ pub fn evm_env_for_op_payload(
     evm_env_for_op(input, chain_spec, chain_id)
 }
 
+/// [MANTLE] A fake Mantle chain spec with configurable fork activation. No published chain spec
+/// sets `is_mantle()`, so the Mantle branch of the spec picker is only reachable through this.
+#[cfg(test)]
+#[derive(Debug)]
+pub(crate) struct FakeMantle {
+    pub(crate) arsia: bool,
+    pub(crate) limb: bool,
+}
+
+#[cfg(test)]
+impl alloy_op_hardforks::EthereumHardforks for FakeMantle {
+    fn ethereum_fork_activation(
+        &self,
+        _: alloy_hardforks::EthereumHardfork,
+    ) -> alloy_op_hardforks::ForkCondition {
+        alloy_op_hardforks::ForkCondition::Timestamp(0)
+    }
+}
+
+#[cfg(test)]
+impl OpHardforks for FakeMantle {
+    fn op_fork_activation(
+        &self,
+        _: alloy_op_hardforks::OpHardfork,
+    ) -> alloy_op_hardforks::ForkCondition {
+        alloy_op_hardforks::ForkCondition::Timestamp(0)
+    }
+    fn is_mantle(&self) -> bool {
+        true
+    }
+    fn is_mantle_skadi_active_at_timestamp(&self, _: u64) -> bool {
+        true
+    }
+    fn is_mantle_limb_active_at_timestamp(&self, _: u64) -> bool {
+        self.limb
+    }
+    fn is_mantle_arsia_active_at_timestamp(&self, _: u64) -> bool {
+        self.arsia
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,34 +372,6 @@ mod tests {
         let actual_spec = spec(&fork, &header);
 
         assert_eq!(actual_spec, expected_spec);
-    }
-
-    /// [MANTLE] A fake Mantle chain spec with configurable fork activation.
-    struct FakeMantle {
-        arsia: bool,
-        limb: bool,
-    }
-    impl EthereumHardforks for FakeMantle {
-        fn ethereum_fork_activation(&self, _: EthereumHardfork) -> ForkCondition {
-            ForkCondition::Timestamp(0)
-        }
-    }
-    impl OpHardforks for FakeMantle {
-        fn op_fork_activation(&self, _: OpHardfork) -> ForkCondition {
-            ForkCondition::Timestamp(0)
-        }
-        fn is_mantle(&self) -> bool {
-            true
-        }
-        fn is_mantle_skadi_active_at_timestamp(&self, _: u64) -> bool {
-            true
-        }
-        fn is_mantle_limb_active_at_timestamp(&self, _: u64) -> bool {
-            self.limb
-        }
-        fn is_mantle_arsia_active_at_timestamp(&self, _: u64) -> bool {
-            self.arsia
-        }
     }
 
     /// [MANTLE] Tests that `spec_by_timestamp_after_bedrock` correctly resolves
