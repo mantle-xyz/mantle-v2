@@ -15,7 +15,7 @@ when synchronizing future upstream changes via `git subtree pull`.
 | Bridge branch (last sync source) | `sync-kona-client-v1.7.0` |
 | Bridge repo | https://github.com/mantle-xyz/optimism-rust-bridge |
 | `git subtree add` commit | `ba2cc4514` ("Add 'rust/' from commit '1ad181f05...'") |
-| Last subtree-pull merge commit | _(fill in when this sync lands)_ |
+| Last subtree-pull merge commit | `dc2f93af30386a8f995844cd2318d26c89adec32` (two parents: the previous branch tip and the bridge split — verify with `git cat-file -p <sha>`; a single-parent commit here means the merge base is lost for the next sync) |
 | Previous baseline | `kona-client/v1.5.1` @ `fbbf9089` / bridge split `a6c46d8a` |
 | Rust toolchain | 1.95 (see `rust/rust-toolchain.toml`) |
 
