@@ -26,6 +26,7 @@ members = [
 
   # Alloy OP EVM
   "alloy-op-evm/",
+  "op-revm/examples/block-replay/",
 
   # Alloy OP Hardforks
   "alloy-op-hardforks/",
