@@ -53,6 +53,33 @@ impl OpSpecId {
         }
     }
 
+    /// The `CfgEnv::tx_gas_limit_cap` this spec needs, or `None` to keep revm's default.
+    ///
+    /// Mantle's `OSAKA` (Limb) and `ARSIA` map to [`SpecId::OSAKA`], which is what turns on
+    /// EIP-7825's 16,777,216 gas cap -- a cap Mantle never activated and its traffic exceeds
+    /// (mainnet block 100,437,956 carries a transaction asking for 54,000,000). Adopting
+    /// EIP-7825 would take a hardfork, and this is the arm that would change.
+    ///
+    /// Matching on the variant rather than on `into_eth_spec().is_enabled_in(OSAKA)` is
+    /// deliberate: `KARST` and `LAGOON` share that eth base but are OP's forks and do enforce
+    /// the cap. Only Mantle chains resolve to `OSAKA`/`ARSIA`.
+    pub const fn tx_gas_limit_cap_override(self) -> Option<u64> {
+        match self {
+            Self::OSAKA | Self::ARSIA => Some(u64::MAX),
+            Self::BEDROCK |
+            Self::REGOLITH |
+            Self::CANYON |
+            Self::ECOTONE |
+            Self::FJORD |
+            Self::GRANITE |
+            Self::HOLOCENE |
+            Self::ISTHMUS |
+            Self::JOVIAN |
+            Self::KARST |
+            Self::LAGOON => None,
+        }
+    }
+
     /// Checks if the [`OpSpecId`] is enabled in the other [`OpSpecId`].
     pub const fn is_enabled_in(self, other: Self) -> bool {
         other as u8 <= self as u8
@@ -310,6 +337,23 @@ mod tests {
         // downgrade the eth base below Karst's OSAKA.
         assert_eq!(OpSpecId::KARST.into_eth_spec(), SpecId::OSAKA);
         assert_eq!(OpSpecId::LAGOON.into_eth_spec(), SpecId::OSAKA);
+    }
+
+    #[test]
+    fn only_mantle_osaka_forks_override_the_tx_gas_limit_cap() {
+        // All four share the eth base that turns EIP-7825 on, so an implementation reaching
+        // for `into_eth_spec().is_enabled_in(OSAKA)` would exempt OP's two as well.
+        for (spec, expected) in [
+            (OpSpecId::OSAKA, Some(u64::MAX)),
+            (OpSpecId::ARSIA, Some(u64::MAX)),
+            (OpSpecId::KARST, None),
+            (OpSpecId::LAGOON, None),
+        ] {
+            assert_eq!(spec.into_eth_spec(), SpecId::OSAKA, "{spec:?}");
+            assert_eq!(spec.tx_gas_limit_cap_override(), expected, "{spec:?}");
+        }
+        // Mantle's third variant is pre-Osaka, where revm's default is already uncapped.
+        assert_eq!(OpSpecId::ISTHMUS.tx_gas_limit_cap_override(), None);
     }
 
     /// Conformance guard: the eth base spec must be non-decreasing across the OP fork chronology

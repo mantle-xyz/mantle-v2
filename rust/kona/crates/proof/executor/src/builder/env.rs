@@ -51,12 +51,18 @@ where
 
     /// Returns the active [`CfgEnv`] for the executor.
     pub(crate) fn evm_cfg_env(&self, timestamp: u64) -> CfgEnv<OpSpecId> {
-        CfgEnv::new()
+        // [MANTLE] Use revm_spec_id (Mantle-aware: gates Jovian/Holocene/Granite/etc. behind
+        // mantle_arsia on Mantle chains) for the revm executor, distinct from spec_id which
+        // drives kona protocol-layer feature checks.
+        let spec = self.config.revm_spec_id(timestamp);
+        let mut cfg = CfgEnv::new()
             .with_chain_id(self.config.l2_chain_id.id())
-            // [MANTLE] Use revm_spec_id (Mantle-aware: gates Jovian/Holocene/Granite/etc. behind
-            // mantle_arsia on Mantle chains) for the revm executor, distinct from spec_id which
-            // drives kona protocol-layer feature checks.
-            .with_spec_and_mainnet_gas_params(self.config.revm_spec_id(timestamp))
+            .with_spec_and_mainnet_gas_params(spec);
+        // [MANTLE] Mantle's Osaka-level forks do not activate EIP-7825; see
+        // `OpSpecId::tx_gas_limit_cap_override`. The proof executor has to agree with the
+        // sequencer here, or a block carrying a transaction above the cap proves invalid.
+        cfg.tx_gas_limit_cap = spec.tx_gas_limit_cap_override();
+        cfg
     }
 
     fn next_block_base_fee(

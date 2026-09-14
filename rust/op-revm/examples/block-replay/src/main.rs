@@ -503,12 +503,11 @@ async fn process_block(
             // in op-revm's bvm_eth replay fixtures). Upstream marks the bare setter
             // `#[deprecated(note = "Use CfgEnv::set_spec_and_mainnet_gas_params instead")]`.
             c.set_spec_and_mainnet_gas_params(spec);
-            // EIP-7825 override -- NOT optional. Mantle has no per-transaction gas cap, and
-            // the override lives downstream of revm, so every site building its own `CfgEnv`
-            // must set it. Left unset, real transactions are rejected: mainnet block
-            // 100,437,956 carries one with `gas_limit = 54_000_000` against a cap of
-            // 16,777,216.
-            c.tx_gas_limit_cap = Some(u64::MAX);
+            // Mantle's EIP-7825 exemption. Left unset, real transactions are rejected:
+            // mainnet block 100,437,956 carries one with `gas_limit = 54_000_000` against a
+            // cap of 16,777,216. Taken from the same helper the node uses rather than
+            // hardcoded, so a replay disagrees with the chain if that rule is ever wrong.
+            c.tx_gas_limit_cap = spec.tx_gas_limit_cap_override();
         });
 
     let mut evm = ctx.build_op();
