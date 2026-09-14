@@ -33,11 +33,22 @@ pub trait OpTxTr: Transaction {
         self.tx_type() == DEPOSIT_TRANSACTION_TYPE
     }
 
-    /// Returns the eth value of the deposit transaction
-    fn eth_value(&self) -> Option<u128>;
+    /// `[MANTLE]` `BVM_ETH` values are `U256`, not `u128`.
+    ///
+    /// `_ethValue` / `_ethTxValue` reach the chain through `OptimismPortal.depositTransaction`,
+    /// which takes them as unbounded `uint256`, and op-node decodes the full 32-byte word into a
+    /// `big.Int` (op-node/rollup/derive/deposit_log.go). Narrowing to `u128` silently produced a
+    /// different value — and therefore a different deposit hash and post-state — from op-node for
+    /// anything at or above 2^128, which any EOA could trigger with one L1 transaction.
+    ///
+    /// Widening is wire-compatible: RLP encodes integers as minimal big-endian, so `u128` and
+    /// `U256` are byte-identical below 2^128. The `BVM_ETH` arithmetic in `bvm_eth.rs` was
+    /// already
+    /// `U256` throughout — only this boundary was narrow.
+    fn eth_value(&self) -> Option<U256>;
 
     /// Returns the eth tx value of the deposit transaction
-    fn eth_tx_value(&self) -> Option<u128>;
+    fn eth_tx_value(&self) -> Option<U256>;
 }
 
 /// Optimism transaction.
@@ -209,12 +220,12 @@ impl<T: Transaction> OpTxTr for OpTransaction<T> {
         self.deposit.is_system_transaction
     }
 
-    fn eth_value(&self) -> Option<u128> {
-        self.deposit.eth_value.filter(|&v| v != 0)
+    fn eth_value(&self) -> Option<U256> {
+        self.deposit.eth_value.filter(|v| !v.is_zero())
     }
 
-    fn eth_tx_value(&self) -> Option<u128> {
-        self.deposit.eth_tx_value.filter(|&v| v != 0)
+    fn eth_tx_value(&self) -> Option<U256> {
+        self.deposit.eth_tx_value.filter(|v| !v.is_zero())
     }
 }
 
@@ -385,8 +396,8 @@ mod tests {
                 is_system_transaction: false,
                 mint: Some(0u128),
                 source_hash: B256::default(),
-                eth_value: Some(100),
-                eth_tx_value: Some(100),
+                eth_value: Some(U256::from(100u128)),
+                eth_tx_value: Some(U256::from(100u128)),
             },
         };
         // Verify transaction type
@@ -409,8 +420,8 @@ mod tests {
                 source_hash: B256::ZERO,
                 mint: None,
                 is_system_transaction: false,
-                eth_tx_value: Some(0),
-                eth_value: Some(0),
+                eth_tx_value: Some(U256::from(0u128)),
+                eth_value: Some(U256::from(0u128)),
             },
         };
         assert_eq!(op_tx.eth_value(), None);

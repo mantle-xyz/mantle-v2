@@ -2,7 +2,7 @@
 
 use crate::{
     AltDAConfig, BaseFeeConfig, ChainGenesis, HardForkConfig, MANTLE_BASE_FEE_CONFIG,
-    MantleHardForkConfig,
+    MantleForkOrderError, MantleHardForkConfig,
 };
 use alloy_chains::Chain;
 use alloy_hardforks::{EthereumHardfork, EthereumHardforks, ForkCondition};
@@ -34,7 +34,7 @@ const fn default_fjord_max_sequencer_drift() -> u64 {
     FJORD_MAX_SEQUENCER_DRIFT
 }
 
-/// [MANTLE] Default base fee config for serde when `chain_op_config` is missing — uses the
+/// `[MANTLE]` Default base fee config for serde when `chain_op_config` is missing — uses the
 /// Mantle params instead of OP defaults.
 #[cfg(feature = "serde")]
 const fn default_mantle_base_fee_config() -> BaseFeeConfig {
@@ -179,10 +179,10 @@ impl RollupConfig {
     /// Returns true if this is a Mantle chain or a chain that uses Mantle hardforks.
     ///
     /// This method checks if any Mantle-specific hardfork is configured, rather than
-    /// checking the chain_id. This approach is more flexible and works for:
-    /// - Mantle Mainnet (chain_id 5000)
-    /// - Mantle Sepolia (chain_id 5003)
-    /// - Custom Mantle testnets with different chain_ids
+    /// checking the `chain_id`. This approach is more flexible and works for:
+    /// - Mantle Mainnet (`chain_id` 5000)
+    /// - Mantle Sepolia (`chain_id` 5003)
+    /// - Custom Mantle testnets with different `chain_ids`
     /// - Any chain that adopts Mantle hardforks
     #[inline]
     pub const fn is_mantle(&self) -> bool {
@@ -190,114 +190,15 @@ impl RollupConfig {
     }
 }
 
-#[cfg(feature = "revm")]
-impl RollupConfig {
-    /// Returns the active [`op_revm::OpSpecId`] for the executor.
-    ///
-    /// ## Takes
-    /// - `timestamp`: The timestamp of the executing block.
-    ///
-    /// ## Returns
-    /// The active [`op_revm::OpSpecId`] for the executor.
-    pub fn spec_id(&self, timestamp: u64) -> op_revm::OpSpecId {
-        if self.is_interop_active(timestamp) {
-            op_revm::OpSpecId::LAGOON
-        // [MANTLE] The KARST arm stays commented out on purpose: Mantle does not open any
-        // newly added eth/op hardfork, so post-Karst timestamps must fall through to JOVIAN.
-        // (The original reason — "op-revm v19 has no KARST variant" — is obsolete since the
-        // op-revm 20 bump; the variant now exists but must not become reachable.)
-        // } else if self.is_karst_active(timestamp) {
-        //     op_revm::OpSpecId::KARST
-        } else if self.is_jovian_active(timestamp) {
-            op_revm::OpSpecId::JOVIAN
-        } else if self.is_isthmus_active(timestamp) {
-            op_revm::OpSpecId::ISTHMUS
-        } else if self.is_holocene_active(timestamp) {
-            op_revm::OpSpecId::HOLOCENE
-        } else if self.is_fjord_active(timestamp) {
-            op_revm::OpSpecId::FJORD
-        } else if self.is_ecotone_active(timestamp) {
-            op_revm::OpSpecId::ECOTONE
-        } else if self.is_canyon_active(timestamp) {
-            op_revm::OpSpecId::CANYON
-        } else if self.is_regolith_active(timestamp) {
-            op_revm::OpSpecId::REGOLITH
-        } else {
-            op_revm::OpSpecId::BEDROCK
-        }
-    }
-
-    /// Returns the active [`op_revm::OpSpecId`] for the revm executor.
-    ///
-    /// This method is specifically for revm EVM execution, determining which
-    /// EVM execution rules to use.
-    ///
-    /// ## Mantle-specific logic:
-    /// - Before `mantle_limb`: returns `ISTHMUS`
-    /// - `mantle_limb` and after: returns `OSAKA`
-    ///
-    /// ## Standard OP Stack logic:
-    /// Uses the latest active hardfork.
-    ///
-    /// ## Takes
-    /// - `timestamp`: The timestamp of the executing block.
-    ///
-    /// ## Returns
-    /// The active [`op_revm::OpSpecId`] for the revm executor.
-    pub fn revm_spec_id(&self, timestamp: u64) -> op_revm::OpSpecId {
-        // Special handling for Mantle chains
-        if self.is_mantle() {
-            return self.mantle_spec_id(timestamp);
-        }
-
-        // Standard OP Stack logic
-        if self.is_interop_active(timestamp) {
-            op_revm::OpSpecId::LAGOON
-        } else if self.is_jovian_active(timestamp) {
-            op_revm::OpSpecId::JOVIAN
-        } else if self.is_isthmus_active(timestamp) {
-            op_revm::OpSpecId::ISTHMUS
-        } else if self.is_holocene_active(timestamp) {
-            op_revm::OpSpecId::HOLOCENE
-        } else if self.is_fjord_active(timestamp) {
-            op_revm::OpSpecId::FJORD
-        } else if self.is_ecotone_active(timestamp) {
-            op_revm::OpSpecId::ECOTONE
-        } else if self.is_canyon_active(timestamp) {
-            op_revm::OpSpecId::CANYON
-        } else if self.is_regolith_active(timestamp) {
-            op_revm::OpSpecId::REGOLITH
-        } else {
-            op_revm::OpSpecId::BEDROCK
-        }
-    }
-
-    /// Returns the active [`op_revm::OpSpecId`] for Mantle chains (revm execution).
-    ///
-    /// ## Mantle revm logic:
-    /// - Before `mantle_limb`: uses `ISTHMUS`
-    /// - `mantle_limb` and after: uses `OSAKA`
-    fn mantle_spec_id(&self, timestamp: u64) -> op_revm::OpSpecId {
-        if self.is_mantle_arsia_active(timestamp) {
-            op_revm::OpSpecId::ARSIA
-        } else if self.is_mantle_limb_active(timestamp) {
-            op_revm::OpSpecId::OSAKA
-        } else {
-            op_revm::OpSpecId::ISTHMUS
-        }
-    }
-}
-
 impl RollupConfig {
     /// Returns true if Regolith is active at the given timestamp.
     ///
-    /// Note: Unlike other hardfork checks, this method does not check mantle_arsia.
-    /// For Mantle chains, it returns true if mantle_skadi is active, or if regolith_time
-    /// is satisfied (even before mantle_arsia).
+    /// Note: Unlike other hardfork checks, this method does not check `mantle_arsia`.
+    /// For Mantle chains, it returns true if `mantle_skadi` is active, or if `regolith_time`
+    /// is satisfied (even before `mantle_arsia`).
     pub fn is_regolith_active(&self, timestamp: u64) -> bool {
-        if self.is_mantle() && self.is_mantle_skadi_active(timestamp) {
-            return true;
-        }
+        // [MANTLE] No Mantle gate: op-node does not realign Regolith, and Mantle configs give it
+        // genesis offset 0 (op-chain-ops/genesis/mantle_config.go), so the config value governs.
         self.hardforks.regolith_time.is_some_and(|t| timestamp >= t) ||
             self.is_canyon_active(timestamp)
     }
@@ -307,12 +208,28 @@ impl RollupConfig {
         self.is_regolith_active(timestamp) &&
             !self.is_regolith_active(timestamp.saturating_sub(self.block_time))
     }
+    /// `[MANTLE]` Activation of an OP hardfork on a Mantle chain.
+    ///
+    /// op-node forces **every** OP fork from Canyon through Jovian to activate exactly at
+    /// `mantle_arsia_time`, and does so twice: `op-chain-ops/genesis/mantle_config.go` writes
+    /// `CanyonTime = EcotoneTime = MantleArsiaTime` into the generated configs, and
+    /// `op-node/rollup/mantle_types.go::AlignOpWithMantle` overwrites
+    /// Canyon/Delta/Ecotone/Fjord/Granite/Holocene/Isthmus/Jovian at load time — **ignoring
+    /// whatever the rollup JSON says**. Mirroring that here is what keeps derivation aligned;
+    /// honouring the per-fork timestamps instead would diverge on any config where they differ.
+    ///
+    /// Returns `None` for non-Mantle chains, where the standard OP schedule applies.
+    ///
+    /// Regolith is deliberately **not** included: `AlignOpWithMantle` leaves it alone and
+    /// `mantle_config.go` gives it offset 0, so it is simply active from genesis.
+    fn mantle_op_fork_active(&self, timestamp: u64) -> Option<bool> {
+        self.is_mantle().then(|| self.is_mantle_arsia_active(timestamp))
+    }
 
     /// Returns true if Canyon is active at the given timestamp.
     pub fn is_canyon_active(&self, timestamp: u64) -> bool {
-        // Mantle: before mantle_arsia, no advanced OP Stack features are active
-        if self.is_mantle() && !self.is_mantle_arsia_active(timestamp) {
-            return false;
+        if let Some(active) = self.mantle_op_fork_active(timestamp) {
+            return active;
         }
         self.hardforks.canyon_time.is_some_and(|t| timestamp >= t) ||
             self.is_delta_active(timestamp)
@@ -326,9 +243,8 @@ impl RollupConfig {
 
     /// Returns true if Delta is active at the given timestamp.
     pub fn is_delta_active(&self, timestamp: u64) -> bool {
-        // Mantle: before mantle_arsia, no advanced OP Stack features are active
-        if self.is_mantle() && !self.is_mantle_arsia_active(timestamp) {
-            return false;
+        if let Some(active) = self.mantle_op_fork_active(timestamp) {
+            return active;
         }
         self.hardforks.delta_time.is_some_and(|t| timestamp >= t) ||
             self.is_ecotone_active(timestamp)
@@ -342,9 +258,8 @@ impl RollupConfig {
 
     /// Returns true if Ecotone is active at the given timestamp.
     pub fn is_ecotone_active(&self, timestamp: u64) -> bool {
-        // Mantle: before mantle_arsia, no advanced OP Stack features are active
-        if self.is_mantle() && self.is_mantle_skadi_active(timestamp) {
-            return true;
+        if let Some(active) = self.mantle_op_fork_active(timestamp) {
+            return active;
         }
         self.hardforks.ecotone_time.is_some_and(|t| timestamp >= t) ||
             self.is_fjord_active(timestamp)
@@ -358,9 +273,8 @@ impl RollupConfig {
 
     /// Returns true if Fjord is active at the given timestamp.
     pub fn is_fjord_active(&self, timestamp: u64) -> bool {
-        // Mantle: before mantle_arsia, no advanced OP Stack features are active
-        if self.is_mantle() && !self.is_mantle_arsia_active(timestamp) {
-            return false;
+        if let Some(active) = self.mantle_op_fork_active(timestamp) {
+            return active;
         }
         self.hardforks.fjord_time.is_some_and(|t| timestamp >= t) ||
             self.is_granite_active(timestamp)
@@ -374,9 +288,8 @@ impl RollupConfig {
 
     /// Returns true if Granite is active at the given timestamp.
     pub fn is_granite_active(&self, timestamp: u64) -> bool {
-        // Mantle: before mantle_arsia, no advanced OP Stack features are active
-        if self.is_mantle() && !self.is_mantle_arsia_active(timestamp) {
-            return false;
+        if let Some(active) = self.mantle_op_fork_active(timestamp) {
+            return active;
         }
         self.hardforks.granite_time.is_some_and(|t| timestamp >= t) ||
             self.is_holocene_active(timestamp)
@@ -390,9 +303,8 @@ impl RollupConfig {
 
     /// Returns true if Holocene is active at the given timestamp.
     pub fn is_holocene_active(&self, timestamp: u64) -> bool {
-        // Mantle: before mantle_arsia, no advanced OP Stack features are active
-        if self.is_mantle() && !self.is_mantle_arsia_active(timestamp) {
-            return false;
+        if let Some(active) = self.mantle_op_fork_active(timestamp) {
+            return active;
         }
         self.hardforks.holocene_time.is_some_and(|t| timestamp >= t) ||
             self.is_isthmus_active(timestamp)
@@ -417,8 +329,8 @@ impl RollupConfig {
 
     /// Returns true if Isthmus is active at the given timestamp.
     pub fn is_isthmus_active(&self, timestamp: u64) -> bool {
-        if self.is_mantle() && self.is_mantle_skadi_active(timestamp) {
-            return true;
+        if let Some(active) = self.mantle_op_fork_active(timestamp) {
+            return active;
         }
         self.hardforks.isthmus_time.is_some_and(|t| timestamp >= t) ||
             self.is_jovian_active(timestamp)
@@ -432,14 +344,17 @@ impl RollupConfig {
 
     /// Returns true if SDM post-exec transactions are active at the given timestamp.
     ///
-    /// SDM is currently unscheduled and must not activate as part of Jovian or Karst.
+    /// Defers to the hardfork where SDM is activated, matching op-node's `IsSDM`.
     #[must_use]
-    pub const fn is_sdm_active(&self, _timestamp: u64) -> bool {
-        false
+    pub fn is_sdm_active(&self, timestamp: u64) -> bool {
+        self.is_lagoon_active(timestamp)
     }
 
     /// Returns true if Jovian is active at the given timestamp.
     pub fn is_jovian_active(&self, timestamp: u64) -> bool {
+        if let Some(active) = self.mantle_op_fork_active(timestamp) {
+            return active;
+        }
         self.hardforks.jovian_time.is_some_and(|t| timestamp >= t) ||
             self.is_karst_active(timestamp)
     }
@@ -453,7 +368,7 @@ impl RollupConfig {
     /// Returns true if Karst is active at the given timestamp.
     pub fn is_karst_active(&self, timestamp: u64) -> bool {
         self.hardforks.karst_time.is_some_and(|t| timestamp >= t) ||
-            self.is_interop_active(timestamp)
+            self.is_lagoon_active(timestamp)
     }
 
     /// Returns true if the timestamp marks the first Karst block.
@@ -462,12 +377,35 @@ impl RollupConfig {
             !self.is_karst_active(timestamp.saturating_sub(self.block_time))
     }
 
-    /// Returns true if Interop is active at the given timestamp.
-    pub fn is_interop_active(&self, timestamp: u64) -> bool {
-        self.hardforks.interop_time.is_some_and(|t| timestamp >= t)
+    /// Returns true if Lagoon is active at the given timestamp.
+    pub fn is_lagoon_active(&self, timestamp: u64) -> bool {
+        self.hardforks.lagoon_time.is_some_and(|t| timestamp >= t)
     }
 
-    /// Returns true if the timestamp marks the first Interop block.
+    /// Returns true if `timestamp` is `fork`'s activation block — `fork` is active at `timestamp`
+    /// but was not active at the previous block. Mirrors op-node's `IsActivationBlockForFork`.
+    pub fn is_fork_activation_block(&self, fork: OpHardfork, timestamp: u64) -> bool {
+        let activation = self.op_fork_activation(fork);
+        activation.active_at_timestamp(timestamp) &&
+            !activation.active_at_timestamp(timestamp.saturating_sub(self.block_time))
+    }
+
+    /// Returns true if the timestamp marks the first Lagoon block.
+    pub fn is_first_lagoon_block(&self, timestamp: u64) -> bool {
+        self.is_lagoon_active(timestamp) &&
+            !self.is_lagoon_active(timestamp.saturating_sub(self.block_time))
+    }
+
+    /// Returns true if the interop feature is active at the given timestamp.
+    ///
+    /// Defers to the hardfork where interop is activated, but kept as a separate feature gate —
+    /// mirroring op-node's `IsInterop` — so interop can diverge from the fork if its activation is
+    /// ever decoupled. Interop-feature code should gate on this, not on the raw fork accessor.
+    pub fn is_interop_active(&self, timestamp: u64) -> bool {
+        self.is_lagoon_active(timestamp)
+    }
+
+    /// Returns true if the timestamp marks the first interop-active block.
     pub fn is_first_interop_block(&self, timestamp: u64) -> bool {
         self.is_interop_active(timestamp) &&
             !self.is_interop_active(timestamp.saturating_sub(self.block_time))
@@ -492,6 +430,45 @@ impl RollupConfig {
     pub fn is_first_mantle_arsia_block(&self, timestamp: u64) -> bool {
         self.is_mantle_arsia_active(timestamp) &&
             !self.is_mantle_arsia_active(timestamp.saturating_sub(self.block_time))
+    }
+
+    /// `[MANTLE]` Validates the Mantle hardfork schedule, as op-node does at startup.
+    ///
+    /// See [`MantleHardForkConfig::check_fork_order`]. Call this wherever a `RollupConfig` is
+    /// loaded from an untrusted source (a rollup.json on disk); configs built in code or taken
+    /// from the registry are covered by tests instead.
+    pub fn check_mantle_fork_order(&self) -> Result<(), MantleForkOrderError> {
+        self.mantle_hardforks.check_fork_order()
+    }
+
+    /// Returns true if Mantle Elysium is active at the given timestamp.
+    pub fn is_mantle_elysium_active(&self, timestamp: u64) -> bool {
+        self.mantle_hardforks.mantle_elysium_time.is_some_and(|t| timestamp >= t)
+    }
+
+    /// Returns true if the timestamp marks the first Mantle Elysium block.
+    pub fn is_first_mantle_elysium_block(&self, timestamp: u64) -> bool {
+        self.is_mantle_elysium_active(timestamp) &&
+            !self.is_mantle_elysium_active(timestamp.saturating_sub(self.block_time))
+    }
+
+    /// `[MANTLE]` Whether the L1-info `BlobBaseFee` must be computed with the Arsia-era pinned
+    /// blob schedule instead of L1's real one.
+    ///
+    /// op-node: `isMantleArsiaButNotFirstBlock(cfg, t) && !isMantleElysiumButNotFirstBlock(cfg, t)`
+    /// (`derive/l1_block_info.go:508`). Both halves use the "active, but not on the activation
+    /// block itself" form, because the L1-info transaction is emitted *before* the fork's upgrade
+    /// transactions run.
+    ///
+    /// Note this says nothing about which L1 chain the pin applies to — op-node's
+    /// `MantleArsiaL1ChainConfigByChainID` returns a config for Ethereum mainnet only and `nil`
+    /// everywhere else, so on Sepolia the pin is a no-op. That part is enforced at the call site.
+    pub fn is_mantle_arsia_blob_schedule_pinned(&self, timestamp: u64) -> bool {
+        let arsia =
+            self.is_mantle_arsia_active(timestamp) && !self.is_first_mantle_arsia_block(timestamp);
+        let elysium = self.is_mantle_elysium_active(timestamp) &&
+            !self.is_first_mantle_elysium_block(timestamp);
+        arsia && !elysium
     }
 
     /// Returns true if a DA Challenge proxy Address is provided in the rollup config and the
@@ -535,13 +512,14 @@ impl RollupConfig {
         self.hardforks
     }
 
-    /// Computes a block number from a timestamp, relative to the L2 genesis time and the block
-    /// time.
+    /// Computes the absolute L2 block number that a timestamp falls in.
     ///
-    /// This function assumes that the timestamp is aligned with the block time, and uses floor
-    /// division in its computation.
+    /// The computation uses floor division. A timestamp between two blocks therefore resolves
+    /// to the earlier block.
     pub const fn block_number_from_timestamp(&self, timestamp: u64) -> u64 {
-        timestamp.saturating_sub(self.genesis.l2_time).saturating_div(self.block_time)
+        self.genesis.l2.number.saturating_add(
+            timestamp.saturating_sub(self.genesis.l2_time).saturating_div(self.block_time),
+        )
     }
 
     /// Checks the scalar value in Ecotone.
@@ -573,26 +551,58 @@ impl EthereumHardforks for RollupConfig {
         if fork <= EthereumHardfork::Berlin {
             // We assume that OP chains were launched with all forks before Berlin activated.
             ForkCondition::Block(0)
-        } else if fork <= EthereumHardfork::Paris {
-            // Bedrock activates all hardforks up to Paris.
-            self.op_fork_activation(OpHardfork::Bedrock)
-        } else if fork <= EthereumHardfork::Shanghai {
-            // Canyon activates Shanghai hardfork.
-            self.op_fork_activation(OpHardfork::Canyon)
-        } else if fork <= EthereumHardfork::Cancun {
-            // Ecotone activates Cancun hardfork.
-            self.op_fork_activation(OpHardfork::Ecotone)
-        } else if fork <= EthereumHardfork::Prague {
-            // Isthmus activates Prague hardfork.
-            self.op_fork_activation(OpHardfork::Isthmus)
         } else {
-            ForkCondition::Never
+            // Every later L1 fork activates with the OP fork that implies it (Bedrock for
+            // London through Paris); L1 forks without an L2 equivalent never activate.
+            OpHardfork::activating_op_fork(fork)
+                .map(|op_fork| self.op_fork_activation(op_fork))
+                .unwrap_or(ForkCondition::Never)
         }
+    }
+}
+
+impl RollupConfig {
+    /// `[MANTLE]` `ForkCondition` counterpart of [`Self::mantle_op_fork_active`], for the
+    /// `OpHardforks` trait path.
+    ///
+    /// Without this, a Mantle chain has **two disagreeing views of the same fork**: the inherent
+    /// `is_*_active` methods honour the Arsia alignment while `op_fork_activation` — and
+    /// therefore every `OpHardforks` / `EthereumHardforks` trait predicate built on it — reads
+    /// the raw per-fork timestamps that `AlignOpWithMantle` overwrites in op-node. Any consumer
+    /// reaching a Mantle config through the trait would then resolve a different fork than
+    /// derivation does.
+    ///
+    /// Returns `None` for non-Mantle chains.
+    fn mantle_op_fork_condition(&self) -> Option<ForkCondition> {
+        self.is_mantle().then(|| {
+            self.mantle_hardforks
+                .mantle_arsia_time
+                .map(ForkCondition::Timestamp)
+                .unwrap_or(ForkCondition::Never)
+        })
     }
 }
 
 impl OpHardforks for RollupConfig {
     fn op_fork_activation(&self, fork: OpHardfork) -> ForkCondition {
+        // [MANTLE] Canyon..Jovian are exactly the forks `AlignOpWithMantle` overwrites with
+        // `MantleArsiaTime`. Bedrock and Regolith are left alone (Regolith is active from
+        // genesis on Mantle), and Karst/Lagoon are newer than the alignment list, so Mantle
+        // configs leave them unset and they fall through to the standard schedule.
+        if matches!(
+            fork,
+            OpHardfork::Canyon |
+                OpHardfork::Ecotone |
+                OpHardfork::Fjord |
+                OpHardfork::Granite |
+                OpHardfork::Holocene |
+                OpHardfork::Isthmus |
+                OpHardfork::Jovian
+        ) && let Some(condition) = self.mantle_op_fork_condition()
+        {
+            return condition;
+        }
+
         match fork {
             OpHardfork::Bedrock => ForkCondition::Block(0),
             OpHardfork::Regolith => self
@@ -640,25 +650,55 @@ impl OpHardforks for RollupConfig {
                 .karst_time
                 .map(ForkCondition::Timestamp)
                 .unwrap_or_else(|| self.op_fork_activation(OpHardfork::Lagoon)),
-            // [MANTLE] Upstream renamed the OP Stack's upgrade #20 from Interop to Lagoon, so
-            // `OpHardfork::Interop` no longer exists in alloy-op-hardforks. This workspace syncs
-            // alloy-* to op-reth/v2.4.2 but deliberately does not sync kona, so the enum variant
-            // is the new name while `RollupConfig`'s field keeps kona's old `interop_time` name.
-            // Same upgrade, same activation timestamp — only the spelling differs.
             OpHardfork::Lagoon => self
                 .hardforks
-                .interop_time
+                .lagoon_time
                 .map(ForkCondition::Timestamp)
                 .unwrap_or(ForkCondition::Never),
             _ => ForkCondition::Never,
         }
+    }
+
+    // [MANTLE] Wire the Mantle predicates into the `OpHardforks` trait.
+    //
+    // The trait's defaults all return `false`, so without these overrides any consumer that
+    // takes `impl OpHardforks` — notably `alloy_op_evm::spec_by_timestamp_after_bedrock`, which
+    // `evm_env_for_op_next_block` calls — would classify a Mantle `RollupConfig` as a plain OP
+    // chain and resolve JOVIAN where ARSIA is required. That is a consensus divergence.
+    //
+    // Before the v1.7.0 sync this could not bite: kona's executor built its `CfgEnv` by calling
+    // `RollupConfig::revm_spec_id` directly. v1.7.0 replaced that with
+    // `evm_env_for_op_next_block(.., self.config, ..)`, which routes through the trait instead.
+    // These overrides delegate to the inherent methods, so both paths agree by construction.
+    fn is_mantle(&self) -> bool {
+        // Deliberately duplicates the one-line body of the inherent `RollupConfig::is_mantle`
+        // rather than calling it. `Self::is_mantle(self)` would resolve to the inherent method
+        // today (inherent impls win path resolution), but it silently becomes unbounded
+        // recursion if that method is ever removed or renamed — a stack overflow inside the
+        // fault-proof program. Keep both bodies in sync.
+        self.mantle_hardforks.has_any_hardfork()
+    }
+
+    fn is_mantle_skadi_active_at_timestamp(&self, timestamp: u64) -> bool {
+        self.is_mantle_skadi_active(timestamp)
+    }
+
+    fn is_mantle_limb_active_at_timestamp(&self, timestamp: u64) -> bool {
+        self.is_mantle_limb_active(timestamp)
+    }
+
+    fn is_mantle_arsia_active_at_timestamp(&self, timestamp: u64) -> bool {
+        self.is_mantle_arsia_active(timestamp)
+    }
+
+    fn is_mantle_elysium_active_at_timestamp(&self, timestamp: u64) -> bool {
+        self.is_mantle_elysium_active(timestamp)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "serde")]
     use alloy_eips::BlockNumHash;
     use alloy_primitives::address;
     #[cfg(feature = "serde")]
@@ -674,127 +714,92 @@ mod tests {
         RollupConfig::arbitrary(&mut arbitrary::Unstructured::new(&bytes)).unwrap();
     }
 
+    /// `[MANTLE]` The inherent `is_*_active` methods and the `OpHardforks` / `EthereumHardforks`
+    /// trait predicates must never disagree.
+    ///
+    /// They are two independent code paths over the same config: the inherent ones route
+    /// through `mantle_op_fork_active`, the trait ones through `op_fork_activation`. Derivation
+    /// uses the first, `spec_by_timestamp_after_bedrock` and the engine-version selectors use
+    /// the second. Before `mantle_op_fork_condition` existed, the trait path read the raw
+    /// per-fork timestamps that `AlignOpWithMantle` overwrites — so a config whose
+    /// `ecotone_time` differed from `mantle_arsia_time` resolved two different forks at once.
     #[test]
-    #[cfg(feature = "revm")]
-    fn test_spec_id() {
-        // Test standard OP Stack spec_id (used by kona protocol logic)
-        let mut config = RollupConfig {
-            hardforks: HardForkConfig { regolith_time: Some(10), ..Default::default() },
-            ..Default::default()
-        };
-        assert_eq!(config.spec_id(0), op_revm::OpSpecId::BEDROCK);
-        assert_eq!(config.spec_id(10), op_revm::OpSpecId::REGOLITH);
-        config.hardforks.canyon_time = Some(20);
-        assert_eq!(config.spec_id(20), op_revm::OpSpecId::CANYON);
-        config.hardforks.ecotone_time = Some(30);
-        assert_eq!(config.spec_id(30), op_revm::OpSpecId::ECOTONE);
-        config.hardforks.fjord_time = Some(40);
-        assert_eq!(config.spec_id(40), op_revm::OpSpecId::FJORD);
-        config.hardforks.holocene_time = Some(50);
-        assert_eq!(config.spec_id(50), op_revm::OpSpecId::HOLOCENE);
-        config.hardforks.isthmus_time = Some(60);
-        assert_eq!(config.spec_id(60), op_revm::OpSpecId::ISTHMUS);
-        config.hardforks.jovian_time = Some(70);
-        assert_eq!(config.spec_id(70), op_revm::OpSpecId::JOVIAN);
-        config.hardforks.karst_time = Some(80);
-        assert_eq!(config.spec_id(80), op_revm::OpSpecId::KARST);
-        config.hardforks.interop_time = Some(90);
-        assert_eq!(config.spec_id(90), op_revm::OpSpecId::LAGOON);
-    }
-
-    #[test]
-    #[cfg(feature = "revm")]
-    fn test_revm_spec_id() {
-        // Test standard OP Stack revm_spec_id (used by revm executor)
-        let mut config = RollupConfig {
-            hardforks: HardForkConfig { regolith_time: Some(10), ..Default::default() },
-            ..Default::default()
-        };
-        assert_eq!(config.revm_spec_id(0), op_revm::OpSpecId::BEDROCK);
-        assert_eq!(config.revm_spec_id(10), op_revm::OpSpecId::REGOLITH);
-        config.hardforks.canyon_time = Some(20);
-        assert_eq!(config.revm_spec_id(20), op_revm::OpSpecId::CANYON);
-        config.hardforks.ecotone_time = Some(30);
-        assert_eq!(config.revm_spec_id(30), op_revm::OpSpecId::ECOTONE);
-        config.hardforks.fjord_time = Some(40);
-        assert_eq!(config.revm_spec_id(40), op_revm::OpSpecId::FJORD);
-        config.hardforks.holocene_time = Some(50);
-        assert_eq!(config.revm_spec_id(50), op_revm::OpSpecId::HOLOCENE);
-        config.hardforks.isthmus_time = Some(60);
-        assert_eq!(config.revm_spec_id(60), op_revm::OpSpecId::ISTHMUS);
-    }
-
-    #[test]
-    #[cfg(feature = "revm")]
-    fn test_mantle_spec_id() {
-        // Test Mantle spec_id (kona protocol logic)
+    fn test_mantle_inherent_and_trait_fork_predicates_agree() {
+        // Deliberately hostile: every OP fork timestamp disagrees with `mantle_arsia_time`,
+        // which is exactly what `AlignOpWithMantle` discards.
         let config = RollupConfig {
             hardforks: HardForkConfig {
-                regolith_time: Some(10),
-                canyon_time: Some(20),
-                ecotone_time: Some(30),
-                fjord_time: Some(40),
-                holocene_time: Some(50),
-                isthmus_time: Some(60),
+                regolith_time: Some(0),
+                canyon_time: Some(10),
+                delta_time: Some(11),
+                ecotone_time: Some(12),
+                fjord_time: Some(13),
+                granite_time: Some(14),
+                holocene_time: Some(15),
+                isthmus_time: Some(16),
+                jovian_time: Some(17),
                 ..Default::default()
             },
             mantle_hardforks: MantleHardForkConfig {
-                mantle_limb_time: Some(100),
-                mantle_arsia_time: Some(200),
-                ..Default::default()
+                mantle_arsia_time: Some(100),
+                ..MantleHardForkConfig::NONE
             },
             ..Default::default()
         };
 
-        // Before mantle_arsia: should use BEDROCK for kona features
-        // Note: is_regolith_active checks regolith_time even before mantle_arsia,
-        // and ecotone/isthmus check hardforks times when mantle_skadi is not active,
-        // so we need to use timestamps before regolith_time and their hardfork times
-        assert_eq!(config.spec_id(0), op_revm::OpSpecId::BEDROCK);
-        assert_eq!(config.spec_id(5), op_revm::OpSpecId::BEDROCK); // Before regolith_time (10)
+        for ts in [0, 9, 10, 12, 16, 17, 50, 99, 100, 101, 1_000] {
+            assert_eq!(
+                config.is_canyon_active(ts),
+                config.is_canyon_active_at_timestamp(ts),
+                "canyon disagrees at {ts}",
+            );
+            assert_eq!(
+                config.is_ecotone_active(ts),
+                config.is_ecotone_active_at_timestamp(ts),
+                "ecotone disagrees at {ts}",
+            );
+            assert_eq!(
+                config.is_isthmus_active(ts),
+                config.is_isthmus_active_at_timestamp(ts),
+                "isthmus disagrees at {ts}",
+            );
+            assert_eq!(
+                config.is_jovian_active(ts),
+                config.is_jovian_active_at_timestamp(ts),
+                "jovian disagrees at {ts}",
+            );
+        }
 
-        // After hardforks times but before mantle_arsia: ecotone and isthmus may be active
-        // based on their hardforks times (no arsia gate on ecotone/isthmus directly)
-        assert_eq!(config.spec_id(50), op_revm::OpSpecId::ECOTONE); // ecotone_time is 30
-        assert_eq!(config.spec_id(150), op_revm::OpSpecId::ISTHMUS); // isthmus_time is 60
+        // And the alignment is real, not both-paths-wrong-the-same-way: the raw config says
+        // Ecotone at 12, the aligned answer is Arsia at 100.
+        assert!(!config.is_ecotone_active(99));
+        assert!(config.is_ecotone_active(100));
 
-        // At and after mantle_arsia: should use standard OP Stack logic
-        assert_eq!(config.spec_id(200), op_revm::OpSpecId::ISTHMUS);
-        assert_eq!(config.spec_id(300), op_revm::OpSpecId::ISTHMUS);
-    }
+        // The L1 fork mapping follows: Cancun rides Ecotone, Prague rides Isthmus.
+        assert!(!config.is_cancun_active_at_timestamp(99));
+        assert!(config.is_cancun_active_at_timestamp(100));
+        assert!(!config.is_prague_active_at_timestamp(99));
+        assert!(config.is_prague_active_at_timestamp(100));
 
-    #[test]
-    #[cfg(feature = "revm")]
-    fn test_mantle_revm_spec_id() {
-        // Test Mantle revm_spec_id (revm executor logic)
-        let config = RollupConfig {
-            mantle_hardforks: MantleHardForkConfig {
-                mantle_limb_time: Some(100),
-                mantle_arsia_time: Some(200),
-                ..Default::default()
-            },
+        // Non-Mantle chains keep the standard per-fork schedule.
+        let op_config = RollupConfig {
+            hardforks: config.hardforks,
+            mantle_hardforks: MantleHardForkConfig::NONE,
             ..Default::default()
         };
-
-        // Before mantle_limb: should use ISTHMUS
-        assert_eq!(config.revm_spec_id(0), op_revm::OpSpecId::ISTHMUS);
-        assert_eq!(config.revm_spec_id(50), op_revm::OpSpecId::ISTHMUS);
-        assert_eq!(config.revm_spec_id(99), op_revm::OpSpecId::ISTHMUS);
-
-        // At and after mantle_limb but before mantle_arsia: should use OSAKA
-        assert_eq!(config.revm_spec_id(100), op_revm::OpSpecId::OSAKA);
-        assert_eq!(config.revm_spec_id(150), op_revm::OpSpecId::OSAKA);
-
-        // After mantle_arsia: should use ARSIA (mantle_spec_id checks arsia first)
-        assert_eq!(config.revm_spec_id(200), op_revm::OpSpecId::ARSIA);
-        assert_eq!(config.revm_spec_id(300), op_revm::OpSpecId::ARSIA);
+        assert!(op_config.is_ecotone_active(12));
+        assert!(op_config.is_ecotone_active_at_timestamp(12));
     }
 
     #[test]
-    #[cfg(feature = "revm")]
     fn test_mantle_is_active_methods() {
-        // Test that is_xxx_active() methods return false before mantle_arsia
-        // (except ecotone and isthmus which are active when mantle_skadi is active)
+        // [MANTLE] On a Mantle chain every OP fork from Canyon through Jovian activates exactly
+        // at `mantle_arsia_time`, whatever the per-fork timestamps say — see
+        // `mantle_op_fork_active`. Regolith is the one exception: op-node leaves it alone.
+        //
+        // This test previously asserted the opposite for Ecotone/Isthmus (active from Skadi),
+        // which put the chain in the impossible state "Ecotone active, Canyon inactive" and
+        // diverged from op-node for the whole Skadi..Arsia window (~8 months on mainnet).
         let config = RollupConfig {
             hardforks: HardForkConfig {
                 regolith_time: Some(10),
@@ -803,71 +808,60 @@ mod tests {
                 fjord_time: Some(40),
                 holocene_time: Some(50),
                 isthmus_time: Some(60),
-                ..Default::default()
-            },
-            mantle_hardforks: MantleHardForkConfig {
-                mantle_limb_time: Some(100),
-                mantle_arsia_time: Some(200),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        // Before mantle_arsia and without mantle_skadi: ecotone and isthmus are active
-        // based on their hardfork times (they don't have arsia gate directly).
-        // Canyon/Fjord/Granite/Holocene are arsia-gated and remain inactive.
-        assert!(config.is_regolith_active(150)); // regolith_time is 10, so active at 150
-        assert!(!config.is_canyon_active(150));
-        assert!(config.is_ecotone_active(150)); // ecotone_time is 30
-        assert!(!config.is_fjord_active(150));
-        assert!(!config.is_holocene_active(150));
-        assert!(config.is_isthmus_active(150)); // isthmus_time is 60
-
-        // Test with mantle_skadi active
-        let config_with_skadi = RollupConfig {
-            hardforks: HardForkConfig {
-                regolith_time: Some(10),
-                canyon_time: Some(20),
-                ecotone_time: Some(30),
-                fjord_time: Some(40),
-                holocene_time: Some(50),
-                isthmus_time: Some(60),
+                jovian_time: Some(70),
                 ..Default::default()
             },
             mantle_hardforks: MantleHardForkConfig {
                 mantle_skadi_time: Some(100),
-                mantle_limb_time: Some(100),
+                mantle_limb_time: Some(150),
                 mantle_arsia_time: Some(200),
                 ..Default::default()
             },
             ..Default::default()
         };
 
-        // Before mantle_skadi: ecotone active via ecotone_time, isthmus inactive (isthmus_time=60 > 25)
-        assert!(!config_with_skadi.is_ecotone_active(25)); // ecotone_time is 30, so not active at 25
-        assert!(!config_with_skadi.is_isthmus_active(25));
+        // Regolith follows its own timestamp, on Mantle as elsewhere.
+        assert!(config.is_regolith_active(10));
+        assert!(!config.is_regolith_active(9));
 
-        // Before mantle_skadi but after ecotone_time: ecotone active via hardfork time
-        assert!(config_with_skadi.is_ecotone_active(50)); // ecotone_time is 30
-        assert!(!config_with_skadi.is_isthmus_active(50)); // isthmus_time is 60, so still inactive
+        // Pre-Arsia — including the whole Skadi..Arsia window — every aligned fork is inactive,
+        // even though each one's own timestamp has long passed.
+        for t in [99, 100, 150, 199] {
+            assert!(!config.is_canyon_active(t), "canyon must be inactive pre-Arsia at {t}");
+            assert!(!config.is_delta_active(t), "delta must be inactive pre-Arsia at {t}");
+            assert!(!config.is_ecotone_active(t), "ecotone must be inactive pre-Arsia at {t}");
+            assert!(!config.is_fjord_active(t), "fjord must be inactive pre-Arsia at {t}");
+            assert!(!config.is_granite_active(t), "granite must be inactive pre-Arsia at {t}");
+            assert!(!config.is_holocene_active(t), "holocene must be inactive pre-Arsia at {t}");
+            assert!(!config.is_isthmus_active(t), "isthmus must be inactive pre-Arsia at {t}");
+            assert!(!config.is_jovian_active(t), "jovian must be inactive pre-Arsia at {t}");
+        }
 
-        // After mantle_skadi: ecotone and isthmus active via skadi
-        assert!(config_with_skadi.is_regolith_active(150));
-        assert!(!config_with_skadi.is_canyon_active(150));
-        assert!(config_with_skadi.is_ecotone_active(150)); // skadi activates ecotone
-        assert!(!config_with_skadi.is_fjord_active(150));
-        assert!(!config_with_skadi.is_holocene_active(150));
-        assert!(config_with_skadi.is_isthmus_active(150)); // skadi activates isthmus
+        // At and after Arsia they all switch on together.
+        for t in [200, 250] {
+            assert!(config.is_canyon_active(t));
+            assert!(config.is_delta_active(t));
+            assert!(config.is_ecotone_active(t));
+            assert!(config.is_fjord_active(t));
+            assert!(config.is_granite_active(t));
+            assert!(config.is_holocene_active(t));
+            assert!(config.is_isthmus_active(t));
+            assert!(config.is_jovian_active(t));
+        }
 
-        // After mantle_arsia: OP Stack features should be active based on their times
-        assert!(config.is_regolith_active(250));
-        assert!(config.is_canyon_active(250));
-        assert!(config.is_ecotone_active(250));
-        assert!(config.is_fjord_active(250));
-        assert!(config.is_holocene_active(250));
-        assert!(config.is_isthmus_active(250));
+        // The alignment keys off `mantle_arsia_time`, not the per-fork timestamps: a Mantle
+        // chain whose Arsia is far in the future keeps them all off regardless.
+        let late_arsia = RollupConfig {
+            mantle_hardforks: MantleHardForkConfig {
+                mantle_arsia_time: Some(1_000),
+                ..config.mantle_hardforks
+            },
+            ..config
+        };
+        assert!(!late_arsia.is_ecotone_active(999));
+        assert!(late_arsia.is_ecotone_active(1_000));
 
-        // Non-Mantle chain should work normally
+        // Non-Mantle chains are untouched by any of this.
         let op_config = RollupConfig {
             hardforks: HardForkConfig {
                 regolith_time: Some(10),
@@ -877,13 +871,13 @@ mod tests {
             },
             ..Default::default()
         };
+        assert!(!op_config.is_mantle());
         assert!(op_config.is_regolith_active(15));
         assert!(op_config.is_canyon_active(25));
         assert!(op_config.is_ecotone_active(35));
     }
 
     #[test]
-    #[cfg(feature = "revm")]
     fn test_is_mantle() {
         // Test with Mantle hardforks configured
         let config_with_mantle = RollupConfig {
@@ -1054,7 +1048,7 @@ mod tests {
     #[test]
     fn test_jovian_active() {
         let mut config = RollupConfig::default();
-        assert!(!config.is_interop_active(0));
+        assert!(!config.is_lagoon_active(0));
         config.hardforks.jovian_time = Some(10);
         assert!(config.is_regolith_active(10));
         assert!(config.is_canyon_active(10));
@@ -1089,22 +1083,57 @@ mod tests {
     }
 
     #[test]
-    fn test_sdm_disabled_after_jovian_and_karst() {
+    fn test_lagoon_active() {
         let mut config = RollupConfig::default();
+        assert!(!config.is_lagoon_active(0));
+        config.hardforks.lagoon_time = Some(10);
+        assert!(config.is_lagoon_active(10));
+        assert!(!config.is_lagoon_active(9));
+    }
+
+    #[test]
+    fn test_first_lagoon_block() {
+        let mut config = RollupConfig { block_time: 2, ..Default::default() };
+        config.hardforks.lagoon_time = Some(120);
+        assert!(!config.is_first_lagoon_block(118));
+        assert!(config.is_first_lagoon_block(120));
+        assert!(!config.is_first_lagoon_block(122));
+    }
+
+    #[test]
+    fn test_interop_feature_tracks_lagoon() {
+        // The interop feature gate rides Lagoon today.
+        let mut config = RollupConfig { block_time: 2, ..Default::default() };
+        config.hardforks.lagoon_time = Some(120);
+        assert_eq!(config.is_interop_active(119), config.is_lagoon_active(119));
+        assert_eq!(config.is_interop_active(120), config.is_lagoon_active(120));
+        assert!(config.is_first_interop_block(120));
+        assert!(!config.is_first_interop_block(122));
+    }
+
+    #[test]
+    fn test_sdm_rides_lagoon() {
+        let mut config = RollupConfig::default();
+        // Jovian/Karst alone must not activate SDM — only Lagoon does.
         config.hardforks.jovian_time = Some(10);
         config.hardforks.karst_time = Some(20);
-
         assert!(config.is_jovian_active(10));
         assert!(!config.is_sdm_active(10));
         assert!(config.is_karst_active(20));
         assert!(!config.is_sdm_active(20));
+
+        // Schedule Lagoon and SDM must follow.
+        config.hardforks.lagoon_time = Some(30);
+        assert!(!config.is_sdm_active(29));
+        assert!(config.is_sdm_active(30));
+        assert!(config.is_sdm_active(31));
     }
 
     #[test]
-    fn test_interop_active() {
+    fn test_lagoon_stacks_prior_forks() {
         let mut config = RollupConfig::default();
-        assert!(!config.is_interop_active(0));
-        config.hardforks.interop_time = Some(10);
+        assert!(!config.is_lagoon_active(0));
+        config.hardforks.lagoon_time = Some(10);
         assert!(config.is_regolith_active(10));
         assert!(config.is_canyon_active(10));
         assert!(config.is_delta_active(10));
@@ -1115,8 +1144,8 @@ mod tests {
         assert!(!config.is_pectra_blob_schedule_active(10));
         assert!(config.is_isthmus_active(10));
         assert!(config.is_karst_active(10));
-        assert!(config.is_interop_active(10));
-        assert!(!config.is_interop_active(9));
+        assert!(config.is_lagoon_active(10));
+        assert!(!config.is_lagoon_active(9));
     }
 
     #[test]
@@ -1134,7 +1163,8 @@ mod tests {
                 isthmus_time: Some(90),
                 jovian_time: Some(100),
                 karst_time: Some(110),
-                interop_time: Some(120),
+                keep_karst_upgrade_gas: false,
+                lagoon_time: Some(120),
             },
             block_time: 2,
             ..Default::default()
@@ -1195,10 +1225,10 @@ mod tests {
         assert!(cfg.is_first_karst_block(110));
         assert!(!cfg.is_first_karst_block(112));
 
-        // Interop
-        assert!(!cfg.is_first_interop_block(118));
-        assert!(cfg.is_first_interop_block(120));
-        assert!(!cfg.is_first_interop_block(122));
+        // Lagoon
+        assert!(!cfg.is_first_lagoon_block(118));
+        assert!(cfg.is_first_lagoon_block(120));
+        assert!(!cfg.is_first_lagoon_block(122));
     }
 
     #[test]
@@ -1416,6 +1446,28 @@ mod tests {
 
         assert_eq!(cfg.block_number_from_timestamp(20), 5);
         assert_eq!(cfg.block_number_from_timestamp(30), 10);
+    }
+
+    #[test]
+    fn test_compute_block_number_from_time_non_zero_genesis() {
+        // OP Mainnet, whose L2 genesis is the last block of the legacy OVM chain.
+        let cfg = RollupConfig {
+            genesis: ChainGenesis {
+                l2: BlockNumHash { number: 105235063, ..Default::default() },
+                l2_time: 1686068903,
+                ..Default::default()
+            },
+            block_time: 2,
+            ..Default::default()
+        };
+
+        assert_eq!(cfg.block_number_from_timestamp(1686068903), 105235063);
+        assert_eq!(cfg.block_number_from_timestamp(1686068905), 105235064);
+        // 1788303126 falls between two blocks.
+        assert_eq!(cfg.block_number_from_timestamp(1788303126), 156352174);
+        assert_eq!(cfg.block_number_from_timestamp(1788303127), 156352175);
+        // A timestamp before genesis clamps to the genesis block.
+        assert_eq!(cfg.block_number_from_timestamp(0), 105235063);
     }
 
     #[cfg(feature = "rollup_config_override")]

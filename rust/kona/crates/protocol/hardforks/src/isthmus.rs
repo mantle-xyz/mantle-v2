@@ -7,7 +7,7 @@
 use alloc::{string::String, vec::Vec};
 use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::{Address, B256, Bytes, TxKind, U256, address, hex};
-use kona_protocol::Predeploys;
+use kona_genesis::Predeploys;
 use op_alloy_consensus::{TxDeposit, UpgradeDepositSource};
 
 use crate::Hardfork;
@@ -157,7 +157,7 @@ impl Isthmus {
                 gas_limit: 425_000,
                 is_system_transaction: false,
                 input: Self::l1_block_deployment_bytecode(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             TxDeposit {
@@ -169,7 +169,7 @@ impl Isthmus {
                 gas_limit: 1_625_000,
                 is_system_transaction: false,
                 input: Self::gas_price_oracle_deployment_bytecode(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             TxDeposit {
@@ -181,7 +181,7 @@ impl Isthmus {
                 gas_limit: 500_000,
                 is_system_transaction: false,
                 input: Self::operator_fee_vault_deployment_bytecode(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             TxDeposit {
@@ -193,7 +193,7 @@ impl Isthmus {
                 gas_limit: 50_000,
                 is_system_transaction: false,
                 input: super::upgrade_to_calldata(Self::NEW_L1_BLOCK),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             TxDeposit {
@@ -205,7 +205,7 @@ impl Isthmus {
                 gas_limit: 50_000,
                 is_system_transaction: false,
                 input: super::upgrade_to_calldata(Self::GAS_PRICE_ORACLE),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             TxDeposit {
@@ -217,7 +217,7 @@ impl Isthmus {
                 gas_limit: 50_000,
                 is_system_transaction: false,
                 input: super::upgrade_to_calldata(Self::OPERATOR_FEE_VAULT),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             TxDeposit {
@@ -229,7 +229,7 @@ impl Isthmus {
                 gas_limit: 90_000,
                 is_system_transaction: false,
                 input: Self::ENABLE_ISTHMUS_INPUT.into(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             TxDeposit {
@@ -241,7 +241,7 @@ impl Isthmus {
                 gas_limit: 250_000,
                 is_system_transaction: false,
                 input: Self::eip2935_creation_data(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
         ])
@@ -311,6 +311,15 @@ mod tests {
     }
 
     #[test]
+    // [MANTLE] Ignored: these vectors are upstream's canonical OP upgrade-tx bytes. Mantle's
+    // `TxDeposit` carries the BVM_ETH `eth_value` field, so every deposit encodes one byte
+    // longer (an extra `0x80` after `gas_limit`) and can never match them. Mantle does not emit
+    // the OP hardfork bundles at all — `StatefulAttributesBuilder` takes the `is_mantle()` path
+    // and emits only `MantleHardforks::ARSIA` — so these vectors carry no Mantle consensus
+    // meaning. Regenerating them against our own encoder would only assert the encoder against
+    // itself; the BVM_ETH RLP layout is already pinned by op-alloy's deposit round-trip tests.
+    #[ignore = "upstream OP upgrade-tx vectors; Mantle's BVM_ETH deposit encoding differs and \
+                these bundles are never emitted on Mantle"]
     fn test_isthmus_txs_encoded() {
         let isthmus_upgrade_tx = Isthmus.txs().collect::<Vec<_>>();
         assert_eq!(isthmus_upgrade_tx.len(), 8);

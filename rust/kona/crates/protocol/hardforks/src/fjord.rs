@@ -3,7 +3,7 @@
 use alloc::{string::String, vec::Vec};
 use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::{Address, B256, Bytes, TxKind, U256, address, hex};
-use kona_protocol::Predeploys;
+use kona_genesis::Predeploys;
 use op_alloy_consensus::{TxDeposit, UpgradeDepositSource};
 
 use crate::Hardfork;
@@ -77,7 +77,7 @@ impl Fjord {
                 gas_limit: 1_450_000,
                 is_system_transaction: false,
                 input: Self::gas_price_oracle_deployment_bytecode(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // Updates the gas price Oracle proxy to point to the Fjord Gas Price Oracle.
@@ -91,7 +91,7 @@ impl Fjord {
                 gas_limit: 50_000,
                 is_system_transaction: false,
                 input: super::upgrade_to_calldata(Self::FJORD_GAS_PRICE_ORACLE),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // Enables the Fjord Gas Price Oracle.
@@ -105,7 +105,7 @@ impl Fjord {
                 gas_limit: 90_000,
                 is_system_transaction: false,
                 input: Self::SET_FJORD_METHOD_SIGNATURE.into(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
         ])
@@ -156,6 +156,15 @@ mod tests {
     }
 
     #[test]
+    // [MANTLE] Ignored: these vectors are upstream's canonical OP upgrade-tx bytes. Mantle's
+    // `TxDeposit` carries the BVM_ETH `eth_value` field, so every deposit encodes one byte
+    // longer (an extra `0x80` after `gas_limit`) and can never match them. Mantle does not emit
+    // the OP hardfork bundles at all — `StatefulAttributesBuilder` takes the `is_mantle()` path
+    // and emits only `MantleHardforks::ARSIA` — so these vectors carry no Mantle consensus
+    // meaning. Regenerating them against our own encoder would only assert the encoder against
+    // itself; the BVM_ETH RLP layout is already pinned by op-alloy's deposit round-trip tests.
+    #[ignore = "upstream OP upgrade-tx vectors; Mantle's BVM_ETH deposit encoding differs and \
+                these bundles are never emitted on Mantle"]
     fn test_fjord_txs_encoded() {
         let fjord_upgrade_tx = Fjord.txs().collect::<Vec<_>>();
         assert_eq!(fjord_upgrade_tx.len(), 3);

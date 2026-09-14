@@ -7,7 +7,7 @@
 use alloc::{string::String, vec::Vec};
 use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::{Address, B256, Bytes, TxKind, U256, address, hex, keccak256};
-use kona_protocol::Predeploys;
+use kona_genesis::Predeploys;
 use op_alloy_consensus::{TxDeposit, UpgradeDepositSource};
 
 use crate::{Hardfork, upgrade_to_calldata};
@@ -107,7 +107,7 @@ impl Jovian {
                 gas_limit: 447_315,
                 is_system_transaction: false,
                 input: Self::l1_block_deployment_bytecode(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             TxDeposit {
@@ -119,7 +119,7 @@ impl Jovian {
                 gas_limit: 50_000,
                 is_system_transaction: false,
                 input: upgrade_to_calldata(Self::l1_block_address()),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             TxDeposit {
@@ -131,7 +131,7 @@ impl Jovian {
                 gas_limit: 1_750_714,
                 is_system_transaction: false,
                 input: Self::gas_price_oracle_deployment_bytecode(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             TxDeposit {
@@ -143,7 +143,7 @@ impl Jovian {
                 gas_limit: 50_000,
                 is_system_transaction: false,
                 input: upgrade_to_calldata(Self::gas_price_oracle_address()),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             TxDeposit {
@@ -155,7 +155,7 @@ impl Jovian {
                 gas_limit: 90_000,
                 is_system_transaction: false,
                 input: Self::gas_price_oracle_enable_jovian_bytecode(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
         ])

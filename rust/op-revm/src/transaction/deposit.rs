@@ -1,5 +1,5 @@
 //! Contains Deposit transaction parts.
-use revm::primitives::B256;
+use revm::primitives::{B256, U256};
 
 /// Deposit transaction type.
 pub const DEPOSIT_TRANSACTION_TYPE: u8 = 0x7E;
@@ -15,10 +15,13 @@ pub struct DepositTransactionParts {
     /// Whether the transaction is a system transaction.
     pub is_system_transaction: bool,
     /// EthValue means L2 BVM_ETH mint tag, nil means that there is no need to mint BVM_ETH.
-    pub eth_value: Option<u128>,
+    ///
+    /// `[MANTLE]` `U256`, matching op-node's `big.Int`; see the note on `OpTxTr::eth_value` in
+    /// `transaction::abstraction`.
+    pub eth_value: Option<U256>,
     /// EthTxValue means L2 BVM_ETH tx tag, nil means that there is no need to transfer BVM_ETH to
     /// msg.To.
-    pub eth_tx_value: Option<u128>,
+    pub eth_tx_value: Option<U256>,
 }
 
 impl DepositTransactionParts {
@@ -27,8 +30,8 @@ impl DepositTransactionParts {
         source_hash: B256,
         mint: Option<u128>,
         is_system_transaction: bool,
-        eth_value: Option<u128>,
-        eth_tx_value: Option<u128>,
+        eth_value: Option<U256>,
+        eth_tx_value: Option<U256>,
     ) -> Self {
         Self { source_hash, mint, is_system_transaction, eth_value, eth_tx_value }
     }
@@ -39,16 +42,20 @@ mod tests {
     use super::*;
     use revm::primitives::b256;
 
+    // [MANTLE] `eth_value` / `eth_tx_value` are `U256`, whose serde representation is a quoted
+    // hex quantity (`"0x64"`), unlike `mint`'s bare `u128` decimal. This struct is an internal
+    // EVM input — no wire format or external consumer serializes it — so the shape is free to
+    // differ from `op_alloy_consensus::TxDeposit`'s.
     #[test]
     fn serialize_deserialize_json_deposit_tx_parts() {
         let parts = DepositTransactionParts::new(
             b256!("0xe927a1448525fb5d32cb50ee1408461a945ba6c39bd5cf5621407d500ecc8de9"),
             Some(0x34),
             false,
-            Some(100),
-            Some(100),
+            Some(U256::from(100u128)),
+            Some(U256::from(100u128)),
         );
-        let response = r#"{"source_hash":"0xe927a1448525fb5d32cb50ee1408461a945ba6c39bd5cf5621407d500ecc8de9","mint":52,"is_system_transaction":false,"eth_value":100,"eth_tx_value":100}"#;
+        let response = r#"{"source_hash":"0xe927a1448525fb5d32cb50ee1408461a945ba6c39bd5cf5621407d500ecc8de9","mint":52,"is_system_transaction":false,"eth_value":"0x64","eth_tx_value":"0x64"}"#;
 
         // serialize
         let json = serde_json::to_string(&parts).unwrap();
@@ -62,15 +69,15 @@ mod tests {
                 b256!("0xe927a1448525fb5d32cb50ee1408461a945ba6c39bd5cf5621407d500ecc8de9"),
                 Some(0x34),
                 false,
-                Some(100),
-                Some(100),
+                Some(U256::from(100u128)),
+                Some(U256::from(100u128)),
             )
         );
     }
 
     #[test]
     fn serialize_json_deposit_tx_parts_with_bvm_eth() {
-        let response = r#"{"source_hash":"0xe927a1448525fb5d32cb50ee1408461a945ba6c39bd5cf5621407d500ecc8de9","mint":52,"is_system_transaction":false,"eth_value":100,"eth_tx_value":100}"#;
+        let response = r#"{"source_hash":"0xe927a1448525fb5d32cb50ee1408461a945ba6c39bd5cf5621407d500ecc8de9","mint":52,"is_system_transaction":false,"eth_value":"0x64","eth_tx_value":"0x64"}"#;
 
         let deposit_tx_parts: DepositTransactionParts = serde_json::from_str(response).unwrap();
         assert_eq!(
@@ -79,8 +86,8 @@ mod tests {
                 b256!("0xe927a1448525fb5d32cb50ee1408461a945ba6c39bd5cf5621407d500ecc8de9"),
                 Some(0x34),
                 false,
-                Some(100),
-                Some(100),
+                Some(U256::from(100u128)),
+                Some(U256::from(100u128)),
             )
         );
     }

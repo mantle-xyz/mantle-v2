@@ -6,23 +6,25 @@ use crate::{
     util::{encode_holocene_eip_1559_params, encode_jovian_eip_1559_params},
 };
 use alloc::vec::Vec;
-use alloy_consensus::{EMPTY_OMMER_ROOT_HASH, Header, Sealed};
+use alloy_consensus::{EMPTY_OMMER_ROOT_HASH, Header, Sealed, TxReceipt};
 use alloy_eips::{Encodable2718, eip7685::EMPTY_REQUESTS_HASH};
 use alloy_evm::{EvmFactory, block::BlockExecutionResult};
+use alloy_op_evm::block::receipt_builder::OpReceiptBuilder;
 use alloy_primitives::{B256, Sealable, U256, logs_bloom};
 use alloy_trie::EMPTY_ROOT_HASH;
 use kona_genesis::RollupConfig;
 use kona_mpt::{TrieHinter, ordered_trie_with_encoder};
 use kona_protocol::{OutputRoot, Predeploys};
-use op_alloy_consensus::OpReceiptEnvelope;
 use op_alloy_rpc_types_engine::OpPayloadAttributes;
 use revm::{context::BlockEnv, database::BundleState};
 
-impl<P, H, Evm> StatelessL2Builder<'_, P, H, Evm>
+impl<P, H, Evm, R> StatelessL2Builder<'_, P, H, Evm, R>
 where
     P: TrieDBProvider,
     H: TrieHinter,
     Evm: EvmFactory,
+    R: OpReceiptBuilder,
+    R::Receipt: Encodable2718,
 {
     /// Seals the block executed from the given [`OpPayloadAttributes`] and [`BlockEnv`], returning
     /// the computed [Header].
@@ -31,7 +33,7 @@ where
         attrs: &OpPayloadAttributes,
         parent_hash: B256,
         block_env: &BlockEnv,
-        ex_result: &BlockExecutionResult<OpReceiptEnvelope>,
+        ex_result: &BlockExecutionResult<R::Receipt>,
         bundle: BundleState,
     ) -> ExecutorResult<Sealed<Header>> {
         let timestamp = block_env.timestamp.saturating_to::<u64>();
@@ -46,8 +48,25 @@ where
             |tx, buf| buf.put_slice(tx.as_ref()),
         )
         .root();
-        let receipts_root = compute_receipts_root(&ex_result.receipts, self.config, timestamp);
-        let withdrawals_root = if self.config.is_isthmus_active(timestamp) {
+        let receipts_root = compute_receipts_root(
+            self.factory.receipt_builder(),
+            &ex_result.receipts,
+            self.config,
+            timestamp,
+        );
+        // [MANTLE] Skadi turns on the Shanghai/Cancun/Prague header shape ahead of the OP forks,
+        // which `AlignOpWithMantle` pins to `mantle_arsia_time`
+        // (`op-chain-ops/genesis/mantle_config.go::alignEthWithMantle` sets
+        // `ShanghaiTime = CancunTime = PragueTime = MantleSkadiTime`). Every OP predicate below
+        // is therefore false for the whole `[Skadi, Arsia)` window while op-geth is already
+        // emitting these fields — 10.9M blocks on Mantle Sepolia, every one of which would get a
+        // different block hash. Verified against block 25552264 onward; see MANTLE_CHANGES.md
+        // §3.2c.
+        let mantle_skadi = self.config.is_mantle_skadi_active(timestamp);
+
+        // Skadi takes the Isthmus branch, not the Canyon one: the chain's `withdrawalsRoot` in
+        // the window is the L2ToL1MessagePasser storage root, not `EMPTY_ROOT_HASH`.
+        let withdrawals_root = if self.config.is_isthmus_active(timestamp) || mantle_skadi {
             Some(self.message_passer_account()?)
         } else if self.config.is_canyon_active(timestamp) {
             Some(EMPTY_ROOT_HASH)
@@ -59,9 +78,11 @@ where
         let logs_bloom = logs_bloom(ex_result.receipts.iter().flat_map(|r| r.logs()));
 
         // Compute Cancun fields, if active.
+        // [MANTLE] Skadi takes the Ecotone branch — `(Some(0), Some(0))`, matching the chain —
+        // not the Jovian one, which is gated on Arsia.
         let (blob_gas_used, excess_blob_gas) = if self.config.is_jovian_active(timestamp) {
             (Some(ex_result.blob_gas_used), Some(0))
-        } else if self.config.is_ecotone_active(timestamp) {
+        } else if self.config.is_ecotone_active(timestamp) || mantle_skadi {
             (Some(0), Some(0))
         } else {
             Default::default()
@@ -84,7 +105,9 @@ where
         }?;
 
         // The requests hash on the OP Stack, if Isthmus is active, is always the empty SHA256 hash.
-        let requests_hash = self.config.is_isthmus_active(timestamp).then_some(EMPTY_REQUESTS_HASH);
+        // [MANTLE] Also on from Skadi — see the note above `withdrawals_root`.
+        let requests_hash = (self.config.is_isthmus_active(timestamp) || mantle_skadi)
+            .then_some(EMPTY_REQUESTS_HASH);
 
         // Construct the new header.
         let header = Header {
@@ -168,26 +191,34 @@ where
 }
 
 /// Computes the receipts root from the given set of receipts.
-pub fn compute_receipts_root(
-    receipts: &[OpReceiptEnvelope],
+///
+/// Generic over the receipt builder so non-OP receipt shapes (e.g. Celo's CIP-64 receipt) can
+/// plug in their own [`OpReceiptBuilder`]. From Regolith activation up to (but not including)
+/// Canyon activation, op-geth/op-erigon compute the receipts-trie root from a deposit-receipt
+/// encoding that omits the deposit nonce; this function reproduces that encoding by delegating
+/// nonce-stripping to [`OpReceiptBuilder::strip_deposit_nonce`], which OP Stack implementations
+/// override and other chains inherit as a no-op.
+pub fn compute_receipts_root<R>(
+    receipt_builder: &R,
+    receipts: &[R::Receipt],
     config: &RollupConfig,
     timestamp: u64,
-) -> B256 {
-    // There is a minor bug in op-geth and op-erigon where in the Regolith hardfork,
-    // the receipt root calculation does not include the deposit nonce in the
-    // receipt encoding. In the Regolith hardfork, we must strip the deposit nonce
-    // from the receipt encoding to match the receipt root calculation.
-
+) -> B256
+where
+    R: OpReceiptBuilder,
+    R::Receipt: Encodable2718,
+{
+    // [MANTLE] Upstream gates deposit-nonce stripping on the OP Regolith..Canyon window
+    // (`is_regolith_active(timestamp) && !is_canyon_active(timestamp)`). Mantle gates it on
+    // Skadi instead. Kept as-is across the v1.7.0 sync; only upstream's new generic bounds
+    // were adopted.
     if config.is_mantle_skadi_active(timestamp) {
         let receipts = receipts
             .iter()
             .cloned()
-            .map(|receipt| match receipt {
-                OpReceiptEnvelope::Deposit(mut deposit_receipt) => {
-                    deposit_receipt.receipt.deposit_nonce = None;
-                    OpReceiptEnvelope::Deposit(deposit_receipt)
-                }
-                _ => receipt,
+            .map(|mut receipt| {
+                receipt_builder.strip_deposit_nonce(&mut receipt);
+                receipt
             })
             .collect::<Vec<_>>();
 
