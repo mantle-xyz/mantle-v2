@@ -460,6 +460,7 @@ git push -u origin rust/sync-$(date +%Y%m)
 | **revm major-version bump** | Upstream raises revm to v39+. | Coordinate with mantle-xyz/revm to catch up before syncing, or defer the sync. |
 | **op-revm v19 → v20+ drift widens** | mantle-elysium does not track upstream op-revm. | Let `cargo check` surface the differences and adapt site-by-site (potentially extending the `OpTxTr` impl, adjusting signatures, etc.). |
 | **New OpSpecId variant** | Upstream introduces a new hardfork. | `cargo check` will flag the non-exhaustive match; extend the relevant arm. |
+| **Mantle's EIP-7825 exemption is dropped** | A sync rewrites a `CfgEnv<OpSpecId>` construction site, or upstream adds a new one. | revm is byte-identical to upstream and caps per-transaction gas at 16,777,216 from `SpecId::OSAKA` on, which Mantle's Limb and Arsia both map to. The exemption is `OpSpecId::tx_gas_limit_cap_override`, applied in `alloy-op-evm/src/env.rs` and `kona/crates/proof/executor/src/builder/env.rs`. A site that builds its own `CfgEnv` and omits it rejects real Mantle transactions. |
 | **mantle-xyz/revm becomes unreachable** | Network, credentials, or repo permission issues. | Temporarily vendor a copy of mantle-elysium under `mantle-v2/` and switch the patch entries from `git = ...` to `path = ...`. |
 | **Mantle reverts to non-standard blob** | A future Mantle hardfork ships a custom blob format. | Build on top of the upstream `BlobSource`; do not resurrect `MantleBlobSource` (see §3.11 rationale). |
 

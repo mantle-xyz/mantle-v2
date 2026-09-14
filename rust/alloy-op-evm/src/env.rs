@@ -142,7 +142,8 @@ fn evm_env_for_op(
     chain_id: ChainId,
 ) -> EvmEnv<OpSpecId> {
     let spec = spec_by_timestamp_after_bedrock(&chain_spec, input.timestamp);
-    let cfg_env = CfgEnv::new().with_chain_id(chain_id).with_spec_and_mainnet_gas_params(spec);
+    let mut cfg_env = CfgEnv::new().with_chain_id(chain_id).with_spec_and_mainnet_gas_params(spec);
+    cfg_env.tx_gas_limit_cap = spec.tx_gas_limit_cap_override();
 
     let blob_excess_gas_and_price = spec
         .into_eth_spec()
@@ -186,6 +187,47 @@ pub fn evm_env_for_op_payload(
         base_fee_per_gas: payload.as_v1().base_fee_per_gas.saturating_to(),
     };
     evm_env_for_op(input, chain_spec, chain_id)
+}
+
+/// [MANTLE] A fake Mantle chain spec with configurable fork activation. No published chain spec
+/// sets `is_mantle()`, so the Mantle branch of the spec picker is only reachable through this.
+#[cfg(test)]
+#[derive(Debug)]
+pub(crate) struct FakeMantle {
+    pub(crate) arsia: bool,
+    pub(crate) limb: bool,
+}
+
+#[cfg(test)]
+impl alloy_op_hardforks::EthereumHardforks for FakeMantle {
+    fn ethereum_fork_activation(
+        &self,
+        _: alloy_hardforks::EthereumHardfork,
+    ) -> alloy_op_hardforks::ForkCondition {
+        alloy_op_hardforks::ForkCondition::Timestamp(0)
+    }
+}
+
+#[cfg(test)]
+impl OpHardforks for FakeMantle {
+    fn op_fork_activation(
+        &self,
+        _: alloy_op_hardforks::OpHardfork,
+    ) -> alloy_op_hardforks::ForkCondition {
+        alloy_op_hardforks::ForkCondition::Timestamp(0)
+    }
+    fn is_mantle(&self) -> bool {
+        true
+    }
+    fn is_mantle_skadi_active_at_timestamp(&self, _: u64) -> bool {
+        true
+    }
+    fn is_mantle_limb_active_at_timestamp(&self, _: u64) -> bool {
+        self.limb
+    }
+    fn is_mantle_arsia_active_at_timestamp(&self, _: u64) -> bool {
+        self.arsia
+    }
 }
 
 #[cfg(test)]
@@ -336,34 +378,6 @@ mod tests {
     /// Mantle-specific OpSpecId variants (ARSIA, OSAKA, ISTHMUS) when `is_mantle()` is true.
     #[test]
     fn test_mantle_spec_routing_arsia() {
-        /// Helper: build a fake Mantle chain spec with configurable fork activation.
-        struct FakeMantle {
-            arsia: bool,
-            limb: bool,
-        }
-        impl EthereumHardforks for FakeMantle {
-            fn ethereum_fork_activation(&self, _: EthereumHardfork) -> ForkCondition {
-                ForkCondition::Timestamp(0)
-            }
-        }
-        impl OpHardforks for FakeMantle {
-            fn op_fork_activation(&self, _: OpHardfork) -> ForkCondition {
-                ForkCondition::Timestamp(0)
-            }
-            fn is_mantle(&self) -> bool {
-                true
-            }
-            fn is_mantle_skadi_active_at_timestamp(&self, _: u64) -> bool {
-                true
-            }
-            fn is_mantle_limb_active_at_timestamp(&self, _: u64) -> bool {
-                self.limb
-            }
-            fn is_mantle_arsia_active_at_timestamp(&self, _: u64) -> bool {
-                self.arsia
-            }
-        }
-
         // All active → ARSIA
         assert_eq!(
             spec_by_timestamp_after_bedrock(FakeMantle { arsia: true, limb: true }, 1000),
@@ -548,6 +562,30 @@ mod tests {
                 env.cfg_env.tx_gas_limit_cap(),
                 expected,
                 "with forks active up to {fork:?} ({op_spec:?}), effective tx_gas_limit_cap mismatch",
+            );
+        }
+    }
+
+    /// [MANTLE] The mirror of the test above for Mantle chains: their Osaka-level forks do not
+    /// activate EIP-7825, so the builder holds the cap open where revm would otherwise apply it.
+    /// Isthmus is included because it reaches the same effective cap by a different route --
+    /// revm's pre-Osaka default -- and the two must not disagree.
+    #[test]
+    fn mantle_forks_are_exempt_from_the_tx_gas_limit_cap() {
+        use revm::context_interface::Cfg;
+
+        let header = Header { timestamp: 1, gas_limit: 60_000_000, ..Default::default() };
+        for (arsia, limb, expected_spec) in [
+            (true, true, OpSpecId::ARSIA),
+            (false, true, OpSpecId::OSAKA),
+            (false, false, OpSpecId::ISTHMUS),
+        ] {
+            let env = evm_env_for_op_block(&header, FakeMantle { arsia, limb }, 5000);
+            assert_eq!(env.cfg_env.spec, expected_spec);
+            assert_eq!(
+                env.cfg_env.tx_gas_limit_cap(),
+                u64::MAX,
+                "Mantle at {expected_spec:?} must not cap per-transaction gas",
             );
         }
     }
