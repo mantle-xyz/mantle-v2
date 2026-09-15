@@ -770,10 +770,50 @@ in §B confirmed there are no real consumers. **Do not re-add these in a future 
 
 | Item | Origin | Why removed |
 |---|---|---|
-| `kona/crates/protocol/derive/src/sources/mantle_blob.rs` (817 lines) + `testdata/*.hex` | Mantle fork (originally vendored in Phase 1a) | Orphan code. Mantle's own fork constructs `EthereumDataSource::new_from_parts` everywhere — `MantleBlobSource` was never wired into any pipeline. The `mantle_format_failed` fallback is obsolete because post-Arsia all submissions use the standard blob format. |
+| `kona/crates/protocol/derive/src/sources/mantle_blob.rs` (817 lines) + `testdata/*.hex` | Mantle fork (originally vendored in Phase 1a) | Never constructed outside its own `#[cfg(test)]` module — every pipeline call site uses `EthereumDataSource::new_from_parts` with the upstream `BlobSource`, in Mantle's fork too. (Phase 1d's "wired" meant module registration, the re-export and the `reset()` plumbing, not construction.) **Deleting it is a deliberate scope decision, not dead-code cleanup — see §3.11.1.** |
 | `kona/crates/protocol/derive/src/sources/mantle_ethereum.rs` (222 lines) | Mantle fork (originally vendored in Phase 1a) | Orphan code. Even in Mantle's own fork, every pipeline call site uses the upstream `EthereumDataSource`. The file was an unfinished refactor. |
 | `DataAvailabilityProvider::reset()` trait method + `L1Retrieval::reset` calling `self.provider.reset()` | Phase 1d addition | Existed solely to clear `MantleBlobSource::mantle_format_failed` — moot after the above two deletions. The trait method was a default-empty no-op with no overriders. |
 | `op-reth/` — entire subtree (bin + the 16 `reth-optimism-*` crates + examples) | optimism `rust/` subtree | **Phase 5.** The Mantle EL node moved to its own repo `mantle-xyz/reth@mantle-elysium`. No kona-side crate depends on it. **Sync note below.** |
+
+#### 3.11.1 kona cannot derive pre-Arsia blocks — accepted boundary
+
+Mantle submitted batches in a **non-standard joined-blob format before Arsia**. op-batcher gates
+the two encoders on the fork (`op-batcher/batcher/driver.go:1015`):
+
+```go
+if !l.channelMgr.rollupCfg.IsMantleArsia(l.prevCurrentL1.Time) {
+    blobs, err = data.MantleBlobs()   // pre-Arsia: frames RLP-encoded as one array, split across blobs
+} else {
+    blobs, err = data.Blobs()          // post-Arsia: standard, one frame per blob
+}
+```
+
+op-node reads it back with `MantleBlobDataSource` (`op-node/rollup/derive/data_source.go:88`),
+which is **format-probing, not fork-gated**: it tries the Mantle decode first and falls back to
+standard per-blob decoding.
+
+The Rust side has no such decoder — `EthereumDataSource` / `BlobSource` only understand the
+standard format. Therefore:
+
+- **kona derives post-Arsia blocks correctly.**
+- **kona cannot derive any pre-Arsia block from L1.** It hits the first joined-blob batch and
+  fails. This applies to syncing from genesis and to proving a pre-Arsia block.
+
+**This gap is accepted.** kona-node serves the post-Arsia range; syncing Mantle from genesis
+requires op-node or a snapshot. Two consequences to keep in view:
+
+1. Retiring op-node removes the only client that can replay pre-Arsia history from L1. Confirm
+   the snapshot path covers whatever depends on that range before the cutover.
+2. Fault-proof coverage stops at Arsia. A dispute over a pre-Arsia block cannot be proven with
+   the current Rust stack.
+
+Reopening the decision means restoring `mantle_blob.rs` from `0484a132e5` and wiring it behind
+the same `!IsMantleArsia` gate op-batcher uses. The file predates v1.7.0, so it needs adapting to
+the current `BlobProvider` trait and `EthereumDataSource` shape.
+
+> The earlier rationale — "post-Arsia all submissions use the standard blob format, so the
+> fallback is obsolete by design" — is true of *new* blocks only. The pre-Arsia data is on L1
+> permanently.
 
 If a future Mantle hardfork brings non-standard blob submission back, build new code on
 top of develop's `EthereumDataSource` / `BlobSource` instead of resurrecting these files.
@@ -1053,7 +1093,7 @@ git push -u origin rust/sync-$(date +%Y%m)
 | **New OpSpecId variant** | Upstream introduces a new hardfork. | `cargo check` will flag the non-exhaustive match; extend the relevant arm. |
 | **Mantle's EIP-7825 exemption is dropped** | A sync rewrites a `CfgEnv<OpSpecId>` construction site, or upstream adds a new one. | revm is byte-identical to upstream and caps per-transaction gas at 16,777,216 from `SpecId::OSAKA` on, which Mantle's Limb and Arsia both map to. The exemption is `OpSpecId::tx_gas_limit_cap_override`, applied in `alloy-op-evm/src/env.rs::evm_env_for_op`. Every other construction site must reach it through that function — the proof executor does, via `evm_env_for_op_next_block`. A site that builds its own `CfgEnv` and omits the override rejects real Mantle transactions. |
 | **mantle-xyz/revm becomes unreachable** | Network, credentials, or repo permission issues. | Temporarily vendor a copy of the patched branch under `mantle-v2/` and switch the patch entries from `git = ...` to `path = ...`. |
-| **Mantle reverts to non-standard blob** | A future Mantle hardfork ships a custom blob format. | Build on top of the upstream `BlobSource`; do not resurrect `MantleBlobSource` (see §3.11 rationale). |
+| **Mantle reverts to non-standard blob** | A future Mantle hardfork ships a custom blob format. | Build on top of the upstream `BlobSource`; do not resurrect `MantleBlobSource` as-is. Note kona already cannot derive the pre-Arsia range for this reason — that boundary is accepted and documented in §3.11.1, and a new custom format would extend it. |
 
 ## 6. Helper script — batch-patch new TxDeposit literals
 
