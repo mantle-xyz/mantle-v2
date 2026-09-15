@@ -220,6 +220,12 @@ jobs:
           FOUNDRY_PROFILE: ci
         run: |
           forge test --match-path "./test/**/*.t.sol"
+      - name: Run messenger gas regressions with transaction isolation
+        working-directory: packages/contracts-bedrock
+        env:
+          FOUNDRY_PROFILE: ci
+        # Amsterdam state-creation costs must also be tested with each relay's own gas budget.
+        run: forge test --match-contract L1CrossDomainMessengerGas_Test --isolate
 
   contracts-bedrock-upload:
     name: contracts-bedrock-upload

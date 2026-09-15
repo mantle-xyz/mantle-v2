@@ -27,7 +27,7 @@ contract L1CrossDomainMessenger is CrossDomainMessenger, Semver {
 
     /// @notice Address of the Mantle Token on L1.
     address public immutable L1_MNT_ADDRESS;
-    /// @custom:semver 1.5.0
+    /// @custom:semver 1.6.0
     ///
     /// @param _portal Address of the OptimismPortal contract on this network.
 
@@ -35,7 +35,7 @@ contract L1CrossDomainMessenger is CrossDomainMessenger, Semver {
         OptimismPortal _portal,
         address l1mnt
     )
-        Semver(1, 5, 0)
+        Semver(1, 6, 0)
         CrossDomainMessenger(Predeploys.L2_CROSS_DOMAIN_MESSENGER)
     {
         PORTAL = _portal;
