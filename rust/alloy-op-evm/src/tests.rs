@@ -238,6 +238,31 @@ fn non_deposit_above_tx_gas_limit_cap_is_rejected() {
     );
 }
 
+/// `[MANTLE]` The mirror of the test above. Mantle's Osaka-level forks do not activate EIP-7825,
+/// so the same transaction that Karst rejects has to execute. The environment comes from
+/// `evm_env_for_op_block` rather than a hand-built `CfgEnv`, because the exemption is applied
+/// there and a test that builds its own config would not see it.
+#[test]
+fn non_deposit_above_tx_gas_limit_cap_executes_on_mantle() {
+    let caller = Address::ZERO;
+    let target = Address::from([0x22; 20]);
+    let header =
+        alloy_consensus::Header { timestamp: 1, gas_limit: 60_000_000, ..Default::default() };
+    let env = crate::env::evm_env_for_op_block(
+        &header,
+        crate::env::FakeMantle { arsia: true, limb: true },
+        5000,
+    );
+    assert_eq!(env.cfg_env.spec, OpSpecId::ARSIA, "the fixture must land on Arsia");
+
+    let mut evm = OpEvmFactory::<OpTx>::default().create_evm(EmptyDB::default(), env);
+
+    let result = evm
+        .transact_raw(legacy_op_tx(0, caller, target, TX_GAS_LIMIT_CAP + 1))
+        .expect("a transaction above EIP-7825's cap must still execute on Mantle");
+    assert!(result.result.is_success(), "expected success, got {:?}", result.result);
+}
+
 #[test]
 fn op_evm_factory_uses_configured_refund_policy_and_snapshot() {
     let caller = Address::ZERO;

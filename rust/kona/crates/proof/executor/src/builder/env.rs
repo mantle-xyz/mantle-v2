@@ -43,6 +43,11 @@ where
                 .unwrap_or_default()
         };
 
+        // [MANTLE] The EIP-7825 exemption arrives through `evm_env_for_op_next_block`, which
+        // delegates to `alloy_op_evm::env::evm_env_for_op` and applies
+        // `OpSpecId::tx_gas_limit_cap_override` there. The proof executor must agree with the
+        // sequencer on this, or a block carrying a transaction above the cap proves invalid.
+        // Do not rebuild `CfgEnv` by hand here — that path would bypass the override.
         Ok(evm_env_for_op_next_block(
             parent_header,
             NextEvmEnvAttributes {

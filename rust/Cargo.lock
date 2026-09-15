@@ -3734,6 +3734,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2db04e74f0a9a93103b50e90b96024c9b2bdca8bce6a632ec71b88736d3d359"
 
 [[package]]
+name = "dotenv"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
+
+[[package]]
 name = "downcast"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5017,7 +5023,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "system-configuration",
  "tokio",
  "tower-layer",
@@ -8144,6 +8150,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "op-revm-block-replay"
+version = "0.0.0"
+dependencies = [
+ "alloy-consensus 2.4.2",
+ "alloy-eips 2.4.2",
+ "alloy-op-hardforks",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-rpc-client",
+ "anyhow",
+ "dotenv",
+ "futures",
+ "op-alloy-consensus",
+ "op-alloy-network",
+ "op-revm",
+ "reqwest 0.13.2",
+ "revm",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "op-version"
 version = "0.1.0"
 
@@ -9326,7 +9354,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -9364,7 +9392,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -9928,6 +9956,8 @@ version = "41.0.0"
 source = "git+https://github.com/mantle-xyz/revm?branch=dev%2Fmantle-v1.6.3#1903a86a50dde8c8148d8596f0123eadd48af7b7"
 dependencies = [
  "alloy-eips 2.4.2",
+ "alloy-provider",
+ "alloy-transport",
  "derive_more 2.1.1",
  "either",
  "revm-bytecode",
@@ -9935,6 +9965,7 @@ dependencies = [
  "revm-primitives",
  "revm-state",
  "serde",
+ "tokio",
 ]
 
 [[package]]
@@ -9948,6 +9979,7 @@ dependencies = [
  "revm-state",
  "serde",
  "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]
