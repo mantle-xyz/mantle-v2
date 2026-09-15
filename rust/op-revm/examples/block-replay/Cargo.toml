@@ -1,0 +1,44 @@
+[package]
+# Replays a range of Mantle blocks through the local op-revm and cross-checks the result
+# against the canonical chain. NOT a usage example -- it lives under `examples/` because
+# that is this workspace's convention for auxiliary member crates that `just
+# build-no-examples` can exclude from the main build (see justfile).
+#
+# Provenance: `mantle-xyz/revm`, `examples/block_traces` on `main` (603-line version).
+# It moved here because it depends on `op-revm`, which left the revm fork for this
+# workspace; the revm-side copy is deleted on `dev/mantle-v1.6.3`. Renamed from
+# `example-block-traces` because it does not produce EIP-3155 traces -- it is a receipt
+# and post-state replay verifier.
+name = "op-revm-block-replay"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+revm = { workspace = true, features = ["std", "alloydb", "serde-json"] }
+op-revm = { workspace = true, features = ["std", "serde"] }
+
+# op-alloy / alloy: the original manifest pinned `mantle-xyz/op-alloy branch = "v210"`;
+# that rolling branch is gone now that op-alloy is vendored in this workspace.
+op-alloy-consensus = { workspace = true, features = ["k256"] }
+op-alloy-network.workspace = true
+alloy-consensus.workspace = true
+alloy-eips.workspace = true
+alloy-op-hardforks.workspace = true
+alloy-primitives.workspace = true
+alloy-provider = { workspace = true, default-features = true }
+# Needed to build the RPC client by hand instead of `connect_http`, so that a request
+# timeout, retries and TCP keepalive can be set -- see the comment at the call site.
+alloy-rpc-client.workspace = true
+reqwest.workspace = true
+
+anyhow.workspace = true
+futures.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+dotenv = "0.15"

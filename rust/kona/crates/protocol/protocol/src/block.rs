@@ -3,14 +3,15 @@
 use crate::{DecodeError, L1BlockInfoTx};
 use alloc::vec::Vec;
 use alloy_consensus::{Block, Transaction, Typed2718};
-use alloy_eips::{BlockNumHash, eip2718::Eip2718Error, eip7685::EMPTY_REQUESTS_HASH};
+use alloy_eips::{BlockNumHash, eip2718::Eip2718Error};
 use alloy_primitives::B256;
-use alloy_rpc_types_engine::{CancunPayloadFields, PraguePayloadFields};
 use alloy_rpc_types_eth::Block as RpcBlock;
 use derive_more::Display;
 use kona_genesis::ChainGenesis;
 use op_alloy_consensus::{OpBlock, OpTxEnvelope};
-use op_alloy_rpc_types_engine::{OpExecutionPayload, OpExecutionPayloadSidecar, OpPayloadError};
+use op_alloy_rpc_types_engine::{
+    OpExecutionPayload, OpExecutionPayloadEnvelope, OpPayloadError,
+};
 
 /// Block Header Info
 #[derive(Debug, Clone, Display, Copy, Eq, Hash, PartialEq, Default)]
@@ -212,25 +213,37 @@ impl L2BlockInfo {
         parent_beacon_block_root: Option<B256>,
         genesis: &ChainGenesis,
     ) -> Result<Self, FromBlockError> {
+        // [MANTLE] op-alloy (synced to the op-reth/v2.4.2 anchor) removed
+        // `OpExecutionPayload::try_into_block_with_sidecar`: `try_into_block` moved onto
+        // `OpExecutionPayloadEnvelope`, and the only sidecar field this call site used —
+        // `parent_beacon_block_root` — is now carried by the envelope's V3/V4 variants.
+        // Rewritten mechanically to match.
+        //
+        // ⚠️ UNVERIFIED: the old code also passed
+        // `PraguePayloadFields::new(EMPTY_REQUESTS_HASH)`, and the new API takes no
+        // `requests_hash`. This upgrade's scope is "get alloy-* and revm right"; kona
+        // semantics are explicitly not being chased. So this site only guarantees that it
+        // compiles and that `parent_beacon_block_root` is still threaded through. The
+        // semantic difference around `requests_hash` must be verified when kona is
+        // followed separately.
+        let pbbr = parent_beacon_block_root.unwrap_or_default();
         let block: OpBlock = match payload {
-            OpExecutionPayload::V4(_) => {
-                let sidecar = OpExecutionPayloadSidecar::v4(
-                    CancunPayloadFields::new(
-                        parent_beacon_block_root.unwrap_or_default(),
-                        Vec::new(),
-                    ),
-                    PraguePayloadFields::new(EMPTY_REQUESTS_HASH),
-                );
-                payload.try_into_block_with_sidecar(&sidecar)?
+            OpExecutionPayload::V4(payload) => OpExecutionPayloadEnvelope::V4 {
+                payload,
+                parent_beacon_block_root: pbbr,
             }
-            OpExecutionPayload::V3(_) => {
-                let sidecar = OpExecutionPayloadSidecar::v3(CancunPayloadFields::new(
-                    parent_beacon_block_root.unwrap_or_default(),
-                    Vec::new(),
-                ));
-                payload.try_into_block_with_sidecar(&sidecar)?
+            .try_into_block()?,
+            OpExecutionPayload::V3(payload) => OpExecutionPayloadEnvelope::V3 {
+                payload,
+                parent_beacon_block_root: pbbr,
             }
-            _ => payload.try_into_block()?,
+            .try_into_block()?,
+            OpExecutionPayload::V2(payload) => {
+                OpExecutionPayloadEnvelope::V2(payload).try_into_block()?
+            }
+            OpExecutionPayload::V1(payload) => {
+                OpExecutionPayloadEnvelope::V1(payload).try_into_block()?
+            }
         };
         Self::from_block_and_genesis(&block, genesis)
     }

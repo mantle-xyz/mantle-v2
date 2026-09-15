@@ -1,4 +1,4 @@
-#![doc = include_str!("../README.md")]
+//! OP EVM implementation.
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/alloy-rs/core/main/assets/alloy.jpg",
     html_favicon_url = "https://raw.githubusercontent.com/alloy-rs/core/main/assets/favicon.ico"
@@ -33,7 +33,7 @@ use op_revm::{
 };
 use revm::{
     Context, ExecuteEvm, InspectEvm, Inspector, Journal, MainContext, SystemCallEvm,
-    context::{BlockEnv, CfgEnv, TxEnv},
+    context::{BlockEnv, CfgEnv, DBErrorMarker, TxEnv},
     context_interface::{
         Transaction,
         result::{EVMError, ResultAndState},
@@ -47,12 +47,21 @@ pub mod tx;
 pub use tx::OpTx;
 
 pub mod block;
-pub use block::{OpBlockExecutionCtx, OpBlockExecutor, OpBlockExecutorFactory, PostExecMode};
+pub use block::{
+    OpBlockExecutionCtx, OpBlockExecutor, OpBlockExecutorFactory, PostExecMode, PreRefundGasUsed,
+};
 
 pub mod post_exec;
 
 /// The OP EVM context type.
 pub type OpEvmContext<DB> = Context<BlockEnv, OpTx, CfgEnv<OpSpecId>, DB, Journal<DB>, L1BlockInfo>;
+
+type OpEvmInner<DB, I, P, R> = op_revm::OpEvm<
+    OpEvmContext<DB>,
+    post_exec::PostExecCompositeInspector<I, R>,
+    EthInstructions<EthInterpreter, OpEvmContext<DB>>,
+    P,
+>;
 
 /// OP EVM implementation.
 ///
@@ -62,21 +71,20 @@ pub type OpEvmContext<DB> = Context<BlockEnv, OpTx, CfgEnv<OpSpecId>, DB, Journa
 ///
 /// The `Tx` type parameter controls the transaction environment type. By default it uses
 /// [`OpTx`] which wraps [`OpTransaction<TxEnv>`] and implements the necessary foreign traits.
+///
+/// The `R` type parameter is the post-exec refund inspector embedded alongside the user inspector
+/// `I` (see [`post_exec::PostExecCompositeInspector`]). It is fixed by the EVM factory and defaults
+/// to [`NullRefundPolicy`](post_exec::NullRefundPolicy).
 #[allow(missing_debug_implementations)] // missing revm::OpContext Debug impl
-pub struct OpEvm<DB: Database, I, P = OpPrecompiles, Tx = OpTx> {
-    inner: op_revm::OpEvm<
-        OpEvmContext<DB>,
-        post_exec::PostExecCompositeInspector<I>,
-        EthInstructions<EthInterpreter, OpEvmContext<DB>>,
-        P,
-    >,
+pub struct OpEvm<DB: Database, I, P = OpPrecompiles, Tx = OpTx, R = post_exec::NullRefundPolicy> {
+    inner: OpEvmInner<DB, I, P, R>,
     inspect: bool,
     post_exec_tracking_active: bool,
-    last_tx_warming_savings: u64,
+    last_tx_post_exec_result: post_exec::PostExecExecutedTx,
     _tx: PhantomData<Tx>,
 }
 
-impl<DB: Database, I, P, Tx> OpEvm<DB, I, P, Tx> {
+impl<DB: Database, I, P, Tx, R> OpEvm<DB, I, P, Tx, R> {
     /// Consumes self and return the inner EVM instance.
     pub fn into_inner(
         self,
@@ -110,7 +118,7 @@ impl<DB: Database, I, P, Tx> OpEvm<DB, I, P, Tx> {
     }
 }
 
-impl<DB: Database, I, P, Tx> OpEvm<DB, I, P, Tx> {
+impl<DB: Database, I, P, Tx, R: Default> OpEvm<DB, I, P, Tx, R> {
     /// Creates a new OP EVM instance.
     ///
     /// The `inspect` argument determines whether the configured [`Inspector`] of the given
@@ -142,11 +150,44 @@ impl<DB: Database, I, P, Tx> OpEvm<DB, I, P, Tx> {
             }),
             inspect,
             post_exec_tracking_active: false,
-            last_tx_warming_savings: 0,
+            last_tx_post_exec_result: Default::default(),
             _tx: PhantomData,
         }
     }
+}
 
+impl<DB: Database, I, Tx, R: Default> OpEvm<DB, I, PrecompilesMap, Tx, R> {
+    /// Creates an OP EVM with the standard OP context and precompiles.
+    ///
+    /// This is shared by factories that differ only in their fixed post-exec refund inspector.
+    /// The `inspect` argument controls whether `inspector` is invoked during execution.
+    pub fn from_env(
+        db: DB,
+        input: EvmEnv<OpSpecId, BlockEnv>,
+        inspector: I,
+        inspect: bool,
+    ) -> Self {
+        let spec_id = input.cfg_env.spec;
+        let inner = Context::mainnet()
+            .with_tx(OpTx(OpTransaction::builder().build_fill()))
+            .with_cfg(CfgEnv::new_with_spec(OpSpecId::BEDROCK))
+            .with_chain(L1BlockInfo::default())
+            .with_db(db)
+            .with_block(input.block_env)
+            .with_cfg(input.cfg_env)
+            .build_op_with_inspector(inspector)
+            .with_precompiles(PrecompilesMap::from_static(
+                OpPrecompiles::new_with_spec(spec_id).precompiles(),
+            ));
+
+        Self::new(inner, inspect)
+    }
+}
+
+impl<DB: Database, I, P, Tx, R> OpEvm<DB, I, P, Tx, R>
+where
+    R: post_exec::PostExecRefundInspector,
+{
     /// Begin post-exec tracking for the next transaction.
     pub fn begin_post_exec_tx(&mut self, ctx: post_exec::PostExecTxContext) {
         self.post_exec_tracking_active = true;
@@ -159,16 +200,27 @@ impl<DB: Database, I, P, Tx> OpEvm<DB, I, P, Tx> {
 
     /// Take the extracted post-exec result for the most recently executed transaction.
     pub fn take_last_post_exec_tx_result(&mut self) -> post_exec::PostExecExecutedTx {
-        post_exec::PostExecExecutedTx {
-            refund_total: core::mem::take(&mut self.last_tx_warming_savings),
-        }
+        core::mem::take(&mut self.last_tx_post_exec_result)
+    }
+
+    /// Snapshot refund state to carry across subblock executors.
+    pub fn refund_snapshot(&self) -> R::Snapshot {
+        self.inner.0.inspector.refund_snapshot()
+    }
+
+    /// Seed refund state captured from a prior subblock.
+    pub fn seed_refund_snapshot(&mut self, state: R::Snapshot) {
+        self.inner.0.inspector.seed_refund_snapshot(state);
     }
 }
 
-impl<DB: Database, I, P, Tx> post_exec::PostExecEvm for OpEvm<DB, I, P, Tx>
+impl<DB: Database, I, P, Tx, R> post_exec::PostExecEvm for OpEvm<DB, I, P, Tx, R>
 where
     Self: Evm,
+    R: post_exec::PostExecRefundInspector,
 {
+    type Snapshot = R::Snapshot;
+
     fn begin_post_exec_tx(&mut self, ctx: post_exec::PostExecTxContext) {
         Self::begin_post_exec_tx(self, ctx);
     }
@@ -176,12 +228,23 @@ where
     fn take_last_post_exec_tx_result(&mut self) -> post_exec::PostExecExecutedTx {
         Self::take_last_post_exec_tx_result(self)
     }
+
+    fn refund_snapshot(&self) -> Self::Snapshot {
+        Self::refund_snapshot(self)
+    }
+
+    fn seed_refund_snapshot(&mut self, state: Self::Snapshot) {
+        Self::seed_refund_snapshot(self, state);
+    }
 }
 
-impl<Tx> post_exec::PostExecEvmFactoryHooks for OpEvmFactory<Tx>
+impl<Tx, R> post_exec::PostExecEvmFactoryHooks for OpEvmFactory<Tx, R>
 where
     Tx: IntoTxEnv<Tx> + Into<OpTransaction<TxEnv>> + Default + Clone + Debug,
+    R: Default + post_exec::PostExecRefundInspector,
 {
+    type Snapshot = R::Snapshot;
+
     fn begin_post_exec_tx<DB, I>(evm: &mut Self::Evm<DB, I>, ctx: post_exec::PostExecTxContext)
     where
         DB: Database,
@@ -199,9 +262,25 @@ where
     {
         evm.take_last_post_exec_tx_result()
     }
+
+    fn refund_snapshot<DB, I>(evm: &Self::Evm<DB, I>) -> Self::Snapshot
+    where
+        DB: Database,
+        I: Inspector<Self::Context<DB>>,
+    {
+        evm.refund_snapshot()
+    }
+
+    fn seed_refund_snapshot<DB, I>(evm: &mut Self::Evm<DB, I>, state: Self::Snapshot)
+    where
+        DB: Database,
+        I: Inspector<Self::Context<DB>>,
+    {
+        evm.seed_refund_snapshot(state);
+    }
 }
 
-impl<DB: Database, I, P, Tx> Deref for OpEvm<DB, I, P, Tx> {
+impl<DB: Database, I, P, Tx, R> Deref for OpEvm<DB, I, P, Tx, R> {
     type Target = OpEvmContext<DB>;
 
     #[inline]
@@ -210,19 +289,20 @@ impl<DB: Database, I, P, Tx> Deref for OpEvm<DB, I, P, Tx> {
     }
 }
 
-impl<DB: Database, I, P, Tx> DerefMut for OpEvm<DB, I, P, Tx> {
+impl<DB: Database, I, P, Tx, R> DerefMut for OpEvm<DB, I, P, Tx, R> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.ctx_mut()
     }
 }
 
-impl<DB, I, P, Tx> Evm for OpEvm<DB, I, P, Tx>
+impl<DB, I, P, Tx, R> Evm for OpEvm<DB, I, P, Tx, R>
 where
     DB: Database,
     I: Inspector<OpEvmContext<DB>>,
     P: PrecompileProvider<OpEvmContext<DB>, Output = InterpreterResult>,
     Tx: IntoTxEnv<Tx> + Into<OpTransaction<TxEnv>>,
+    R: post_exec::PostExecRefundInspector,
 {
     type DB = DB;
     type Tx = Tx;
@@ -249,14 +329,37 @@ where
         &mut self,
         tx: Self::Tx,
     ) -> Result<ResultAndState<Self::HaltReason>, Self::Error> {
-        self.last_tx_warming_savings = 0;
+        self.last_tx_post_exec_result = post_exec::PostExecExecutedTx::default();
+
+        let tx = OpTx(tx.into());
+
+        // Deposits are force-included from L1 and are exempt from EIP-7825's per-transaction gas
+        // limit cap: https://specs.optimism.io/protocol/karst/overview.html#execution-layer
+        // Temporarily remove the cap so it cannot limit the deposit's execution, then restore it
+        // so non-deposit transactions remain subject to it. Changing the cap itself, rather than
+        // special-casing deposits at each place that reads it, means every reader sees the
+        // exemption, including any added upstream later.
+        //
+        // The cap feeds `initial_gas_and_reservoir`, which splits the gas limit between the first
+        // frame's budget and the EIP-8037 reservoir: removing it hands the frame the whole limit
+        // and leaves the reservoir empty, which is what the exemption means while no OP fork
+        // enables EIP-8037. The cap is shared across every transaction this EVM runs, and the RPC
+        // call, estimate and simulate paths raise it deliberately, so the previous value is put
+        // back rather than recomputed.
+        let saved_tx_gas_limit_cap = (tx.tx_type() ==
+            op_revm::transaction::deposit::DEPOSIT_TRANSACTION_TYPE)
+            .then(|| self.inner.0.ctx.cfg.tx_gas_limit_cap.replace(u64::MAX));
 
         let track_post_exec = self.post_exec_tracking_active;
         let result = if self.inspect || track_post_exec {
-            self.inner.inspect_tx(OpTx(tx.into()))
+            self.inner.inspect_tx(tx)
         } else {
-            self.inner.transact(OpTx(tx.into()))
+            self.inner.transact(tx)
         };
+
+        if let Some(cap) = saved_tx_gas_limit_cap {
+            self.inner.0.ctx.cfg.tx_gas_limit_cap = cap;
+        }
 
         if track_post_exec {
             if self.inner.0.ctx.tx.tx_type() !=
@@ -269,8 +372,7 @@ where
                 }
             }
 
-            let post_exec_result = self.inner.0.inspector.finish_post_exec_tx();
-            self.last_tx_warming_savings = post_exec_result.refund_total;
+            self.last_tx_post_exec_result = self.inner.0.inspector.finish_post_exec_tx();
             self.post_exec_tracking_active = false;
         }
 
@@ -318,31 +420,36 @@ where
 /// The `Tx` type parameter controls the transaction type used by the created EVMs.
 /// By default it uses [`OpTx`] which wraps [`OpTransaction<TxEnv>`] and implements
 /// the necessary foreign traits.
+///
+/// The `R` type parameter fixes the post-exec refund inspector and its block-scoped snapshot.
+/// It defaults to [`NullRefundPolicy`](post_exec::NullRefundPolicy), so released public binaries
+/// cannot produce a non-empty post-exec payload.
 #[derive(Debug)]
-pub struct OpEvmFactory<Tx = OpTx>(PhantomData<Tx>);
+pub struct OpEvmFactory<Tx = OpTx, R = post_exec::NullRefundPolicy>(PhantomData<(Tx, R)>);
 
-impl<Tx> Clone for OpEvmFactory<Tx> {
+impl<Tx, R> Clone for OpEvmFactory<Tx, R> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<Tx> Copy for OpEvmFactory<Tx> {}
+impl<Tx, R> Copy for OpEvmFactory<Tx, R> {}
 
-impl<Tx> Default for OpEvmFactory<Tx> {
+impl<Tx, R> Default for OpEvmFactory<Tx, R> {
     fn default() -> Self {
         Self(PhantomData)
     }
 }
 
-impl<Tx> EvmFactory for OpEvmFactory<Tx>
+impl<Tx, R> EvmFactory for OpEvmFactory<Tx, R>
 where
     Tx: IntoTxEnv<Tx> + Into<OpTransaction<TxEnv>> + Default + Clone + Debug,
+    R: Default + post_exec::PostExecRefundInspector,
 {
-    type Evm<DB: Database, I: Inspector<OpEvmContext<DB>>> = OpEvm<DB, I, Self::Precompiles, Tx>;
+    type Evm<DB: Database, I: Inspector<OpEvmContext<DB>>> = OpEvm<DB, I, Self::Precompiles, Tx, R>;
     type Context<DB: Database> = OpEvmContext<DB>;
     type Tx = Tx;
-    type Error<DBError: core::error::Error + Send + Sync + 'static> = EVMError<DBError, OpTxError>;
+    type Error<DBError: DBErrorMarker> = EVMError<DBError, OpTxError>;
     type HaltReason = OpHaltReason;
     type Spec = OpSpecId;
     type BlockEnv = BlockEnv;
@@ -353,20 +460,7 @@ where
         db: DB,
         input: EvmEnv<OpSpecId, BlockEnv>,
     ) -> Self::Evm<DB, NoOpInspector> {
-        let spec_id = input.cfg_env.spec;
-        let inner = Context::mainnet()
-            .with_tx(OpTx(OpTransaction::builder().build_fill()))
-            .with_cfg(CfgEnv::new_with_spec(OpSpecId::BEDROCK))
-            .with_chain(L1BlockInfo::default())
-            .with_db(db)
-            .with_block(input.block_env)
-            .with_cfg(input.cfg_env)
-            .build_op_with_inspector(NoOpInspector {})
-            .with_precompiles(PrecompilesMap::from_static(
-                OpPrecompiles::new_with_spec(spec_id).precompiles(),
-            ));
-
-        OpEvm::new(inner, false)
+        OpEvm::from_env(db, input, NoOpInspector {}, false)
     }
 
     fn create_evm_with_inspector<DB: Database, I: Inspector<Self::Context<DB>>>(
@@ -375,20 +469,7 @@ where
         input: EvmEnv<OpSpecId, BlockEnv>,
         inspector: I,
     ) -> Self::Evm<DB, I> {
-        let spec_id = input.cfg_env.spec;
-        let inner = Context::mainnet()
-            .with_tx(OpTx(OpTransaction::builder().build_fill()))
-            .with_cfg(CfgEnv::new_with_spec(OpSpecId::BEDROCK))
-            .with_chain(L1BlockInfo::default())
-            .with_db(db)
-            .with_block(input.block_env)
-            .with_cfg(input.cfg_env)
-            .build_op_with_inspector(inspector)
-            .with_precompiles(PrecompilesMap::from_static(
-                OpPrecompiles::new_with_spec(spec_id).precompiles(),
-            ));
-
-        OpEvm::new(inner, true)
+        OpEvm::from_env(db, input, inspector, true)
     }
 }
 
@@ -401,61 +482,192 @@ mod tests {
         precompiles::{Precompile, PrecompileInput},
     };
     use alloy_primitives::{Signature, TxKind, U256};
-    use op_revm::precompiles::{bls12_381, bn254_pair};
+    use op_revm::{
+        OpTransactionError,
+        precompiles::{bls12_381, bn254_pair},
+    };
     use revm::{
         context::CfgEnv,
+        context_interface::{ContextTr, result::InvalidTransaction},
         database::{EmptyDB, InMemoryDB},
+        inspector::JournalExt,
+        interpreter::{CallInputs, CallOutcome, CreateInputs, CreateOutcome, Interpreter},
         precompile::PrecompileHalt,
+        primitives::eip7825::TX_GAS_LIMIT_CAP,
         state::AccountInfo,
     };
 
     use super::*;
 
-    fn legacy_op_tx(nonce: u64, caller: Address, target: Address) -> OpTx {
-        let tx =
-            TxLegacy { nonce, gas_limit: 100_000, to: TxKind::Call(target), ..Default::default() }
-                .into_signed(Signature::new(
-                    Default::default(),
-                    Default::default(),
-                    Default::default(),
-                ));
+    /// Runtime of a contract that reads (warms) storage slot 0: `PUSH1 0x00; SLOAD; POP; STOP`.
+    #[derive(Debug, Default)]
+    struct TestRefundPolicy {
+        current_kind: Option<post_exec::PostExecTxKind>,
+        committed: u64,
+    }
+
+    impl post_exec::PostExecRefundInspector for TestRefundPolicy {
+        type Snapshot = u64;
+
+        fn begin_tx(&mut self, ctx: post_exec::PostExecTxContext) {
+            self.current_kind = Some(ctx.kind);
+        }
+
+        fn note_account_touch(&mut self, _address: Address) {}
+
+        fn finish_tx(&mut self) -> post_exec::PostExecExecutedTx {
+            let refund_total =
+                if self.current_kind.take() == Some(post_exec::PostExecTxKind::Normal) {
+                    self.committed += 1;
+                    7
+                } else {
+                    0
+                };
+            post_exec::PostExecExecutedTx { refund_total, refund_events: Vec::new() }
+        }
+
+        fn inspect_step<CTX>(&mut self, _interp: &mut Interpreter, _context: &mut CTX)
+        where
+            CTX: ContextTr<Journal: JournalExt>,
+        {
+        }
+
+        fn inspect_call<CTX>(&mut self, _context: &mut CTX, _inputs: &mut CallInputs)
+        where
+            CTX: ContextTr<Journal: JournalExt>,
+        {
+        }
+
+        fn inspect_call_end<CTX>(
+            &mut self,
+            _context: &mut CTX,
+            _inputs: &CallInputs,
+            _outcome: &CallOutcome,
+        ) where
+            CTX: ContextTr<Journal: JournalExt>,
+        {
+        }
+
+        fn inspect_create<CTX>(&mut self, _context: &mut CTX, _inputs: &mut CreateInputs)
+        where
+            CTX: ContextTr<Journal: JournalExt>,
+        {
+        }
+
+        fn inspect_create_end<CTX>(
+            &mut self,
+            _context: &mut CTX,
+            _inputs: &CreateInputs,
+            _outcome: &CreateOutcome,
+        ) where
+            CTX: ContextTr<Journal: JournalExt>,
+        {
+        }
+
+        fn inspect_selfdestruct(&mut self, _contract: Address, _target: Address, _value: U256) {}
+
+        fn snapshot(&self) -> Self::Snapshot {
+            self.committed
+        }
+
+        fn restore(&mut self, snapshot: Self::Snapshot) {
+            self.committed = snapshot;
+        }
+    }
+
+    fn legacy_op_tx(nonce: u64, caller: Address, target: Address, gas_limit: u64) -> OpTx {
+        let tx = TxLegacy { nonce, gas_limit, to: TxKind::Call(target), ..Default::default() }
+            .into_signed(Signature::new(
+                Default::default(),
+                Default::default(),
+                Default::default(),
+            ));
 
         OpTx::from_recovered_tx(&tx, caller)
     }
 
-    // Verifies the raw OpEvm post-exec hook: this test enables SDM tracking directly with
-    // `begin_post_exec_tx` rather than via node config, and confirms it forces the inspector path
-    // even when normal tracing is disabled.
+    /// EIP-7825 caps a transaction's gas limit, and a transaction above the cap is rejected before
+    /// it executes. The deposit exemption in `transact_raw` is scoped to the deposit that carries
+    /// it and must leave that rule intact for every other transaction.
     #[test]
-    fn op_evm_post_exec_tracking_runs_when_inspector_is_otherwise_disabled() {
+    fn non_deposit_above_tx_gas_limit_cap_is_rejected() {
         let caller = Address::ZERO;
         let target = Address::from([0x22; 20]);
+        // Karst is Osaka-based, so EIP-7825 is live. The block gas limit is set above the
+        // transaction's so that the cap is the only limit the transaction can trip over.
+        let mut evm = OpEvmFactory::<OpTx>::default().create_evm(
+            EmptyDB::default(),
+            EvmEnv::new(
+                CfgEnv::new_with_spec(OpSpecId::KARST),
+                BlockEnv { gas_limit: 60_000_000, ..Default::default() },
+            ),
+        );
+
+        let err = evm
+            .transact_raw(legacy_op_tx(0, caller, target, TX_GAS_LIMIT_CAP + 1))
+            .expect_err("a transaction above the cap must be rejected");
+        assert!(
+            matches!(
+                err,
+                EVMError::Transaction(OpTxError(OpTransactionError::Base(
+                    InvalidTransaction::TxGasLimitGreaterThanCap { .. }
+                )))
+            ),
+            "expected TxGasLimitGreaterThanCap, got {err:?}",
+        );
+    }
+
+    /// [MANTLE] The mirror of the test above. Mantle's Osaka-level forks do not activate EIP-7825,
+    /// so the same transaction that Karst rejects has to execute. The environment comes from
+    /// `evm_env_for_op_block` rather than a hand-built `CfgEnv`, because the exemption is applied
+    /// there and a test that builds its own config would not see it.
+    #[test]
+    fn non_deposit_above_tx_gas_limit_cap_executes_on_mantle() {
+        let caller = Address::ZERO;
+        let target = Address::from([0x22; 20]);
+        let header =
+            alloy_consensus::Header { timestamp: 1, gas_limit: 60_000_000, ..Default::default() };
+        let env = crate::env::evm_env_for_op_block(
+            &header,
+            crate::env::FakeMantle { arsia: true, limb: true },
+            5000,
+        );
+        assert_eq!(env.cfg_env.spec, OpSpecId::ARSIA, "the fixture must land on Arsia");
+
+        let mut evm = OpEvmFactory::<OpTx>::default().create_evm(EmptyDB::default(), env);
+
+        let result = evm
+            .transact_raw(legacy_op_tx(0, caller, target, TX_GAS_LIMIT_CAP + 1))
+            .expect("a transaction above EIP-7825's cap must still execute on Mantle");
+        assert!(result.result.is_success(), "expected success, got {:?}", result.result);
+    }
+
+    #[test]
+    fn op_evm_factory_uses_configured_refund_policy_and_snapshot() {
+        let caller = Address::ZERO;
+        let target = Address::from([0x33; 20]);
         let mut db = InMemoryDB::default();
         db.insert_account_info(
             caller,
             AccountInfo { balance: U256::from(1_000_000_000u64), ..Default::default() },
         );
-        let mut evm = OpEvmFactory::<OpTx>::default().create_evm(
+
+        let mut evm = OpEvmFactory::<OpTx, TestRefundPolicy>::default().create_evm(
             db,
             EvmEnv::new(
                 CfgEnv::new_with_spec(OpSpecId::JOVIAN),
                 BlockEnv { gas_limit: 1_000_000, ..Default::default() },
             ),
         );
-        assert!(!evm.inspect, "factory-created EVM should start with user inspection disabled");
-
-        let mut tracked_refund = |tx_index| {
-            evm.begin_post_exec_tx(post_exec::PostExecTxContext {
-                tx_index,
-                kind: post_exec::PostExecTxKind::Normal,
-            });
-            // `transact_raw` does not commit state in this low-level test, so reuse nonce 0.
-            evm.transact_raw(legacy_op_tx(0, caller, target)).expect("tx executes");
-            evm.take_last_post_exec_tx_result().refund_total
-        };
-
-        assert_eq!(tracked_refund(0), 0);
-        assert!(tracked_refund(1) > 0, "second tx should observe block-warmed addresses");
+        evm.begin_post_exec_tx(post_exec::PostExecTxContext {
+            tx_index: 0,
+            kind: post_exec::PostExecTxKind::Normal,
+        });
+        evm.transact_raw(legacy_op_tx(0, caller, target, 100_000)).expect("tx executes");
+        assert_eq!(evm.take_last_post_exec_tx_result().refund_total, 7);
+        assert_eq!(evm.refund_snapshot(), 1);
+        evm.seed_refund_snapshot(9);
+        assert_eq!(evm.refund_snapshot(), 9);
     }
 
     #[test]
