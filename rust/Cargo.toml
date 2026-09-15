@@ -274,13 +274,13 @@ alloy-op-evm = { version = "0.32.0", path = "alloy-op-evm/", default-features = 
 alloy-op-hardforks = { version = "0.5.0", path = "alloy-op-hardforks/", default-features = false }
 
 # ==================== RETH CRATES (crates.io) ====================
-reth-codecs = { version = "0.3.1", default-features = false, features = [
+reth-codecs = { version = "0.5.0", default-features = false, features = [
   "alloy",
 ] }
-reth-codecs-derive = "0.3.1"
-reth-primitives-traits = { version = "0.3.1", default-features = false }
-reth-rpc-traits = { version = "0.3.1", default-features = false }
-reth-zstd-compressors = { version = "0.3.1", default-features = false }
+reth-codecs-derive = "0.5.0"
+reth-primitives-traits = { version = "0.5.0", default-features = false }
+reth-rpc-traits = { version = "0.5.0", default-features = false }
+reth-zstd-compressors = { version = "0.5.0", default-features = false }
 
 # ==================== RETH CRATES (git @ 88505c7fcbfdebfd3b56d88c86b62e950043c6c4) ====================
 reth = { git = "https://github.com/paradigmxyz/reth", rev = "88505c7fcbfdebfd3b56d88c86b62e950043c6c4" }
