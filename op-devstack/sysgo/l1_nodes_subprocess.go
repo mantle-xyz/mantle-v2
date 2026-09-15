@@ -269,7 +269,13 @@ func WithL1NodesSubprocess(id stack.L1ELNodeID, clID stack.L1CLNodeID) stack.Opt
 			p:       p,
 			fakepos: geth.NewFakePoS(backend, engineCl, l1Clock, p.Logger(), l1Net.blockTime, 20, bcn, l1Net.genesis.Config),
 		}
-		fp.Start()
+		if !orch.manualL1Mining {
+			fp.Start()
+		} else if orch.timeTravelClock != nil {
+			// L2 services still need a running clock while L1 is driven manually.
+			orch.timeTravelClock.Start()
+			p.Cleanup(orch.timeTravelClock.Stop)
+		}
 		p.Cleanup(fp.Stop)
 		orch.l1CLs.Set(clID, &L1CLNode{
 			id:             clID,

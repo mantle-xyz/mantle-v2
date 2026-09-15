@@ -17,22 +17,18 @@ import (
 	gethrpc "github.com/ethereum/go-ethereum/rpc"
 )
 
-// maxBlockAccessLists bounds the GetPayloadV6 -> NewPayloadV5 handoff cache below.
-// 64 is far more than the handoff needs (a payload is normally submitted immediately
-// after it is built) while still covering a deep reorg's worth of in-flight blocks.
+// maxBlockAccessLists bounds the payloads retained for NewPayloadV5 retries,
+// including retries after later Seal steps fail.
 const maxBlockAccessLists = 64
 
 type engineClient struct {
 	inner *rpc.Client
 	mu    sync.Mutex
 	// blockAccessLists carries the EIP-7928 block access list from GetPayloadV6 (which
-	// receives it) to NewPayloadV5 (which must send it back). It is a handoff buffer, not
-	// a record: entries are dropped once submitted.
-	//
-	// It MUST stay bounded. NewPayloadV5 deletes what it consumes, but a block that gets
-	// built and then discarded -- exactly what the reorg suites do on purpose -- is never
-	// submitted and would otherwise sit here for the lifetime of the process. balOrder is
-	// the FIFO eviction order for that leak.
+	// receives it) to NewPayloadV5 (which must send it back). Keep entries after
+	// submission so the same payload can be retried after an RPC error or a failure
+	// later in Seal. balOrder bounds both submitted and discarded builds with FIFO
+	// eviction, so retention does not depend on a job completing successfully.
 	blockAccessLists map[common.Hash]hexutil.Bytes
 	balOrder         []common.Hash
 }
@@ -53,13 +49,11 @@ func (e *engineClient) putBlockAccessList(blockHash common.Hash, bal hexutil.Byt
 	}
 }
 
-// takeBlockAccessList returns the recorded block access list and drops it. Entries left
-// behind in balOrder by this path are skipped by eviction, which tolerates missing keys.
-func (e *engineClient) takeBlockAccessList(blockHash common.Hash) (hexutil.Bytes, bool) {
+// getBlockAccessList returns the recorded block access list without consuming it.
+func (e *engineClient) getBlockAccessList(blockHash common.Hash) (hexutil.Bytes, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	bal, ok := e.blockAccessLists[blockHash]
-	delete(e.blockAccessLists, blockHash)
 	return bal, ok
 }
 
@@ -262,12 +256,10 @@ func (e *engineClient) newExecutableDataV5(data engine.ExecutableData) (map[stri
 	if err := json.Unmarshal(payloadJSON, &payload); err != nil {
 		return nil, err
 	}
-	// Consume the entry here rather than after the RPC: this runs on every NewPayloadV5
-	// path, so the buffer is drained even when the engine call below fails.
-	blockAccessList, ok := e.takeBlockAccessList(data.BlockHash)
+	blockAccessList, ok := e.getBlockAccessList(data.BlockHash)
 	if !ok {
-		return nil, fmt.Errorf("missing blockAccessList for payload %s (built by a different client, "+
-			"already submitted, or evicted after more than %d unsubmitted blocks)", data.BlockHash, maxBlockAccessLists)
+		return nil, fmt.Errorf("missing blockAccessList for payload %s (not retrieved by this client "+
+			"or evicted from the %d-entry cache)", data.BlockHash, maxBlockAccessLists)
 	}
 	blockAccessListJSON, err := json.Marshal(blockAccessList)
 	if err != nil {

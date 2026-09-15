@@ -7,12 +7,15 @@ import (
 	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/devstackenv"
 	bss "github.com/ethereum-optimism/optimism/op-batcher/batcher"
 	batcherFlags "github.com/ethereum-optimism/optimism/op-batcher/flags"
+	"github.com/ethereum-optimism/optimism/op-chain-ops/devkeys"
 	opforks "github.com/ethereum-optimism/optimism/op-core/forks"
 	"github.com/ethereum-optimism/optimism/op-devstack/compat"
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
 	"github.com/ethereum-optimism/optimism/op-devstack/stack"
 	"github.com/ethereum-optimism/optimism/op-devstack/sysgo"
+	"github.com/ethereum-optimism/optimism/op-e2e/e2eutils/intentbuilder"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum/params/forks"
 )
 
@@ -36,8 +39,28 @@ const PostBoundaryAmsterdamOffset = uint64(6)
 type Option func(*config)
 
 type config struct {
-	deployer []sysgo.DeployerOption
-	batcher  []sysgo.BatcherOption
+	deployer       []sysgo.DeployerOption
+	batcher        []sysgo.BatcherOption
+	manualL1Mining bool
+}
+
+// WithManualL1Mining gives the test control of the first L1 block as well as all
+// subsequent blocks, including when system startup exceeds the fork offset.
+func WithManualL1Mining() Option {
+	return func(cfg *config) { cfg.manualL1Mining = true }
+}
+
+func WithPrefundedL1Users(users ...devkeys.UserKey) Option {
+	return func(cfg *config) {
+		cfg.deployer = append(cfg.deployer, func(p devtest.P, keys devkeys.Keys, builder intentbuilder.Builder) {
+			_, l1 := builder.WithL1(sysgo.DefaultL1ID)
+			for _, user := range users {
+				addr, err := keys.Address(user)
+				p.Require().NoError(err)
+				l1.WithPrefundedAccount(addr, *eth.OneTenthEther.ToU256())
+			}
+		})
+	}
 }
 
 func WithCalldataBatches() Option {
@@ -163,6 +186,9 @@ func mantleElysiumOption(system stack.Option[*sysgo.Orchestrator], amsterdamOffs
 	sysGoOpts := []stack.Option[*sysgo.Orchestrator]{
 		system,
 		sysgo.WithDeployerOptions(deployerOpts...),
+	}
+	if cfg.manualL1Mining {
+		sysGoOpts = append(sysGoOpts, sysgo.WithManualL1Mining())
 	}
 	for _, batcherOpt := range cfg.batcher {
 		sysGoOpts = append(sysGoOpts, sysgo.WithBatcherOption(batcherOpt))

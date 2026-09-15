@@ -394,13 +394,7 @@ contract OptimismPortal_FinalizeWithdrawal_Test is Portal_Initializer {
     constructor() {
         super.setUp();
         _defaultTx = Types.WithdrawalTransaction({
-            nonce: 0,
-            sender: alice,
-            target: bob,
-            mntValue: 0,
-            ethValue: 100,
-            gasLimit: 100_000,
-            data: hex""
+            nonce: 0, sender: alice, target: bob, mntValue: 0, ethValue: 100, gasLimit: 100_000, data: hex""
         });
         // Get withdrawal proof data we can use for testing.
         (_stateRoot, _storageRoot, _outputRoot, _withdrawalHash, _withdrawalProof) =
@@ -549,9 +543,10 @@ contract OptimismPortal_FinalizeWithdrawal_Test is Portal_Initializer {
 
         // Propose the same output root again, creating the same output at a different index + l2BlockNumber.
         vm.startPrank(op.L2_ORACLE().PROPOSER());
-        op.L2_ORACLE().proposeL2Output(
-            proposal.outputRoot, op.L2_ORACLE().nextBlockNumber(), blockhash(block.number), block.number
-        );
+        op.L2_ORACLE()
+            .proposeL2Output(
+                proposal.outputRoot, op.L2_ORACLE().nextBlockNumber(), blockhash(block.number), block.number
+            );
         vm.stopPrank();
 
         // Warp ahead 1 second
@@ -771,16 +766,12 @@ contract OptimismPortal_FinalizeWithdrawal_Test is Portal_Initializer {
 
     // Test: finalizeWithdrawalTransaction reverts if insufficient gas is supplied.
     function test_finalizeWithdrawalTransaction_onInsufficientGas_reverts() external {
-        // This number was identified through trial and error.
-        uint256 gasLimit = 150_000;
+        // Allow enough gas for portal bookkeeping and the MNT transfer under Amsterdam.
+        // Requesting the entire outer-call budget for the target guarantees SafeCall will
+        // reject it after that overhead, instead of running out of gas before the check.
+        uint256 gasLimit = 1_000_000;
         Types.WithdrawalTransaction memory insufficientGasTx = Types.WithdrawalTransaction({
-            nonce: 0,
-            sender: alice,
-            target: bob,
-            mntValue: 100,
-            ethValue: 0,
-            gasLimit: gasLimit,
-            data: hex""
+            nonce: 0, sender: alice, target: bob, mntValue: 100, ethValue: 0, gasLimit: gasLimit, data: hex""
         });
 
         // Get updated proof inputs.
@@ -811,6 +802,15 @@ contract OptimismPortal_FinalizeWithdrawal_Test is Portal_Initializer {
         vm.warp(block.timestamp + oracle.FINALIZATION_PERIOD_SECONDS() + 1);
         vm.expectRevert("SafeCall: Not enough gas");
         op.finalizeWithdrawalTransaction{ gas: gasLimit }(insufficientGasTx);
+
+        bytes32 withdrawalHash = Hashing.hashWithdrawal(insufficientGasTx);
+        assertFalse(op.finalizedWithdrawals(withdrawalHash));
+
+        // The same proven withdrawal must remain executable with enough gas.
+        uint256 bobBalanceBefore = l1MNT.balanceOf(bob);
+        op.finalizeWithdrawalTransaction{ gas: 2 * gasLimit }(insufficientGasTx);
+        assertTrue(op.finalizedWithdrawals(withdrawalHash));
+        assertEq(l1MNT.balanceOf(bob), bobBalanceBefore + insufficientGasTx.mntValue);
     }
 
     // Test: finalizeWithdrawalTransaction reverts if a sub-call attempts to finalize another
@@ -997,6 +997,24 @@ contract OptimismPortalResourceFuzz_Test is Portal_Initializer {
     ///      the test to take too long to run.
     uint256 constant MAX_GAS_LIMIT = 30_000_000;
 
+    function boundResourceLimits(
+        uint32 resourceLimit,
+        uint32 systemGas,
+        uint8 elasticity
+    )
+        internal
+        view
+        returns (uint32, uint32)
+    {
+        uint256 minUnits = (21000 + uint256(elasticity) - 1) / elasticity;
+        uint256 chainGasLimit = systemConfig.gasLimit();
+        systemGas = uint32(bound(systemGas, 0, chainGasLimit - minUnits * elasticity));
+        uint256 maxResourceLimit = chainGasLimit - systemGas;
+        if (maxResourceLimit > MAX_GAS_LIMIT / 8) maxResourceLimit = MAX_GAS_LIMIT / 8;
+        resourceLimit = uint32(bound(resourceLimit, minUnits, maxResourceLimit / elasticity) * elasticity);
+        return (resourceLimit, systemGas);
+    }
+
     /// @dev Test that various values of the resource metering config will not break deposits.
     function testFuzz_systemConfigDeposit_succeeds(
         uint32 _maxResourceLimit,
@@ -1012,21 +1030,27 @@ contract OptimismPortalResourceFuzz_Test is Portal_Initializer {
     )
         external
     {
-        // Get the set system gas limit
-        // uint64 gasLimit = systemConfig.gasLimit();
-        // Bound resource config
-        _maxResourceLimit = uint32(bound(_maxResourceLimit, 21000, MAX_GAS_LIMIT / 8));
+        // Construct valid resource configs, following upstream OP's rejection-rate fix (#19410).
+        _elasticityMultiplier = uint8(bound(_elasticityMultiplier, 1, type(uint8).max));
+        _baseFeeMaxChangeDenominator = uint8(bound(_baseFeeMaxChangeDenominator, 2, type(uint8).max));
+        (_maxResourceLimit, _systemTxMaxGas) =
+            boundResourceLimits(_maxResourceLimit, _systemTxMaxGas, _elasticityMultiplier);
+        _maximumBaseFee = uint128(bound(_maximumBaseFee, 1, type(uint128).max));
+        _minimumBaseFee = uint32(bound(_minimumBaseFee, 0, _maximumBaseFee - 1));
         _gasLimit = uint64(bound(_gasLimit, 21000, _maxResourceLimit));
-        _prevBaseFee = uint128(bound(_prevBaseFee, 0, 3 gwei));
-        // Prevent values that would cause reverts
-        vm.assume(systemConfig.gasLimit() >= _gasLimit);
-        vm.assume(_minimumBaseFee < _maximumBaseFee);
-        vm.assume(_baseFeeMaxChangeDenominator > 1);
-        vm.assume(uint256(_maxResourceLimit) + uint256(_systemTxMaxGas) <= systemConfig.gasLimit());
-        vm.assume(_elasticityMultiplier > 0);
-        vm.assume(((_maxResourceLimit / _elasticityMultiplier) * _elasticityMultiplier) == _maxResourceLimit);
         _prevBoughtGas = uint64(bound(_prevBoughtGas, 0, _maxResourceLimit - _gasLimit));
         _blockDiff = uint8(bound(_blockDiff, 0, 3));
+        {
+            // Limit Burn.gas loop runtime by capping worst-case metering gas at 24M
+            // (80% of this fuzz test's MAX_GAS_LIMIT). ResourceMetering divides resource cost
+            // by max(L1 base fee, 1 gwei); its largest one-block fee multiplier is
+            // (denominator + elasticity - 1) / denominator.
+            uint256 l1BaseFee = block.basefee > 1 gwei ? block.basefee : 1 gwei;
+            uint256 feeCap = (MAX_GAS_LIMIT * 4 / 5) * l1BaseFee / _gasLimit;
+            uint256 prevFeeCap = feeCap * _baseFeeMaxChangeDenominator
+                / (uint256(_baseFeeMaxChangeDenominator) + _elasticityMultiplier - 1);
+            _prevBaseFee = uint128(bound(_prevBaseFee, 0, prevFeeCap < 3 gwei ? prevFeeCap : 3 gwei));
+        }
 
         // Create a resource config to mock the call to the system config with
         ResourceMetering.ResourceConfig memory rcfg = ResourceMetering.ResourceConfig({

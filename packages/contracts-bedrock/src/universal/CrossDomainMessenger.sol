@@ -116,11 +116,15 @@ abstract contract CrossDomainMessenger is
     uint64 public constant RELAY_CALL_OVERHEAD = 40_000;
 
     /// @notice Gas reserved for finalizing the execution of `relayMessage` after the safe call.
-    uint64 public constant RELAY_RESERVED_GAS = 90_000;
+    /// @dev Includes a fresh message-status storage slot under Amsterdam state-creation pricing,
+    ///      as well as sender cleanup, token allowance cleanup, and the relay event.
+    uint64 public constant RELAY_RESERVED_GAS = 150_000;
 
     /// @notice Gas reserved for the execution between the `hasMinGas` check and the external
     ///         call in `relayMessage`.
-    uint64 public constant RELAY_GAS_CHECK_BUFFER = 55_000;
+    /// @dev Includes creating the token allowance before the call. This must be accounted for
+    ///      separately from the gas reserved for recording the result after the call.
+    uint64 public constant RELAY_GAS_CHECK_BUFFER = 150_000;
 
     /// @notice BASE gas reserved for Hashing.hashCrossDomainMessage
     uint64 public constant HASH_MESSAGE_BASE_GAS = 800;

@@ -44,29 +44,6 @@ func TestVerifierReorgsAfterSequencingWindowExpiry(gt *testing.T) {
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 
 	cl := sys.L1Network.Escape().L1CLNode(match.FirstL1CL)
-	sequenceL1BlockAndWait(t, sys)
-	sys.L2ELB.Matched(sys.L2EL, types.LocalUnsafe, 30)
-	sys.L2ELB.Matched(sys.L2EL, types.LocalSafe, 30)
-
-	// The assertions below are not L1-fork-sensitive, but the claim that they were confirmed on a
-	// Glamsterdam L1 is only worth anything if this run actually had one: a silent fall back to
-	// the in-process op-geth (see testhelpers) would leave the package green having never crossed
-	// Amsterdam, which is the one way this case can lie about its own scope.
-	//
-	// Checked here rather than at the top, and without waiting. This test drives L1 by hand and
-	// needs the L2 origin to advance one block at a time; a WaitForGlamsterdamL1 up front lets the
-	// L1 outrun the L2 and the next sequencing attempt dies on "cannot create new block with L1
-	// origin :2 ... on top of L1 origin :0". By this point the opening sequence has already put
-	// the L1 past the activation block (offset 6, one block) with the L2 matched to it, so the
-	// head can simply be inspected.
-	l1Head := sys.L1EL.BlockRefByLabel(eth.Unsafe)
-	require.Truef(l1Config.IsAmsterdam(new(big.Int).SetUint64(l1Head.Number), l1Head.Time),
-		"L1 head #%d (t=%d) must be post-Amsterdam by the time sequencing starts", l1Head.Number, l1Head.Time)
-	testhelpers.RequireGlamsterdamL1Control(t, sys.L1EL, l1Head)
-
-	sender := prefundedL2FaucetFunder(t, sys)
-	recipient := sys.Wallet.NewEOA(sys.L2EL)
-
 	sequencerStopped := false
 	batcherStopped := false
 	fakePoSStopped := false
@@ -83,25 +60,46 @@ func TestVerifierReorgsAfterSequencingWindowExpiry(gt *testing.T) {
 		}
 	})
 
+	sys.ControlPlane.FakePoSState(cl.ID(), stack.Stop)
+	fakePoSStopped = true
+	sequenceL1BlockAndWait(t, sys)
+	l1Head := sys.L1EL.BlockRefByLabel(eth.Unsafe)
+	// sysgo sequencers require two L1 confirmations before selecting an origin.
+	// Supply those confirmations, then keep L1 fixed while L2 catches up.
+	sequenceL1BlockAndWait(t, sys)
+	sequenceL1BlockAndWait(t, sys)
+	sys.L2ELB.Matched(sys.L2EL, types.LocalUnsafe, 30)
+	sys.L2ELB.Matched(sys.L2EL, types.LocalSafe, 30)
+
+	// Freeze L1 before waiting: matching verifier and sequencer alone does not
+	// establish that either L2 has consumed a post-Amsterdam L1 origin.
+	require.Truef(l1Config.IsAmsterdam(new(big.Int).SetUint64(l1Head.Number), l1Head.Time),
+		"L1 head #%d (t=%d) must be post-Amsterdam by the time sequencing starts", l1Head.Number, l1Head.Time)
+	testhelpers.RequireGlamsterdamL1Control(t, sys.L1EL, l1Head)
+	require.Eventually(func() bool {
+		sys.AdvanceTime(2 * time.Second)
+		return sys.L2EL.BlockRefByLabel(eth.Unsafe).L1Origin == l1Head.ID()
+	}, 120*time.Second, 300*time.Millisecond, "L2 must consume the fixed Amsterdam L1 head")
+
+	sender := prefundedL2FaucetFunder(t, sys)
+	recipient := sys.Wallet.NewEOA(sys.L2EL)
+
 	l2Control := sys.TestSequencer.Escape().ControlAPI(sys.L2EL.ChainID())
 	stoppedSequencerHead := sys.L2CL.StopSequencer()
 	sequencerStopped = true
 	logger.Info("Stopped sequencer to inject an unbatched unsafe block", "head", stoppedSequencerHead)
 
-	sys.L2EL.Reached(eth.Unsafe, sys.L2CL.HeadBlockRef(types.LocalUnsafe).Number, 10)
-	parentRef := sys.L2EL.BlockRefByLabel(eth.Unsafe)
-
-	sys.ControlPlane.FakePoSState(cl.ID(), stack.Stop)
-	fakePoSStopped = true
+	parentRef := sys.L2EL.BlockRefByHash(stoppedSequencerHead)
+	require.Equal(l1Head.ID(), parentRef.L1Origin)
 	sys.L2Batcher.Stop()
 	batcherStopped = true
 
 	parent := parentRef.Hash
-	l1Origin := sys.L1EL.BlockRefByLabel(eth.Unsafe).Hash
-	sequenceBlockWithL1Origin(t, l2Control, parent, l1Origin, recipient, sender, 0)
+	sequenceBlockOnParent(t, l2Control, parent, recipient, sender, 0)
 
 	oldUnsafe := sys.L2EL.BlockRefByLabel(eth.Unsafe)
 	require.Equal(parent, oldUnsafe.ParentHash)
+	require.Equal(parentRef.L1Origin, oldUnsafe.L1Origin, "injected block must inherit its parent's L1 origin")
 	logger.Info("Injected unsafe block that should be reorged out after window expiry", "oldUnsafe", oldUnsafe)
 
 	sys.L2ELB.Matched(sys.L2EL, types.LocalUnsafe, 30)
@@ -214,9 +212,9 @@ func sequenceL1BlockAndWait(t devtest.T, sys *presets.MantleSingleChainMultiNode
 	}, 30*time.Second, 200*time.Millisecond, "L1 head must advance after manual sequencing")
 }
 
-func sequenceBlockWithL1Origin(t devtest.T, ts apis.TestSequencerControlAPI, parent common.Hash, l1Origin common.Hash, alice *dsl.EOA, cathrine *dsl.EOA, nonce uint64) {
+func sequenceBlockOnParent(t devtest.T, ts apis.TestSequencerControlAPI, parent common.Hash, alice *dsl.EOA, cathrine *dsl.EOA, nonce uint64) {
 	require := t.Require()
-	require.NoError(ts.New(t.Ctx(), seqtypes.BuildOpts{Parent: parent, L1Origin: &l1Origin}))
+	require.NoError(ts.New(t.Ctx(), seqtypes.BuildOpts{Parent: parent}))
 
 	to := cathrine.PlanTransfer(alice.Address(), eth.OneWei)
 	opt := txplan.Combine(to, txplan.WithStaticNonce(nonce))
