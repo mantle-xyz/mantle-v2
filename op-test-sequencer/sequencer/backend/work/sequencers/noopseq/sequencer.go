@@ -49,6 +49,10 @@ func (n *Sequencer) Seal(ctx context.Context) error {
 	return nil
 }
 
+func (n *Sequencer) Cancel(ctx context.Context) error {
+	return nil
+}
+
 func (n *Sequencer) Prebuilt(ctx context.Context, block work.Block) error {
 	return nil
 }

@@ -142,3 +142,9 @@ gates:
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/base/deposit
         name: TestDepositMNTByBridge_WithoutMsgValue
         timeout: 5m
+
+  - id: mantle-preconf
+    description: "Mantle preconf acceptance tests. Require DEVSTACK_L2EL_KIND=op-reth (tests skip under op-geth, which has preconf disabled)."
+    tests:
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/preconf/...
+        timeout: 15m

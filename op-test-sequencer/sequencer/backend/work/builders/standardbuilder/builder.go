@@ -93,6 +93,12 @@ func (b *Builder) NewJob(ctx context.Context, opts seqtypes.BuildOpts) (work.Bui
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare payload attributes: %w", err)
 	}
+	// PreparePayloadAttributes hands back the verifier-mode template with
+	// NoTxPool=true (see op-node/rollup/derive/attributes.go). This builder
+	// drives the *sequencer*, so flip it to NoTxPool=false — otherwise the EL
+	// builds a deterministic derivation block (deposits only, no pool txs) and,
+	// on op-reth, the Mantle preconf pipeline is gated off entirely.
+	attrs.NoTxPool = false
 	b.log.Debug("Builder NewJob prepared payload attrs", "attrs", attrs)
 
 	id := seqtypes.RandomJobID()

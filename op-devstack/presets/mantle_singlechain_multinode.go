@@ -94,3 +94,39 @@ func NewMantleSingleChainMultiNodeWithTestSeq(t devtest.T) *MantleSingleChainMul
 func WithNewMantleSingleChainMultiNodeWithTestSeq() stack.CommonOption {
 	return stack.MakeCommon(sysgo.DefaultMantleSingleChainMultiNodeWithTestSeqSystem(&sysgo.DefaultMantleSingleChainMultiNodeWithTestSeqSystemIDs{}))
 }
+
+// WithNewMantleSingleChainMultiNodeWithTestSeqPreconf is the same topology as
+// WithNewMantleSingleChainMultiNodeWithTestSeq but with the Mantle preconf
+// subsystem enabled on the L2 EL(s). Hydrate it with
+// NewMantleSingleChainMultiNodeWithTestSeq. Intended to run under
+// DEVSTACK_L2EL_KIND=op-reth (only op-reth honours preconf).
+func WithNewMantleSingleChainMultiNodeWithTestSeqPreconf() stack.CommonOption {
+	return stack.MakeCommon(sysgo.DefaultMantleSingleChainMultiNodeWithTestSeqPreconfSystem(&sysgo.DefaultMantleSingleChainMultiNodeWithTestSeqSystemIDs{}))
+}
+
+// WithNewMantleSingleChainMultiNodeWithTestSeqPreconfNoJournal is like
+// WithNewMantleSingleChainMultiNodeWithTestSeqPreconf but starts preconf with
+// the on-disk commitment journal DISABLED, for the TC-RG4 degraded-path reorg
+// test (reorg-reverted commitments may be dropped rather than replayed).
+// Hydrate it with NewMantleSingleChainMultiNodeWithTestSeq, and run under
+// DEVSTACK_L2EL_KIND=op-reth.
+func WithNewMantleSingleChainMultiNodeWithTestSeqPreconfNoJournal() stack.CommonOption {
+	return stack.MakeCommon(sysgo.DefaultMantleSingleChainMultiNodeWithTestSeqPreconfNoJournalSystem(&sysgo.DefaultMantleSingleChainMultiNodeWithTestSeqSystemIDs{}))
+}
+
+// WithNewMantleSingleChainMultiNodeWithTestSeqPreconfWhitelist is the preconf
+// journal-ON test-seq topology but with a RESTRICTED (from,to) whitelist (vs
+// all=true), so a non-whitelisted, tip-ordered pool tx can be co-submitted. Used
+// by the journal-on ordering-inversion reorg test. Hydrate it with
+// NewMantleSingleChainMultiNodeWithTestSeq, run under DEVSTACK_L2EL_KIND=op-reth.
+// The whitelisted (sender,recipient) pair is sysgo.PreconfWhitelist{Sender,Recipient}Addr.
+func WithNewMantleSingleChainMultiNodeWithTestSeqPreconfWhitelist() stack.CommonOption {
+	return stack.MakeCommon(sysgo.DefaultMantleSingleChainMultiNodeWithTestSeqPreconfWhitelistSystem(&sysgo.DefaultMantleSingleChainMultiNodeWithTestSeqSystemIDs{}))
+}
+
+// WithNewMantleSingleChainMultiNodeWithTestSeqPreconfWhitelistNoJournal is the
+// journal-OFF counterpart of WithNewMantleSingleChainMultiNodeWithTestSeqPreconfWhitelist,
+// for the TC-RG4 degraded-path ordering characterization.
+func WithNewMantleSingleChainMultiNodeWithTestSeqPreconfWhitelistNoJournal() stack.CommonOption {
+	return stack.MakeCommon(sysgo.DefaultMantleSingleChainMultiNodeWithTestSeqPreconfWhitelistNoJournalSystem(&sysgo.DefaultMantleSingleChainMultiNodeWithTestSeqSystemIDs{}))
+}

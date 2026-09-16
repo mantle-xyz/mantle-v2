@@ -139,7 +139,12 @@ func (j *Job) Open(ctx context.Context) error {
 		// wait for the block building to finish
 		time.Sleep(100 * time.Millisecond)
 
-		envelope, err = j.b.engine.GetPayloadV4(*res.PayloadID)
+		// The L1 in the Mantle devstack is at BPO2 (post-Osaka; see
+		// sysgo/mantle_system.go WithForkAtL1Genesis(forks.BPO2)), so the engine
+		// only serves getPayload via V5 — V4 returns "Unsupported fork". Osaka
+		// kept newPayloadV4, so only the getPayload call is bumped here (matching
+		// geth.EngineAPI, which exposes GetPayloadV5 but no NewPayloadV5).
+		envelope, err = j.b.engine.GetPayloadV5(*res.PayloadID)
 		if err != nil {
 			j.logger.Error("failed to finish building L1 block", "err", err)
 			return err
