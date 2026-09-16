@@ -82,17 +82,9 @@ build-kona-node-debug:
 
 alias build-node := build-kona-node
 
-# Note: op-reth (the Mantle EL node) now lives in its own repo
-# (https://github.com/mantle-xyz/reth); it is no longer built from this workspace.
-
-# Build lokahi. The package is not a workspace default member, so `-p`
-# is required for `cargo` to resolve the binary.
-build-lokahi:
-  cargo build --release -p lokahi
-
-# Build lokahi in debug mode (faster compilation for local iteration)
-build-lokahi-debug:
-  cargo build -p lokahi
+# [MANTLE] No op-reth / lokahi recipes: those directories are filtered out of the bridge split
+# and are not in this tree (MANTLE_CHANGES.md §3.11). Mantle's EL node lives in its own repo,
+# https://github.com/mantle-xyz/reth.
 
 ############################### Test ################################
 

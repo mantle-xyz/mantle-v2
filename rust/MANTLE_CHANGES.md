@@ -213,7 +213,7 @@ grep -rn "\[MANTLE\]" rust/ --include="*.rs" --include="*.toml"
 | `Cargo.toml` | The `# ==================== OP-RETH INTERNAL CRATES ====================` block upstream declares (`op-reth` + 16 `reth-optimism-*` path deps) is omitted. |
 | `Cargo.toml` | `op-revm/` and `revm-ee-tests/` are workspace `members`; the old `exclude = ["op-revm"]` is gone. (The only remaining `exclude` is `[workspace.package] exclude = ["**/target"]` — unrelated, and a false positive for any audit grepping `^exclude`.) |
 | `Cargo.toml` | `alloy-evm` is **not** patched — resolves from crates.io = upstream alloy-rs/evm. Was v0.34.0 (Phase 5; see §2.3); **on the revm-41 line it is v0.37.x**, aligned to op-reth v2.4.2 together with 35 other `alloy-*` crates. Note `alloy-op-evm` is *not* released in lockstep — its latest crates.io version is 0.32.0, which is what the vendored copy here declares; that is current, not stale. |
-| `Cargo.toml` | Workspace `members` / `default-members` drop every `op-reth/*` entry, and the `reth-optimism-* / op-reth / reth-op` block is removed from `[workspace.dependencies]`. The `op-reth/` **directory itself is present on disk** (re-added by the v1.7.0 subtree pull) but is not a member, so it never compiles — see §3.9. EL node lives in `mantle-xyz/reth`. |
+| `Cargo.toml` | Workspace `members` / `default-members` drop every `op-reth/*` entry, and the `reth-optimism-* / op-reth / reth-op` block is removed from `[workspace.dependencies]`. As of 2026-09-16 the `op-reth/` **directory is not in this tree at all** — it is filtered out of the bridge split along with `lokahi/` and `op-reth-test-engine/`, see §3.11. EL node lives in `mantle-xyz/reth`. |
 
 ### 3.2 op-alloy — TxDeposit gains BVM_ETH fields + L1BlockInfo gains token_ratio
 
@@ -1010,45 +1010,69 @@ the current `BlobProvider` trait and `EthereumDataSource` shape.
 If a future Mantle hardfork brings non-standard blob submission back, build new code on
 top of develop's `EthereumDataSource` / `BlobSource` instead of resurrecting these files.
 
-**op-reth subtree-sync strategy (Phase 5).**
+**Upstream directories filtered out of the bridge (Strategy B — IN FORCE, jay 2026-09-16).**
 
-**Verified fact:** `op-reth/` is part of the upstream `rust/` subtree — it was present in
-the very first `git subtree add` commit `ba2cc4514` (`git ls-tree ba2cc4514 rust/` lists
-`rust/op-reth`). It comes in via the bridge repo `mantle-xyz/optimism-rust-bridge`, *not*
-as a Mantle-local addition. Therefore a future `git subtree pull` (§4) **will** try to
-re-introduce it. Concretely, the pull is a merge that yields:
+`op-reth/`, `lokahi/` and `op-reth-test-engine/` are **no longer in this tree**. They are
+excluded when the bridge split is assembled, so `git subtree pull` does not carry them and there
+is nothing to re-delete after each sync.
 
-- **modify/delete conflicts** for every op-reth file upstream changed (`DU`; 134 of them in the
-  v1.7.0 sync). Resolve with `git add rust/op-reth` to accept upstream's side — the current
-  posture keeps the directory but excludes it from the workspace (§3.9);
-- **silent re-add** of any *new* op-reth files upstream introduces (we have nothing to
-  conflict with);
-- a **conflict on `rust/Cargo.toml`** (we removed the `op-reth/*` members/deps; the
-  bridge's copy still has them) — resolve by keeping our op-reth-free version.
+| directory | why it is gone |
+|---|---|
+| `op-reth/` | 180 files / ~60k lines, never a workspace member, never compiled. Mantle's EL node is the separate `mantle-xyz/reth` repository. |
+| `op-reth-test-engine/` | not a member either — it depends on the `reth-optimism-*` crates that stay out of the workspace with `op-reth`. |
+| `lokahi/` | upstream's OP supernode skeleton; its README says it "currently builds a CLI that prints a greeting and exits". Targets interop, which Mantle does not use. Carried zero Mantle changes. |
 
-Three ways to keep op-reth out of the build, and which one is in force:
+`op-version/` is deliberately **kept**: `kona/bin/node` depends on it for version metadata.
 
-- **Strategy C — keep the directory, exclude it from the workspace (CURRENT, jay 2026-09-10).**
-  Accept upstream's side of the `DU` conflicts (`git add rust/op-reth`) and simply never list
-  `op-reth/*` in `[workspace] members`. It then never compiles, lints, `cargo deny`s or
-  `no_std`-checks. Cheapest per sync: the only recurring work is keeping `Cargo.toml` free of
-  `op-reth/*` members and `reth-optimism-*` deps.
-  ⚠️ 183 files / ~60k lines then sit in the tree unbuilt, including an
-  `op-reth/crates/rpc/src/error.rs` **without** Mantle's `BvmEth(_) | TxL1CostOutOfRange` arm.
-  Harmless while unbuilt; a trap for anyone who adds these crates back.
-- **Strategy A — re-delete on every sync.** `git rm -r rust/op-reth` after each pull. This was
-  the Phase 5 posture and is what earlier revisions of this file described as current. It keeps
-  the tree clean but repeats the deletion every sync.
-- **Strategy B — drop op-reth from the bridge (permanent).** Exclude `op-reth/` when
-  assembling/splitting `mantle-xyz/optimism-rust-bridge` so subtree pulls never carry it. A
-  one-time change to the bridge tooling; the only option that removes the problem rather than
-  managing it. Out of scope for the v1.7.0 sync because it changes the bridge's content
-  contract, but it remains the recommended end state.
+**Why this stopped being merely cosmetic.** Carrying 60k unbuilt lines was an active hazard, not
+just dead weight. Upstream's `.config/nextest.toml` filters on `binary(e2e_testsuite)`, defined in
+`op-reth/crates/node`; nextest validates `binary(...)` predicates against the whole workspace
+binary namespace and **hard-errors** when one matches nothing, so `cargo nextest run` exited 96
+with zero tests executed. The directory also drew review effort away from code that matters — both
+reviewers on the v1.7.0 round had to be told explicitly to scope it out.
 
-Earlier revisions recorded that Strategy C "was rejected", reasoning that unlike `op-revm`
-(which was referenced via `[patch.crates-io]`) nothing in-tree consumes `op-reth` at all. That
-decision was overridden for the v1.7.0 sync: the EL node is owned by another team, and deleting
-183 of their files from inside a subtree-sync PR is the wrong place to make that call.
+**How the filtered split is produced.** The bridge commits are plain `git commit-tree` snapshots
+of optimism's `rust/` tree (§1). To filter, drop the unwanted top-level entries before writing the
+tree:
+
+```bash
+NEWTREE=$(git ls-tree <upstream-commit>:rust \
+  | grep -vP '\t(lokahi|op-reth|op-reth-test-engine)$' \
+  | git mktree)
+git commit-tree "$NEWTREE" -p <previous-split> -m "rust: <message>"
+```
+
+Verify before pushing that the diff against the previous split is **only** those deletions:
+
+```bash
+git diff --name-only <prev-split>^{tree} "$NEWTREE" | cut -d/ -f1 | sort -u
+```
+
+For the 2026-09-16 filter this printed exactly `lokahi`, `op-reth`, `op-reth-test-engine` —
+306 deletions, nothing else touched.
+
+**Local follow-ups the filter does not do for you.** Removing the directories leaves references
+behind; the sync is not complete until these are cleaned:
+
+- `rust/Cargo.toml` — `lokahi/` was a workspace *member*, so `cargo metadata` fails until it is
+  removed from `members`.
+- `rust/justfile` — the `build-lokahi` / `build-lokahi-debug` recipes.
+- `rust/.config/nextest.toml` — the three op-reth-only overrides (§4.3).
+
+**Strategies considered and rejected**, kept because the reasoning still applies if anyone wants
+to bring a directory back:
+
+- **Strategy A — re-delete on every sync** (`git rm -r rust/op-reth` after each pull). Keeps the
+  tree clean but repeats the work every sync, and a missed deletion is silent.
+- **Strategy C — keep the directory, exclude it from the workspace** (in force 2026-09-10 to
+  2026-09-16). Cheapest per sync, but it is what produced the nextest breakage above, and it left
+  an `op-reth/crates/rpc/src/error.rs` **without** Mantle's `BvmEth(_) | TxL1CostOutOfRange` arm
+  sitting in the tree as a trap for anyone who added those crates back.
+
+An earlier revision recorded that deleting 183 files owned by another team from inside a
+subtree-sync PR was the wrong place to make that call. That objection is answered by doing it in
+the bridge instead: the EL team's repository is `mantle-xyz/reth`, and nothing they own is
+affected by this tree no longer carrying a stale unbuilt copy.
 
 ## 4. Sync workflow
 
