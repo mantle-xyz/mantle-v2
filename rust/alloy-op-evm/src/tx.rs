@@ -145,11 +145,11 @@ impl op_revm::transaction::OpTxTr for OpTx {
         self.0.is_system_transaction()
     }
 
-    fn eth_value(&self) -> Option<u128> {
+    fn eth_value(&self) -> Option<U256> {
         self.0.eth_value()
     }
 
-    fn eth_tx_value(&self) -> Option<u128> {
+    fn eth_tx_value(&self) -> Option<U256> {
         self.0.eth_tx_value()
     }
 }
@@ -248,9 +248,10 @@ impl FromTxWithEncoded<TxDeposit> for OpTx {
             source_hash: tx.source_hash,
             mint: Some(tx.mint),
             is_system_transaction: tx.is_system_transaction,
-            // Mantle BVM_ETH: TxDeposit.eth_value (u128) -> DepositTransactionParts.eth_value (Option<u128>)
-            // Treat 0 as "no mint" -> None; otherwise Some(...).
-            eth_value: if tx.eth_value == 0 { None } else { Some(tx.eth_value) },
+            // Mantle BVM_ETH: TxDeposit.eth_value (U256) -> DepositTransactionParts.eth_value
+            // (Option<U256>). Treat 0 as "no mint" -> None; otherwise Some(...). The `0 -> None`
+            // convention is the wire contract, not an artefact of the old `u128` width.
+            eth_value: (!tx.eth_value.is_zero()).then_some(tx.eth_value),
             eth_tx_value: tx.eth_tx_value,
         };
         Self(OpTransaction { base, enveloped_tx: Some(encoded), deposit })

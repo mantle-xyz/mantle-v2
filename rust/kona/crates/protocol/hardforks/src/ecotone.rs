@@ -122,7 +122,7 @@ impl Ecotone {
                 gas_limit: 375_000,
                 is_system_transaction: false,
                 input: Self::l1_block_deployment_bytecode(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // Deploy the Gas Price Oracle contract for Ecotone.
@@ -136,7 +136,7 @@ impl Ecotone {
                 gas_limit: 1_000_000,
                 is_system_transaction: false,
                 input: Self::ecotone_gas_price_oracle_deployment_bytecode(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // Updates the l1 block proxy to point to the new L1 Block contract.
@@ -150,7 +150,7 @@ impl Ecotone {
                 gas_limit: 50_000,
                 is_system_transaction: false,
                 input: super::upgrade_to_calldata(Self::NEW_L1_BLOCK),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // Updates the gas price oracle proxy to point to the new Gas Price Oracle contract.
@@ -164,7 +164,7 @@ impl Ecotone {
                 gas_limit: 50_000,
                 is_system_transaction: false,
                 input: super::upgrade_to_calldata(Self::GAS_PRICE_ORACLE),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // Enables the Ecotone Gas Price Oracle.
@@ -178,7 +178,7 @@ impl Ecotone {
                 gas_limit: 80_000,
                 is_system_transaction: false,
                 input: Self::ENABLE_ECOTONE_INPUT.into(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // Deploys the beacon block roots contract.
@@ -192,7 +192,7 @@ impl Ecotone {
                 gas_limit: 250_000,
                 is_system_transaction: false,
                 input: Self::eip4788_creation_data(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
         ])

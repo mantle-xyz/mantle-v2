@@ -569,7 +569,7 @@ mod tests {
             gas_limit: 5,
             is_system_transaction: false,
             // [MANTLE] BVM_ETH fields (no BVM_ETH semantics in this test fixture).
-            eth_value: 0,
+            eth_value: U256::ZERO,
             input: Default::default(),
             eth_tx_value: None,
         };

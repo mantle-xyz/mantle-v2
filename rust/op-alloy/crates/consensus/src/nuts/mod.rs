@@ -75,7 +75,7 @@ impl NutBundle {
                     gas_limit: tx.gas_limit,
                     is_system_transaction: false,
                     // NutBundle upgrade transactions (OP fork upgrade txs) have no BVM_ETH semantics.
-                    eth_value: 0,
+                    eth_value: U256::ZERO,
                     input: tx.data.clone(),
                     eth_tx_value: None,
                 })
