@@ -59,7 +59,7 @@ The table below is kept because two of its traps are still live when auditing th
 | Phase 4 | redirect `alloy-evm` to `mantle-xyz/evm @ mantle-v0.34.0` | ↩️ reverted in Phase 5 |
 | Sync `rust-develop-20260511` → `rust-kona-client-v1.5.1` | 7 upstream commits, 38 files, 1 trivial conflict + 1 KARST fix | ✅ |
 | Phase 5 | remove `op-reth/` (EL node now lives in `mantle-xyz/reth`); revert `alloy-evm` to upstream `alloy-rs/evm` v0.34.0 + drop the 2 dead `token_ratio` stubs in `alloy-op-evm` | ✅ |
-| Sync `op-reth/v2.4.2` anchor → `kona-client/v1.7.0` | Back through the bridge. 184 conflicts (165 mechanical / 19 judged); kona compiles again — the 22 errors the previous round left are gone. Brings upstream PR #22126 (span-batch `uvarint` ↔ op-node parity, a **consensus** fix). `[MANTLE]` markers 101 → 117 across 44 files. Verified: `check --workspace` 0/0; `cargo test` on the 8 Mantle-touched crates 931 pass / 0 fail; nightly fmt clean; clippy clean outside `op-revm/` (which carries 51 pre-existing errors, §2.1); `no_std`/riscv32 16/16. **A full `cargo test --workspace` is not green** — see §4.3 for the four tests parked with `#[ignore]` and why. | ✅ |
+| Sync `op-reth/v2.4.2` anchor → `kona-client/v1.7.0` | Back through the bridge. 184 conflicts (165 mechanical / 19 judged); kona compiles again — the 22 errors the previous round left are gone. Brings upstream PR #22126 (span-batch `uvarint` ↔ op-node parity, a **consensus** fix). `[MANTLE]` markers 101 → 208 across 71 files (re-measured 2026-09-16; the 117/44 figure recorded here originally was taken mid-sync and was never trued up). Verified: `check --workspace` 0/0; `cargo test` on the 8 Mantle-touched crates 931 pass / 0 fail; nightly fmt clean; clippy clean outside `op-revm/` (which carries a pre-existing baseline, §2.1); `no_std`/riscv32 20/20. **A full `cargo test --workspace` is not green** — see §4.3 for the four tests parked with `#[ignore]` and why. | ✅ |
 | Phase 2 | op-succinct upgrade (independent fork) | ⏸️ |
 | Phase 3 | kona security patch follow-up | ⏸️ |
 
@@ -101,8 +101,13 @@ v2.2.1 → v2.4.2 upgrade runbook under `rde-v3/docs/`, sections 4.3 and 5.6.
 subtree sync.** The v1.7.0 sync restored both directories wholesale
 (`git checkout <pre-sync ref> -- rust/op-revm/ rust/revm-ee-tests/`) rather than resolving their
 conflicts, so no upstream op-revm code entered. Keep doing this. Known consequence:
-`cargo clippy --workspace --all-features --all-targets -- -D warnings` reports **51 pre-existing
-errors in `op-revm/`** (46 `doc_markdown`, 3 style). They are byte-for-byte inherited, not
+`cargo clippy --workspace --all-features --all-targets --keep-going -- -D warnings` reports
+**50 pre-existing errors in `op-revm/`'s lib target and 91 in its lib-test target** (mostly
+`doc_markdown`, plus a handful of style lints). Re-measured 2026-09-16; the figures previously
+recorded here (51) and in §4.3 (93) were both wrong, and for the same reason — the first was
+taken without `--keep-going`, so cargo stopped scheduling after the first failing crate, and the
+two were then compared against each other. Always measure both sides of a baseline the same way.
+They are byte-for-byte inherited, not
 introduced by any sync; `cargo clippy --fix -p op-revm --all-targets` handles most of them.
 Note `--exclude op-revm` does **not** silence them: cargo only applies `--cap-lints allow` to
 registry/git dependencies, never to a path member of the same workspace.
@@ -551,9 +556,162 @@ behaviour on purpose so nobody re-derives the wrong conclusion from reading the 
 serde ever fixes this and that test starts failing, the scan becomes belt-and-braces rather than
 the only thing standing there — check before deleting it.
 
-> The same hole applies to `HardForkConfig` (the OP forks), which is flattened too. Left alone:
-> it is upstream's struct and upstream's problem, and on Mantle every OP fork is pinned to Arsia
-> anyway.
+> The same hole applies to `HardForkConfig` (the OP forks), which is flattened too. The
+> `deny_unknown_fields` hole itself is left alone — it is upstream's struct and upstream's
+> problem, and on Mantle every OP fork is pinned to Arsia anyway.
+>
+> `HardForkConfig` is **not** otherwise untouched, though. `kona/crates/protocol/genesis/src/chain/hardfork.rs`
+> carries a Mantle change: `lagoon_time` gets `serde(alias = "interop_time")`, because this
+> monorepo's Go op-node still serialises the field as `json:"interop_time"`
+> (`op-node/rollup/types.go`) while upstream kona renamed it. `#[serde(flatten)]` means unknown
+> keys are *silently dropped* rather than rejected, so without the alias kona would read an
+> op-node-produced rollup.json, see no `lagoon_time`, and conclude the fork never activates —
+> with no error anywhere. Pinned by `mantle_alias_tests::interop_time_alias_is_accepted`.
+
+### 3.2j The two fork axes — `[Skadi, Arsia)` state root and pre-Skadi receipts root
+
+**Consensus. Both were latent on `main` and on `dev/mantle-v1.6.3`; neither was introduced by the
+v1.7.0 sync.** They surfaced only once an executor fixture was taken from *inside* the window —
+the gap §3.2c flagged as "not yet covered".
+
+#### The shape of the mistake
+
+A Mantle chain has **two independent fork axes**, and op-node aligns them to *different* Mantle
+forks (`op-chain-ops/genesis/mantle_config.go:163-177`, `alignEthWithMantle`):
+
+```text
+ShanghaiTime = CancunTime = PragueTime = MantleSkadiTime
+OsakaTime                              = MantleLimbTime
+CanyonTime .. JovianTime               = MantleArsiaTime
+```
+
+kona only ever implemented the **third** line. `RollupConfig::ethereum_fork_activation` routes every
+L1 fork through `OpHardfork::activating_op_fork(fork)` → `op_fork_activation`, so Cancun resolved
+via Ecotone and Prague via Isthmus — both pinned to Arsia. For the whole `[Skadi, Arsia)` window
+(252 days / ~10.9M blocks on Mantle Sepolia) kona believed Cancun and Prague were inactive while
+op-geth had had them on since Skadi.
+
+`alloy-evm` gates the pre-block system calls on exactly those predicates —
+`is_cancun_active_at_timestamp` for EIP-4788 and `is_prague_active_at_timestamp` for EIP-2935
+(`alloy-evm-0.37.1/src/block/system_calls/{eip4788,eip2935}.rs`). So in the window the executor
+skipped both. Measured on block 28000000: op-geth writes 4 accounts (L1Block, the depositor's
+nonce, the 2935 ring buffer, the 4788 buffer); kona's bundle contained **2**. Every other header
+field matched byte for byte — only `state_root` differed.
+
+**Fix**: `RollupConfig::mantle_ethereum_fork_condition` overrides the L1 axis for Mantle chains.
+Guarded by `test_mantle_inherent_and_trait_fork_predicates_agree`, which now asserts the two axes
+are *separate* (Cancun on at Skadi while Ecotone is still off). That test previously asserted the
+**bug** — "Cancun rides Ecotone, Prague rides Isthmus" — so the defect was not merely untested, it
+was pinned. Anyone fixing it would have been greeted by a red test.
+
+#### The receipts root
+
+Independently, `compute_receipts_root` gated deposit-nonce stripping on
+`is_mantle_skadi_active(timestamp)`, so every block *before* Skadi kept the nonce in the receipts
+trie and produced a `receipts_root` the chain disagrees with.
+
+Mantle strips unconditionally. That is the empirical answer, not a translation of upstream's
+`[Regolith, Canyon)` window: Mantle's `regolith_time = 0` and `canyon_time = mantle_arsia_time`
+would imply `[0, Arsia)`, yet post-Arsia block 43000000 also reproduces *with* stripping. Gate is
+now `config.is_mantle()`, guarded by `mantle_receipts_root_tests`.
+
+#### Evidence
+
+`sepolia-testnet-qa1` (chain 5003), rollup config via `optimism_rollupConfig`, using
+`cargo run --release -p execution-fixture -- -r <L2 archive RPC> -b <n> --skip-save -c <cfg>`:
+
+| block | position | before | after |
+|---|---|---|---|
+| 20000000, 25552263 | pre-Skadi | ✗ `receipts_root` | ✓ |
+| 25552264 | Skadi activation | ✓ | ✓ |
+| 25552265, 28000000 | `[Skadi, Limb)` | ✗ `state_root` | ✓ |
+| 31600264 | Limb activation | ✗ | ✓ |
+| 33000000, 36438663 | `[Limb, Arsia)` | ✗ | ✓ |
+| 36438664 | Arsia activation | ✓ | ✓ |
+| 43000000 | post-Arsia | ✓ | ✓ |
+
+`origin/main` was built and run against the same blocks and the same config: **identical failure
+set**, which is what establishes these as pre-existing rather than sync regressions.
+
+Both regression tests were negative-controlled — disabling each fix turns its test red, restoring
+it turns it green.
+
+#### Not all four remapped forks carry the same weight
+
+Measured by removing them one at a time and re-running all 13 executor fixtures:
+
+| remapped fork | effect | guarded by |
+|---|---|---|
+| **Cancun** | consensus — gates EIP-4788 pre-block system call | `block-28000000`, `block-34065622` turn red |
+| **Prague** | consensus — gates EIP-2935 pre-block system call | same two fixtures turn red |
+| Shanghai | **inert today** — its only reachable consumer is `alloy-evm`'s withdrawal balance increment, and the OP executor always passes `withdrawals = None` | unit test only; all 13 fixtures stay green |
+| Osaka | **inert today** — its only consumer is `EngineGetPayloadVersion::from_cfg`, which already has an `is_mantle_limb_active` disjunct; the EVM's `OpSpecId` is chosen from the Mantle forks in `alloy_op_evm::spec_by_timestamp_after_bedrock` | unit test only; all 13 fixtures stay green |
+
+Shanghai and Osaka are mapped for parity with op-geth's chain config, not because kona depends on
+them today. If an `alloy` upgrade ever routes a live decision through them,
+`test_mantle_l1_fork_axis_is_pinned_for_every_variant` is the only warning that will fire.
+
+#### Third file: `kona/crates/node/engine/src/versions.rs`
+
+The fix changed a **third** test file, and this one lost coverage rather than gaining it. Its two
+Mantle tests previously pinned the `|| cfg.is_mantle_skadi_active(..)` / `|| cfg.is_mantle_limb_active(..)`
+disjuncts in the Engine-version selectors, because their premises (`!is_cancun_active(150)`,
+`!is_osaka_active(300)`) made the disjunct the only possible source of truth. Once Cancun/Prague
+ride Skadi and Osaka rides Limb, those disjuncts are **redundant** — deleting all three leaves
+every `versions.rs` test green, which was verified.
+
+Redundant code cannot be pinned through observable behaviour, so the equivalence itself is pinned
+instead, in `rollup.rs::test_mantle_l1_axis_matches_the_engine_disjuncts`. The disjuncts are kept
+(they are a local statement of op-node's rule and cost nothing) but the comments above them were
+rewritten: they previously claimed to be load-bearing, which is no longer true, and one of them —
+"Mantle configs never set `karst_time`, so the Osaka branch alone can never fire" — had become
+outright false.
+
+#### Fail-closed default on the L1 axis
+
+`mantle_ethereum_fork_condition`'s catch-all returns `ForkCondition::Never` rather than falling
+through to the OP ladder, matching `alignEthWithMantle`'s own default of leaving unlisted L1 forks
+nil. This matters because `alloy-op-hardforks` is an **in-tree** crate: if someone adds an
+`activates_l1_fork` mapping to any of Canyon..Jovian, a fall-through would light up an L1 fork at
+Arsia that op-geth has no configuration for — the exact class of divergence this section is about.
+
+The arm below Shanghai is expressed as an ordering test (`f if f < EthereumHardfork::Shanghai`)
+rather than a variant list, because `EthereumHardfork` carries `ArrowGlacier` and `GrayGlacier`
+between London and Paris; a variant list drafted from memory omitted them and would have flipped
+two `Block(0)` forks to `Never`. `test_mantle_l1_fork_axis_is_pinned_for_every_variant` iterates
+`EthereumHardfork::VARIANTS` so that an upstream insertion on either side of the boundary fails
+the build rather than changing consensus silently.
+
+#### Closing the fixture gap (§3.2c)
+
+Five fixtures generated from `sepolia-testnet-qa1` were added to
+`kona/crates/proof/executor/testdata/`, so the fork window is now covered by the normal
+`cargo test` path and not just by ad-hoc live-chain runs:
+
+| fixture | position |
+|---|---|
+| `block-25552263` | pre-Skadi |
+| `block-25552264` | Skadi activation (the two upgrade deposits) |
+| `block-28000000` | `[Skadi, Limb)`, L1-info only |
+| `block-34065622` | `[Limb, Arsia)`, carries 2 user transactions (`0x02`) alongside the L1-info deposit |
+| `block-36438664` | Arsia activation |
+
+Re-running the suite with both fixes disabled is what demonstrates the gap was real:
+
+```text
+old 8 fixtures (sepolia-qa3)   ... all ok      <- zero coverage of this defect class
+block-25552263                 ... FAILED
+block-28000000                 ... FAILED
+block-34065622                 ... FAILED
+block-25552264, block-36438664 ... ok          <- activation blocks are not sensitive
+```
+
+The pre-existing corpus is green with the bug present *and* absent. That is the structural reason
+four review rounds and "8/8 fixtures pass" missed a consensus defect: every fixture came from
+`sepolia-qa3`, where `mantle_arsia_time = 0`, so no fork-window branch is ever entered. When
+adding executor fixtures, check the embedded `rollup_config` has *staggered* fork times —
+otherwise the fixture cannot fail for fork-related reasons. See §3.2c for the chain-selection
+note (`sepolia-qa3` has every fork at genesis; `sepolia-testnet-qa1` has real staggered times).
 
 ### 3.3 kona-hardforks — Arsia + MantleHardforks
 
@@ -601,7 +759,7 @@ The largest sub-phase. Adds Mantle predicates, hardfork timestamps, and BaseFee 
 | `kona/crates/protocol/protocol/src/info/jovian.rs` | `L1BlockInfoJovianBaseFields` decorated with `#[delegatable_trait]` so `L1BlockInfoArsia` can `ambassador::Delegate` the trait into its embedded Jovian base. |
 | `kona/crates/protocol/hardforks/src/{ecotone,fjord,isthmus,jovian,lagoon}.rs` | OP hardfork upgrade-tx literals filled `eth_value: 0, eth_tx_value: None`. **`interop.rs` is gone** — upstream v1.7.0 deleted it and replaced the fork with `lagoon.rs` (same OP upgrade #20, renamed and restructured onto the NUT bundle). Its two literals were patched by hand; see the §6 caveat. |
 | `kona/crates/protocol/protocol/src/{batch/single.rs, utils.rs}` test fixtures | Added Mantle `eth_value: 0, eth_tx_value: None` to one `TxDeposit { ... }` literal and `base_fee: None` to three `SystemConfig { ... }` literals (2026-05; previously the kona-protocol lib test target did not compile against the Mantle field additions). |
-| `kona/crates/protocol/registry/src/l1/mod.rs` | `default_blob_schedule()` excludes Osaka / BPO1 / BPO2 entries (already commented locally — kept that state). **2026-05 update**: `mainnet()` sets `osaka_time` / `bpo1_time` … `bpo5_time` to `None` instead of `EthereumHardfork::Osaka/Bpo1-5.mainnet_activation_timestamp()`, pinning Ethereum L1 blob-fee schedule to Prague behaviour on Mantle. Mirrors `mantle-xyz/kona@72a20ab9` ("Blob fee parameters #26", 2026-04-24, authored by QianXing). **Sepolia / Holesky `L1Config` unchanged** — `mantle-xyz/kona` only forced Mantle-mainnet onto Prague. **Known follow-up**: the kona-registry `test_get_l1_bpo_*` tests (originally added by upstream `59d420fc`) are now stale against this disabled schedule and will fail to compile/run; this matches mantle-xyz/kona@main's own state and is tracked as separate cleanup work. |
+| `kona/crates/protocol/registry/src/l1/mod.rs` | **Deliberately left at upstream's values — do NOT "restore" the historical Mantle patch here.** `mainnet()` carries Ethereum mainnet's **real** `osaka_time` / `bpo1_time` … `bpo5_time` (`EthereumHardfork::*::mainnet_activation_timestamp()`), and `default_blob_schedule()` includes the Osaka / BPO1 / BPO2 entries. The `test_get_l1_bpo_*` tests are live and passing. <br><br>**History, so nobody re-applies it**: `mantle-xyz/kona@72a20ab9` ("Blob fee parameters #26", 2026-04-24) nulled these fields to pin Mantle mainnet's L1 blob-fee schedule to Prague behaviour. That pin is now expressed **where it belongs** — as the Arsia→Elysium window in `RollupConfig::is_mantle_arsia_blob_schedule_pinned()` (§3.2g), mirroring op-node's `eth.MantleArsiaL1ChainConfigByChainID` (`derive/l1_block_info.go:508`). <br><br>**Consensus hazard if reverted**: re-nulling these fields makes the pin permanent and un-liftable — activating Elysium would become a silent no-op and Mantle mainnet would price blobs with Prague parameters forever. See §3.2g and the `[MANTLE]` note at `l1/mod.rs`. |
 
 **Per-hardfork decoder migration checklist** — every Mantle hardfork that
 changes `L1Block` calldata format (new selector or new fields) MUST be
@@ -887,6 +1045,31 @@ git diff --name-only --diff-filter=U | xargs grep -l "\[MANTLE\]"
 
 ### 4.3 Verification
 
+> **The verification entry points were broken and have been repaired.** Before 2026-09-16, none
+> of the `just` recipes below could run at all, and `cargo nextest` executed zero tests. Three
+> separate causes, all introduced by taking upstream files verbatim:
+>
+> | file | problem | fix |
+> |---|---|---|
+> | `rust/justfile` | upstream v1.7.0 uses `[script('bash')]`, which `just` still treats as unstable; `mise.toml` pins just 1.37.0, so **every** recipe aborted during parsing | `set unstable` |
+> | `rust/justfile` | `NIGHTLY` is derived by grepping `mise.toml` for a dated nightly that is not there, so it evaluated to `""` and `cargo +{{NIGHTLY}} fmt` became `cargo + fmt` | `NIGHTLY_TOOLCHAIN` falls back to `nightly`; note two call sites embed it as `export RUSTUP_TOOLCHAIN="…"` rather than `cargo +…`, and an earlier pass missed them |
+> | `rust/.config/nextest.toml` | upstream's `binary(e2e_testsuite)` override refers to a binary in `op-reth/`, which is not a workspace member; nextest validates `binary(...)` against the whole workspace namespace and **hard-errors**, exit 96, zero tests run | the three op-reth-only overrides removed |
+> | `mise.toml` | pinned `rust = "1.94"` while `rust/rust-toolchain.toml` and the workspace `rust-version` require 1.95; mise exports `RUSTUP_TOOLCHAIN`, which **overrides** `rust-toolchain.toml` | bumped to 1.95 |
+>
+> Predicates differ in how they fail: `binary(...)` and `binary_id(...)` hard-error when nothing
+> matches, `test(...)` silently degrades to a no-op. That is why only one of the three overrides
+> was actually fatal.
+>
+> **Repairing them exposed two pre-existing red lights** that had been invisible while the whole
+> file was unparseable: `just check-sp1-guest-lock` and `just check-sp1-guest-precompile-patches`
+> both fail because the SP1 guest `Cargo.lock` is stale, so `just lint-sp1-guest` is red. Fix with
+> `just lock-sp1-guest` and commit `rust/kona/sp1/programs/Cargo.lock`. This is not a regression —
+> it is what was already behind the door.
+>
+> There is still **no CI coverage for `rust/`** (`.github/` and `.circleci/` contain zero `cargo`
+> invocations) and `core.hooksPath` points at a non-existent `.husky`, so every gate below is
+> manual.
+
 Run all of it. Each layer below caught defects the previous one could not see — see the note
 after the block.
 
@@ -925,7 +1108,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path rust/Cargo.toml \
   --workspace --no-deps --document-private-items
 
 # 6. Audit the [MANTLE] markers against this file's §3 registry.
-grep -rn "\[MANTLE\]" rust/ --include="*.rs" --include="*.toml" | wc -l   # 187 after v1.7.0
+grep -rn "\[MANTLE\]" rust/ --include="*.rs" --include="*.toml" | wc -l   # 208 after v1.7.0 (across 71 files)
 ```
 
 **Why every layer matters** — the v1.7.0 sync passed each step and the *next* one still found
