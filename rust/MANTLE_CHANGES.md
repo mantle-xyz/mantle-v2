@@ -283,6 +283,40 @@ and `test_decode_u256_field_preserves_the_full_word` (both verified to fail when
 `reth_codec::mantle_compact_layout_tests` (3);
 `mantle_txdeposit_compact_tests::roundtrip_bvm_eth_above_u128_max`.
 
+**Adaptations the widening forced, so the next type change knows where to look:**
+
+| surface | what it needed |
+|---|---|
+| serde | **No `alloy_serde::quantity` wrapper.** It only supports the primitive uints; `U256` already serialises as a hex quantity, which is what op-geth emits (`*hexutil.Big`, `json:"ethValue,omitempty"`) |
+| bincode | Both fields carried, and **no `skip_serializing_if`** — bincode is not self-describing, so skipping a field makes the positional decoder run off the end |
+| reth `Compact` / DB | `Option<U256>`; layout proven byte-identical, so **no database migration is required** |
+| RLP | `decode_u256_field` reads the whole word; `decode_optional_u256_from_rlp` for the trailing field |
+| `DepositError::{EthValueDecode, EthTxValueDecode}` | now **unreachable** — a 32-byte `U256::from_be_slice` cannot fail, unlike the old `[u8; 16]` `try_into`. Kept, documented, never constructed |
+
+#### Downstream consumers — this is a breaking API change
+
+`eth_value: u128 -> U256` is source-breaking for anything that constructs a `TxDeposit` literal.
+
+**`mantle-xyz/reth`** pins op-alloy to *this repository*:
+
+```toml
+op-alloy-consensus = { git = "https://github.com/mantle-xyz/mantle-v2", branch = "mantle-elysium" }
+```
+
+so it breaks the moment the widening reaches `mantle-elysium`. Measured: **18 literals**, all of
+them in test code — 8 in `op-reth/crates/rpc/src/eth/receipt.rs`, 4 in
+`op-reth/crates/txpool/src/transaction.rs`, 2 in `op-reth/crates/evm/src/l1.rs`, 4 in
+`mantle-reth/crates/integration-tests/`. The change is mechanical (`eth_value: 0` →
+`eth_value: U256::ZERO`; `eth_tx_value: None` is unaffected). **reth's production code never reads
+either field** — `.eth_value` / `.eth_tx_value` have zero hits outside those literals, because the
+BVM_ETH arithmetic lives in `op-revm`, which reth consumes. Still, the two repos have to land
+inside the same window or reth's CI is red in between.
+
+**`mantle-xyz/op-succinct`** depends on `kona-mpt` / `kona-derive` / `kona-driver` and others by
+**tag** (`v1.6.2` at the time of writing), so it is insulated until someone bumps the tag. When
+that happens the guest program's STF changes, which means **the vkey changes** and the on-chain
+verifier has to be upgraded in coordination — the widening is not a drop-in dependency bump there.
+
 ### 3.2c Mantle Skadi — upgrade transactions and the `[Skadi, Arsia)` window
 
 **The shape of the problem.** `AlignOpWithMantle` pins Canyon…Jovian to `mantle_arsia_time`, so

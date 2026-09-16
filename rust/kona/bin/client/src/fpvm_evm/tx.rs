@@ -212,7 +212,9 @@ impl FromTxWithEncoded<TxDeposit> for FpvmOpTx {
             source_hash: tx.source_hash,
             mint: Some(tx.mint),
             is_system_transaction: tx.is_system_transaction,
-            // Mantle BVM_ETH: TxDeposit.eth_value (u128) -> Option<u128> with 0 -> None
+            // Mantle BVM_ETH: TxDeposit.eth_value (U256) -> Option<U256>, with 0 -> None.
+            // The `0 -> None` convention is the wire contract, not a width artefact — see
+            // MANTLE_CHANGES.md §3.2b.
             eth_value: if tx.eth_value == 0 { None } else { Some(tx.eth_value) },
             eth_tx_value: tx.eth_tx_value,
         };

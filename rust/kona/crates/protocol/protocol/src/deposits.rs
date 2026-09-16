@@ -89,10 +89,17 @@ pub enum DepositError {
     #[error("Failed to decode the u64 deposit gas value: {0}")]
     GasDecode(Bytes),
     /// `[MANTLE]` Failed to decode the deposit `eth_value` (`BVM_ETH` mint value).
-    #[error("Failed to decode the u128 deposit eth_value: {0}")]
+    ///
+    /// **Currently unreachable.** Since `eth_value` widened from `u128` to `U256` (§3.2b) the
+    /// decoder reads the whole 32-byte ABI word with `U256::from_be_slice`, which cannot fail on
+    /// a slice of that length — the length check happens upstream in `decode_deposit`. The
+    /// variant is kept as the landing spot should the field decode ever become fallible again.
+    #[error("Failed to decode the deposit eth_value (32-byte BVM_ETH word): {0}")]
     EthValueDecode(Bytes),
     /// `[MANTLE]` Failed to decode the deposit `eth_tx_value` (`BVM_ETH` tx value).
-    #[error("Failed to decode the u128 deposit eth_tx_value: {0}")]
+    ///
+    /// **Currently unreachable**, for the same reason as [`Self::EthValueDecode`].
+    #[error("Failed to decode the deposit eth_tx_value (32-byte BVM_ETH word): {0}")]
     EthTxValueDecode(Bytes),
 }
 
@@ -875,11 +882,11 @@ mod test {
         let value: [u8; 32] = U256::from(200).to_be_bytes();
         data[32..64].copy_from_slice(&value);
 
-        // u128 eth_value (32 bytes, but only last 16 bytes are used)
+        // eth_value: full 32-byte word (this fixture keeps the value inside the low 16 bytes)
         let eth_value: [u8; 16] = 500_u128.to_be_bytes();
         data[80..96].copy_from_slice(&eth_value);
 
-        // u128 eth_tx_value (32 bytes, but only last 16 bytes are used)
+        // eth_tx_value: full 32-byte word (value fits in the low 16 bytes here)
         let eth_tx_value: [u8; 16] = 300_u128.to_be_bytes();
         data[112..128].copy_from_slice(&eth_tx_value);
 
@@ -925,11 +932,11 @@ mod test {
         let value: [u8; 32] = U256::from(1000).to_be_bytes();
         data[32..64].copy_from_slice(&value);
 
-        // u128 eth_value
+        // eth_value (32-byte word)
         let eth_value: [u8; 16] = 2000_u128.to_be_bytes();
         data[80..96].copy_from_slice(&eth_value);
 
-        // u128 eth_tx_value
+        // eth_tx_value (32-byte word)
         let eth_tx_value: [u8; 16] = 1500_u128.to_be_bytes();
         data[112..128].copy_from_slice(&eth_tx_value);
 
@@ -1068,11 +1075,11 @@ mod test {
         let value: [u8; 32] = U256::ZERO.to_be_bytes();
         data[96..128].copy_from_slice(&value);
 
-        // u128 eth_value (0)
+        // eth_value (zero)
         let eth_value: [u8; 16] = 0_u128.to_be_bytes();
         data[144..160].copy_from_slice(&eth_value);
 
-        // u128 eth_tx_value (0)
+        // eth_tx_value (zero)
         let eth_tx_value: [u8; 16] = 0_u128.to_be_bytes();
         data[176..192].copy_from_slice(&eth_tx_value);
 
