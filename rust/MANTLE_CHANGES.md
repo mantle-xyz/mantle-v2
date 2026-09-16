@@ -1021,8 +1021,47 @@ is nothing to re-delete after each sync.
 | `op-reth/` | 180 files / ~60k lines, never a workspace member, never compiled. Mantle's EL node is the separate `mantle-xyz/reth` repository. |
 | `op-reth-test-engine/` | not a member either — it depends on the `reth-optimism-*` crates that stay out of the workspace with `op-reth`. |
 | `lokahi/` | upstream's OP supernode skeleton; its README says it "currently builds a CLI that prints a greeting and exits". Targets interop, which Mantle does not use. Carried zero Mantle changes. |
+| `kona/sp1/` | 64 files / 26,330 lines — upstream's SP1 zkVM integration. Its own README marks it "**Experimental** ... not yet recommended for production use", and its `super-aggregation` program "commits the public values consumed by `ZKDisputeGame`". Mantle submits validity proofs through `OPSuccinctL2OutputOracle`, ships no DisputeGame and does not use interop super-roots. |
 
 `op-version/` is deliberately **kept**: `kona/bin/node` depends on it for version metadata.
+
+**Nothing depended on `kona/sp1/`.** In-tree, the only `kona-sp1-*` references were sp1's own
+crates referring to each other plus the five `[workspace.dependencies]` path declarations.
+`mantle-xyz/op-succinct` — where Mantle's SP1 proving actually lives — depends on `kona-mpt`,
+`kona-derive`, `kona-driver`, `kona-preimage`, `kona-executor`, `kona-proof`, `kona-client`,
+`kona-host`, `kona-providers-alloy`, `kona-protocol`, `kona-registry`, `kona-genesis` and the
+op-alloy family, and on **no `kona-sp1-*` crate at all**: it builds its own guest on kona's
+derivation and execution crates. Note `kona/sp1/crates/proposer` (14,255 of the 26,330 lines) was
+already excluded from the workspace for embedding OP's ZKDisputeGame ABI — the rest followed the
+same logic.
+
+Dropping `kona/sp1/` also let `sp1-sdk` go from `[workspace.dependencies]`, which removed **310
+packages** from `Cargo.lock`. Measured consequences:
+
+- `cargo deny check advisories` went from **9 errors to 6** — the three `rkyv` advisories
+  (one use-after-free, two out-of-bounds) arrived through sp1-sdk.
+- Five `deny.toml` ignores whose stated justification was "transitive via the SP1 dependency tree"
+  stopped matching anything and were removed with it.
+- `aws-smithy-json` left the lockfile — the crate behind the duplicate-major breakage recorded
+  in §4.3.
+- It retires the stale SP1 guest lockfile that made `just check-sp1-guest-lock` and
+  `just check-sp1-guest-precompile-patches` fail once the justfile was parseable again.
+
+**The cannon/MIPS64 FPVM prestate family was removed from `rust/justfile` at the same time**
+(`build-kona-client-elfs`, `build-kona-prestates{,-auto}`, `generate-kona-prestates`,
+`stage-kona-client-elfs`, `lint-kona-cannon`, `build-kona-reproducible-prestate`,
+`output-kona-prestate-hash`, `reproducible-kona-prestate`, `clean-kona-prestates`,
+`kona-prestate-variants`, plus the MIPS64 cross-toolchain variables — 369 lines). Mantle does not
+run fault proofs, so nothing consumes the artifacts.
+
+Verified before removing that the family had **no consumers outside `rust/justfile`**: the six
+apparent external references were self-references within it, and the comment listing external
+consumers was stale — `ops/prestate-reproducibility/build-prestates.sh` and
+`.circleci/continue/rust-e2e.yml` do not exist, and `op-e2e/config/init.go` does not reference the
+artifact names. `op-program/scripts/build-prestates.sh` is unaffected: it clones
+`ethereum-optimism/optimism` into a temp directory and runs that tree's recipes, never this one.
+The FPVM *crates* (`kona/crates/proof/std-fpvm`, `kona/bin/client`'s fpvm modules) are untouched —
+only the prestate build tooling went.
 
 **Why this stopped being merely cosmetic.** Carrying 60k unbuilt lines was an active hazard, not
 just dead weight. Upstream's `.config/nextest.toml` filters on `binary(e2e_testsuite)`, defined in

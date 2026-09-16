@@ -20,14 +20,10 @@ members = [
   "kona/crates/providers/*",
   "kona/crates/utilities/*",
   "kona/examples/*",
-  "kona/sp1/crates/client",
-  "kona/sp1/crates/elfs",
-  "kona/sp1/crates/ethereum/client",
-  "kona/sp1/crates/host",
-  "kona/sp1/crates/super-range-executor",
-  # [MANTLE] "kona/sp1/crates/proposer" is intentionally NOT a member: it embeds OP's
-  # ZKDisputeGame ABI from packages/contracts-bedrock/snapshots/abi/, which Mantle does not
-  # ship. It is a standalone binary with no in-tree dependents; the directory stays on disk.
+  # [MANTLE] No `kona/sp1/*` members: upstream's SP1 zkVM integration targets `ZKDisputeGame`
+  # and interop super-roots, neither of which Mantle ships. It is filtered out of the bridge
+  # split (§3.11); Mantle's SP1 proving lives in `mantle-xyz/op-succinct`, which builds its own
+  # guest on kona's derivation/execution crates and depends on no `kona-sp1-*` crate.
 
   # Op-Alloy
   "op-alloy/crates/*",
@@ -283,12 +279,6 @@ kona-cli = { path = "kona/crates/utilities/cli", version = "0.3.2", default-feat
 kona-serde = { path = "kona/crates/utilities/serde", version = "0.2.2", default-features = false }
 kona-macros = { path = "kona/crates/utilities/macros", version = "0.1.2", default-features = false }
 
-# ==================== KONA SP1 INTERNAL CRATES ====================
-kona-sp1-client-utils = { path = "kona/sp1/crates/client" }
-kona-sp1-elfs = { path = "kona/sp1/crates/elfs" }
-kona-sp1-ethereum-client-utils = { path = "kona/sp1/crates/ethereum/client" }
-kona-sp1-host-utils = { path = "kona/sp1/crates/host" }
-kona-sp1-super-range-executor = { path = "kona/sp1/crates/super-range-executor" }
 
 # [MANTLE] Upstream's "OP-RETH INTERNAL CRATES" block (op-reth + the 16 reth-optimism-*
 # path deps) is deliberately omitted. `op-reth/` is not in this tree at all any more — it is
@@ -456,10 +446,8 @@ alloy-transport-ws = { version = "2.1.1", default-features = false }
 op-alloy = { version = "2.0.0", path = "op-alloy/crates/op-alloy", default-features = false }
 op-alloy-flz = { version = "0.13.1", default-features = false }
 
-# ==================== SP1 ====================
-sp1-sdk = { version = "6.4.0", default-features = false, features = [
-  "network",
-] }
+# [MANTLE] No `sp1-sdk`: its only consumer was `kona/sp1/`, which is filtered out of the bridge
+# split (§3.11). Dropping it also removes the aws-sdk / smithy dependency subtree it pulled in.
 
 # ==================== ASYNC ====================
 async-channel = "2.5"
