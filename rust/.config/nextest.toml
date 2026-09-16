@@ -14,20 +14,19 @@ slow-timeout = { period = "30s", terminate-after = 4 }
 [profile.default.junit]
 path = "junit.xml"
 
-# op-reth's EVM/state-conformance suites are legitimately slow; give them more
-# headroom before the slow-timeout terminates them.
-[[profile.default.overrides]]
-filter = "test(general_state_tests)"
-slow-timeout = { period = "1m", terminate-after = 10 }
-
-[[profile.default.overrides]]
-filter = "test(eest_fixtures)"
-slow-timeout = { period = "2m", terminate-after = 10 }
-
-# E2E tests using the testsuite framework from crates/e2e-test-utils.
-[[profile.default.overrides]]
-filter = "binary(e2e_testsuite)"
-slow-timeout = { period = "2m", terminate-after = 3 }
+# [MANTLE] Upstream's three op-reth-only overrides are removed here, not retimed.
+#
+# They targeted `general_state_tests`, `eest_fixtures` and the `e2e_testsuite` binary, all of
+# which live in `op-reth/`, which is deliberately NOT a member of this workspace (see the note
+# on `members` in Cargo.toml). The `binary(...)` one is the load-bearing removal: as the comment
+# at the bottom of this file explains, nextest validates `binary(...)` and `binary_id(...)`
+# predicates against the whole workspace binary namespace and **hard-errors** when nothing
+# matches — so `binary(e2e_testsuite)` made every `cargo nextest run` in `rust/` exit 96 without
+# executing a single test. The two `test(...)` predicates are substring matches that merely
+# degrade to no-ops, and are dropped only to keep this file honest about what it covers.
+#
+# If `op-reth/` is ever brought back into the workspace, restore all three from upstream's
+# `.config/nextest.toml`.
 
 # `p2p_version::peers_negotiate_eth_69` intermittently dies with SIGSEGV *after* its body
 # has passed — the assertions succeed and nextest prints `test result: ok`, then the binary

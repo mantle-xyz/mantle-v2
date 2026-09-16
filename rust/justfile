@@ -1,6 +1,16 @@
 set positional-arguments
 
-NIGHTLY := `grep -oE 'nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}' ../mise.toml | head -1`
+# [MANTLE] Upstream's v1.7.0 justfile uses the `[script(...)]` attribute, which `just` still
+# treats as unstable. `mise.toml` pins just 1.37.0, so without this every recipe in this file —
+# including `fmt-check`, `lint-clippy` and `test-unit` — aborts with "The `[script]` attribute is
+# currently unstable" before running anything. Enabling it here keeps the pinned toolchain usable.
+set unstable
+
+# [MANTLE] Fall back to the plain `nightly` channel. `mise.toml` carries no dated nightly pin, so
+# the grep yields an empty string and every `cargo +{{NIGHTLY_TOOLCHAIN}} fmt` degrades to the invalid
+# `cargo + fmt`. Re-add a `nightly-YYYY-MM-DD` entry to mise.toml to pin a specific date again.
+NIGHTLY := `grep -oE 'nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}' ../mise.toml | head -1 || true`
+NIGHTLY_TOOLCHAIN := if NIGHTLY == "" { "nightly" } else { NIGHTLY }
 
 # The SP1 guest programs live in a nested Cargo workspace (separate for SP1
 # crypto patch isolation), so fmt/clippy/tests must target its manifest explicitly.
@@ -22,7 +32,7 @@ default:
 
 # Install the pinned nightly toolchain
 install-nightly:
-  rustup toolchain install {{NIGHTLY}} --component rustfmt --component rust-src
+  rustup toolchain install {{NIGHTLY_TOOLCHAIN}} --component rustfmt --component rust-src
 
 ############################### Build ###############################
 
@@ -119,7 +129,7 @@ lint: fmt-check lint-clippy lint-docs
 
 # Check formatting (requires nightly)
 fmt-check:
-  cargo +{{NIGHTLY}} fmt --all -- --check
+  cargo +{{NIGHTLY_TOOLCHAIN}} fmt --all -- --check
 
 # Check formatting across both the main and SP1 guest workspaces. Shared by the
 # pre-push git hook and the rust-fmt CI job so the two can't drift.
@@ -127,7 +137,7 @@ fmt-check-all: fmt-check fmt-check-sp1-guest
 
 # Fix formatting (requires nightly); also formats the SP1 guest workspace
 fmt-fix: fmt-fix-sp1-guest
-  cargo +{{NIGHTLY}} fmt --all
+  cargo +{{NIGHTLY_TOOLCHAIN}} fmt --all
 
 # Run clippy
 lint-clippy:
@@ -303,10 +313,10 @@ lock-sp1-guest:
   cargo metadata --manifest-path {{SP1_GUEST_MANIFEST}} --format-version 1 >/dev/null
 
 fmt-check-sp1-guest: check-sp1-guest-lints
-  cargo +{{NIGHTLY}} fmt --manifest-path {{SP1_GUEST_MANIFEST}} --all -- --check
+  cargo +{{NIGHTLY_TOOLCHAIN}} fmt --manifest-path {{SP1_GUEST_MANIFEST}} --all -- --check
 
 fmt-fix-sp1-guest: _sync-sp1-guest-lints
-  cargo +{{NIGHTLY}} fmt --manifest-path {{SP1_GUEST_MANIFEST}} --all
+  cargo +{{NIGHTLY_TOOLCHAIN}} fmt --manifest-path {{SP1_GUEST_MANIFEST}} --all
 
 lint-clippy-sp1-guest:
   cargo clippy --manifest-path {{SP1_GUEST_MANIFEST}} --workspace --all-features --all-targets --locked -- -D warnings
@@ -314,14 +324,14 @@ lint-clippy-sp1-guest:
 # fmt-check + clippy + test the standalone range-vkeys crate (in neither workspace, so nothing
 # else covers it). Requires elf/vkeys.toml and is invoked only after the guest ELFs are built.
 check-range-vkeys:
-  cargo +{{NIGHTLY}} fmt --manifest-path kona/sp1/crates/range-vkeys/Cargo.toml --all -- --check
+  cargo +{{NIGHTLY_TOOLCHAIN}} fmt --manifest-path kona/sp1/crates/range-vkeys/Cargo.toml --all -- --check
   cargo clippy --manifest-path kona/sp1/crates/range-vkeys/Cargo.toml --all-targets --locked -- -D warnings
   cargo test --manifest-path kona/sp1/crates/range-vkeys/Cargo.toml --locked
 
 # Lint Rust documentation
 lint-docs:
   RUSTDOCFLAGS="--cfg docsrs -D warnings --show-type-layout --generate-link-to-definition -Zunstable-options" \
-    cargo +{{NIGHTLY}} doc --workspace --all-features --no-deps --document-private-items
+    cargo +{{NIGHTLY_TOOLCHAIN}} doc --workspace --all-features --no-deps --document-private-items
 
 ############################ Review #################################
 
@@ -444,7 +454,7 @@ deny:
 
 # Check for unused dependencies (requires nightly + cargo-udeps)
 check-udeps:
-  cargo +{{NIGHTLY}} udeps --release --workspace --all-features --all-targets
+  cargo +{{NIGHTLY_TOOLCHAIN}} udeps --release --workspace --all-features --all-targets
 
 # Run cargo hack feature checking, enabling each feature one at a time.
 # Cheaper than the full powerset (~n checks per crate vs ~2^n).
@@ -698,7 +708,7 @@ build-kona-client-elfs:
     export CARGO_TARGET_MIPS64_UNKNOWN_NONE_LINKER="{{MIPS64_LINKER}}"
     export RUSTFLAGS="-Clink-arg=-e_start -Cllvm-args=-mno-check-zero-division"
     export CARGO_BUILD_TARGET="{{MIPS64_TARGET_SPEC}}"
-    export RUSTUP_TOOLCHAIN="{{NIGHTLY}}"
+    export RUSTUP_TOOLCHAIN="{{NIGHTLY_TOOLCHAIN}}"
 
     # Custom configs support
     if [[ -n "${KONA_CUSTOM_CONFIGS_DIR:-}" ]]; then
@@ -740,7 +750,7 @@ lint-kona-cannon:
     export CARGO_TARGET_MIPS64_UNKNOWN_NONE_LINKER="{{MIPS64_LINKER}}"
     export RUSTFLAGS="-Clink-arg=-e_start -Cllvm-args=-mno-check-zero-division"
     export CARGO_BUILD_TARGET="{{MIPS64_TARGET_SPEC}}"
-    export RUSTUP_TOOLCHAIN="{{NIGHTLY}}"
+    export RUSTUP_TOOLCHAIN="{{NIGHTLY_TOOLCHAIN}}"
 
     cargo clippy -p kona-std-fpvm --all-features -Zbuild-std=core,alloc -Zjson-target-spec -- -D warnings
 
