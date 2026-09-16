@@ -198,21 +198,53 @@ where
 /// encoding that omits the deposit nonce; this function reproduces that encoding by delegating
 /// nonce-stripping to [`OpReceiptBuilder::strip_deposit_nonce`], which OP Stack implementations
 /// override and other chains inherit as a no-op.
+///
+/// `[MANTLE]` On a Mantle chain the stripping is unconditional, so `_timestamp` is unused there.
+/// The parameter is kept to hold upstream's signature — a future Mantle fork that changes the
+/// receipt encoding will need it back, and keeping it avoids a gratuitous merge conflict on the
+/// next subtree sync.
 pub fn compute_receipts_root<R>(
     receipt_builder: &R,
     receipts: &[R::Receipt],
     config: &RollupConfig,
-    timestamp: u64,
+    _timestamp: u64,
 ) -> B256
 where
     R: OpReceiptBuilder,
     R::Receipt: Encodable2718,
 {
-    // [MANTLE] Upstream gates deposit-nonce stripping on the OP Regolith..Canyon window
-    // (`is_regolith_active(timestamp) && !is_canyon_active(timestamp)`). Mantle gates it on
-    // Skadi instead. Kept as-is across the v1.7.0 sync; only upstream's new generic bounds
-    // were adopted.
-    if config.is_mantle_skadi_active(timestamp) {
+    // [MANTLE] **Consensus.** Upstream gates deposit-nonce stripping on the OP Regolith..Canyon
+    // window (`is_regolith_active(timestamp) && !is_canyon_active(timestamp)`). Mantle strips for
+    // the chain's whole history instead.
+    //
+    // This was gated on `is_mantle_skadi_active(timestamp)`, which is wrong at the bottom end:
+    // every block before Skadi then kept the deposit nonce in the receipt encoding and got a
+    // `receipts_root` the chain disagrees with. Measured on `sepolia-testnet-qa1` at blocks
+    // 20000000 and 25552263 (Skadi - 1) — both reproduce only once stripping is unconditional.
+    //
+    // "Unconditional" is a property of Mantle's op-geth, not a translation of upstream's window.
+    // A naive translation would give `[0, Arsia)` (Mantle sets `regolith_time = 0` and
+    // `canyon_time = mantle_arsia_time`), but that is wrong at the top end. The oracle is
+    // `src/op-geth/core/types/receipt.go`, where `Receipts.EncodeIndex` folds `DepositTxType`
+    // into the same arm as the ordinary typed transactions:
+    //
+    //     case AccessListTxType, DynamicFeeTxType, BlobTxType, SetCodeTxType, DepositTxType:
+    //         rlp.Encode(w, data)     // data = {status, cumulativeGas, bloom, logs}
+    //
+    // Upstream op-geth gives `DepositTxType` its own arm and appends the nonce (and version) when
+    // `DepositReceiptVersion != nil`. Mantle has no such field at all — `DepositReceiptVersion`
+    // occurs **zero** times in the whole of `src/op-geth` as of `cbf7cd33d`, which includes the
+    // Elysium work. So no Mantle block at any height carries the nonce in the receipts trie, and
+    // no scheduled fork changes that.
+    //
+    // Cross-checked on sepolia-testnet-qa1 at blocks 20000000 and 25552263 (pre-Skadi), 28000000
+    // (in-window) and 43000000 (post-Arsia). See MANTLE_CHANGES.md §3.2j.
+    //
+    // NOTE: the `else` arm does **not** restore upstream's `[Regolith, Canyon)` rule — it never
+    // stripped for non-Mantle chains before this change either (the old gate was also a Mantle
+    // predicate). A real OP chain in that window would compute the wrong `receipts_root` here.
+    // Out of scope for this tree, but do not read the `else` arm as "upstream semantics".
+    if config.is_mantle() {
         let receipts = receipts
             .iter()
             .cloned()
@@ -228,5 +260,92 @@ where
         .root()
     } else {
         ordered_trie_with_encoder(receipts, |receipt, mut buf| receipt.encode_2718(&mut buf)).root()
+    }
+}
+
+#[cfg(test)]
+mod mantle_receipts_root_tests {
+    use super::compute_receipts_root;
+    use alloy_consensus::{Receipt, ReceiptWithBloom};
+    use alloy_op_evm::block::OpAlloyReceiptBuilder;
+    use kona_genesis::{HardForkConfig, MantleHardForkConfig, RollupConfig};
+    use op_alloy_consensus::{OpDepositReceipt, OpReceiptEnvelope};
+
+    /// A Mantle config whose Skadi and Arsia activations are far apart, so a timestamp-dependent
+    /// gate cannot accidentally agree with an unconditional one.
+    fn mantle_config() -> RollupConfig {
+        RollupConfig {
+            hardforks: HardForkConfig {
+                regolith_time: Some(0),
+                canyon_time: Some(100),
+                ecotone_time: Some(100),
+                isthmus_time: Some(100),
+                ..Default::default()
+            },
+            mantle_hardforks: MantleHardForkConfig {
+                mantle_skadi_time: Some(40),
+                mantle_limb_time: Some(70),
+                mantle_arsia_time: Some(100),
+                ..MantleHardForkConfig::NONE
+            },
+            ..Default::default()
+        }
+    }
+
+    fn deposit_receipt_with_nonce() -> OpReceiptEnvelope {
+        OpReceiptEnvelope::Deposit(ReceiptWithBloom::new(
+            OpDepositReceipt {
+                inner: Receipt { status: true.into(), cumulative_gas_used: 21_000, logs: vec![] },
+                deposit_nonce: Some(0xdead_beef),
+                deposit_receipt_version: None,
+            },
+            Default::default(),
+        ))
+    }
+
+    /// `[MANTLE]` **Consensus regression guard for the pre-Skadi `receipts_root`.**
+    ///
+    /// The gate used to be `is_mantle_skadi_active(timestamp)`, which left every block before
+    /// Skadi encoding the deposit nonce into the receipts trie. Mantle's op-geth never does, at
+    /// any height — measured on sepolia-testnet-qa1 blocks 20000000 and 25552263 (pre-Skadi),
+    /// 28000000 (in-window) and 43000000 (post-Arsia).
+    ///
+    /// The assertion that matters is that the root is *timestamp-independent*: if anyone
+    /// reintroduces a fork gate here, the pre-Skadi sample diverges from the rest.
+    #[test]
+    fn mantle_strips_deposit_nonce_at_every_height() {
+        let config = mantle_config();
+        let builder = OpAlloyReceiptBuilder::default();
+        let receipts = [deposit_receipt_with_nonce()];
+
+        // 0 and 39 are pre-Skadi, 40..99 is the `[Skadi, Arsia)` window, 100+ is post-Arsia.
+        let roots = [0u64, 39, 40, 70, 99, 100, 1_000]
+            .map(|ts| compute_receipts_root(&builder, &receipts, &config, ts));
+
+        assert!(
+            roots.iter().all(|r| *r == roots[0]),
+            "Mantle receipts root must not depend on the fork schedule, got {roots:?}",
+        );
+
+        // ...and it is the *stripped* encoding, not merely a consistent one. Build the same root
+        // from a receipt that never carried a nonce and require equality.
+        let mut stripped = deposit_receipt_with_nonce();
+        if let OpReceiptEnvelope::Deposit(d) = &mut stripped {
+            d.receipt.deposit_nonce = None;
+        }
+        let stripped_root = compute_receipts_root(&builder, &[stripped], &config, 0);
+        assert_eq!(roots[0], stripped_root, "Mantle must strip the deposit nonce");
+
+        // Negative control baked in: the un-stripped encoding is a *different* root, so the
+        // assertion above is not vacuously true for this fixture.
+        let unstripped_root = {
+            use alloy_eips::Encodable2718;
+            kona_mpt::ordered_trie_with_encoder(&receipts, |r, mut buf| r.encode_2718(&mut buf))
+                .root()
+        };
+        assert_ne!(
+            roots[0], unstripped_root,
+            "fixture is degenerate: stripping the nonce changed nothing",
+        );
     }
 }

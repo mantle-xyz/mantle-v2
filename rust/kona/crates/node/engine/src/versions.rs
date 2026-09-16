@@ -37,9 +37,14 @@ impl EngineForkchoiceVersion {
     /// Uses the [`RollupConfig`] to check which L1 hardfork is implied at the given timestamp.
     pub fn from_cfg(cfg: &RollupConfig, timestamp: u64) -> Self {
         // [MANTLE] op-node: `IsEcotone(ts) || IsMantleSkadi(ts)` (rollup/types.go
-        // `ForkchoiceUpdatedVersion`). The Skadi disjunct is load-bearing: every OP fork on a
-        // Mantle chain is pinned to `mantle_arsia_time`, so between Skadi and Arsia Cancun is
-        // still inactive while op-node already requires V3.
+        // `ForkchoiceUpdatedVersion`).
+        //
+        // The Skadi disjunct is **redundant since `RollupConfig::mantle_ethereum_fork_condition`**
+        // (MANTLE_CHANGES.md §3.2j) put Cancun on `mantle_skadi_time`: on a Mantle chain
+        // `is_cancun_active_at_timestamp` and `is_mantle_skadi_active` now agree everywhere, which
+        // `rollup.rs::test_mantle_l1_axis_matches_the_engine_disjuncts` pins. It is kept as a local
+        // statement of op-node's rule and as a second line of defence, but be aware it is no longer
+        // load-bearing: deleting it changes nothing, and no test here will notice.
         if cfg.is_cancun_active_at_timestamp(timestamp) || cfg.is_mantle_skadi_active(timestamp) {
             // Ecotone+
             Self::V3
@@ -72,8 +77,8 @@ impl EngineNewPayloadVersion {
     /// Uses the [`RollupConfig`] to check which L1 hardfork is implied at the given timestamp.
     pub fn from_cfg(cfg: &RollupConfig, timestamp: u64) -> Self {
         // [MANTLE] op-node: `IsIsthmus(ts) || IsMantleSkadi(ts)` (rollup/types.go
-        // `NewPayloadVersion`). See `EngineForkchoiceVersion::from_cfg` for why Skadi is not
-        // implied by the OP forks here.
+        // `NewPayloadVersion`). Prague now rides Skadi, so this disjunct is redundant in the same
+        // way — see the note in `EngineForkchoiceVersion::from_cfg`.
         if cfg.is_prague_active_at_timestamp(timestamp) || cfg.is_mantle_skadi_active(timestamp) {
             Self::V4
         } else if cfg.is_cancun_active_at_timestamp(timestamp) {
@@ -107,9 +112,13 @@ impl EngineGetPayloadVersion {
     /// Osaka (Karst) bumps only `getPayload` to V5; `newPayload`/`forkchoiceUpdated` are
     /// unchanged.
     pub fn from_cfg(cfg: &RollupConfig, timestamp: u64) -> Self {
-        // [MANTLE] op-node's `GetPayloadVersion` reaches V5 through `IsMantleLimb`, not Osaka:
-        // Mantle configs never set `karst_time`, so the Osaka branch alone can never fire on a
-        // Mantle chain. V4 additionally takes `IsIsthmus(ts) || IsMantleSkadi(ts)`.
+        // [MANTLE] op-node's `GetPayloadVersion` reaches V5 through `IsMantleLimb`
+        // (rollup/types.go). Mantle configs leave `karst_time` unset, so the Osaka branch does not
+        // fire through the OP ladder — but since `mantle_ethereum_fork_condition` maps Osaka onto
+        // `mantle_limb_time`, `is_osaka_active_at_timestamp` now agrees with the Limb disjunct
+        // rather than being unreachable. Both arms therefore pick the same timestamp; the disjunct
+        // is redundant, not load-bearing. V4 additionally takes `IsIsthmus(ts) ||
+        // IsMantleSkadi(ts)`, redundant for the same reason.
         if cfg.is_osaka_active_at_timestamp(timestamp) || cfg.is_mantle_limb_active(timestamp) {
             Self::V5
         } else if cfg.is_prague_active_at_timestamp(timestamp) ||
@@ -193,9 +202,15 @@ mod tests {
     fn mantle_skadi_selects_the_same_versions_as_op_node() {
         let cfg = mantle_cfg();
 
-        // Premise: no OP fork is active before Arsia.
-        assert!(!cfg.is_cancun_active_at_timestamp(150));
-        assert!(!cfg.is_prague_active_at_timestamp(150));
+        // Premise: the two fork axes are separate. No *OP* fork is active before Arsia, while the
+        // *L1* forks came on at Skadi — see `RollupConfig::mantle_ethereum_fork_condition` and
+        // MANTLE_CHANGES.md §3.2j. Before that override existed, Cancun/Prague were routed
+        // through Ecotone/Isthmus and were therefore inactive here, which is what this premise
+        // used to assert.
+        assert!(!cfg.is_ecotone_active(150));
+        assert!(!cfg.is_isthmus_active(150));
+        assert!(cfg.is_cancun_active_at_timestamp(150));
+        assert!(cfg.is_prague_active_at_timestamp(150));
 
         // Pre-Skadi.
         assert_eq!(EngineForkchoiceVersion::from_cfg(&cfg, 99), EngineForkchoiceVersion::V2);
@@ -227,12 +242,16 @@ mod tests {
         assert_eq!(EngineGetPayloadVersion::from_cfg(&cfg, 200), EngineGetPayloadVersion::V4);
     }
 
-    /// op-node reaches `getPayloadV5` through `IsMantleLimb`, never through Osaka — Mantle
-    /// configs leave `karst_time` unset, so the Osaka branch alone is dead code on Mantle.
+    /// op-node reaches `getPayloadV5` through `IsMantleLimb`. Since
+    /// `RollupConfig::mantle_ethereum_fork_condition` maps Osaka onto `mantle_limb_time` — which
+    /// is what `alignEthWithMantle` does (`OsakaTime = MantleLimbTime`) — the Osaka branch now
+    /// agrees with the Limb disjunct instead of being unreachable. The selected version must be
+    /// the same either way; that is what this test pins.
     #[test]
     fn mantle_limb_selects_get_payload_v5() {
         let cfg = mantle_cfg();
-        assert!(!cfg.is_osaka_active_at_timestamp(300), "test premise: Osaka must be inactive");
+        assert!(!cfg.is_osaka_active_at_timestamp(299));
+        assert!(cfg.is_osaka_active_at_timestamp(300), "Osaka must ride Limb");
         assert_eq!(EngineGetPayloadVersion::from_cfg(&cfg, 299), EngineGetPayloadVersion::V4);
         assert_eq!(EngineGetPayloadVersion::from_cfg(&cfg, 300), EngineGetPayloadVersion::V5);
     }

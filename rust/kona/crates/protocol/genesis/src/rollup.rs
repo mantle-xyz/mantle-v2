@@ -551,6 +551,8 @@ impl EthereumHardforks for RollupConfig {
         if fork <= EthereumHardfork::Berlin {
             // We assume that OP chains were launched with all forks before Berlin activated.
             ForkCondition::Block(0)
+        } else if let Some(condition) = self.mantle_ethereum_fork_condition(fork) {
+            condition
         } else {
             // Every later L1 fork activates with the OP fork that implies it (Bedrock for
             // London through Paris); L1 forks without an L2 equivalent never activate.
@@ -580,6 +582,89 @@ impl RollupConfig {
                 .map(ForkCondition::Timestamp)
                 .unwrap_or(ForkCondition::Never)
         })
+    }
+
+    /// `[MANTLE]` **Consensus.** The L1 fork axis on a Mantle chain does not follow the OP fork
+    /// axis — the two are aligned to *different* Mantle forks, and routing L1 forks through
+    /// [`Self::op_fork_activation`] silently lands them on Arsia.
+    ///
+    /// `op-chain-ops/genesis/mantle_config.go:163-177` (`alignEthWithMantle`) is the oracle:
+    ///
+    /// ```text
+    /// ShanghaiTime = CancunTime = PragueTime = MantleSkadiTime   // this function
+    /// OsakaTime                              = MantleLimbTime    // this function
+    /// CanyonTime .. JovianTime               = MantleArsiaTime   // mantle_op_fork_condition
+    /// ```
+    ///
+    /// Without this override, `ethereum_fork_activation` resolves Cancun via Ecotone and Prague
+    /// via Isthmus, both of which Mantle pins to Arsia. Every consumer that gates on
+    /// `EthereumHardforks` then sees Cancun/Prague as inactive for the entire `[Skadi, Arsia)`
+    /// window — 252 days / ~10.9M blocks on Mantle Sepolia.
+    ///
+    /// **The four remapped forks do not carry equal weight, and a reader should not assume the
+    /// regression suite guards them equally:**
+    ///
+    /// - **Cancun and Prague are consensus-critical and fixture-guarded.** `alloy-evm` gates the
+    ///   pre-block system calls on them — `is_cancun_active_at_timestamp` for EIP-4788 and
+    ///   `is_prague_active_at_timestamp` for EIP-2935. Before this override the executor skipped
+    ///   both in the window while op-geth performed them, so every in-window block got a different
+    ///   `state_root`. Dropping either one turns the `block-28000000` and `block-34065622` fixtures
+    ///   red.
+    /// - **Shanghai and Osaka are currently inert on the execution path**, and exist for parity
+    ///   with op-geth's chain config rather than for any behaviour kona depends on today.
+    ///   Shanghai's only reachable consumer is `alloy-evm`'s withdrawal balance increment, and the
+    ///   OP executor always passes `withdrawals = None`; Osaka's only consumer is
+    ///   `EngineGetPayloadVersion::from_cfg`, which already has an `is_mantle_limb_active`
+    ///   disjunct, while the EVM's `OpSpecId` is chosen directly from the Mantle forks in
+    ///   `alloy_op_evm::spec_by_timestamp_after_bedrock`. Measured: removing both leaves all 13
+    ///   executor fixtures green. **They are pinned only by the unit test below**, so if an `alloy`
+    ///   upgrade ever routes a live decision through them, that test is the only warning you will
+    ///   get.
+    ///
+    /// Verified against `sepolia-testnet-qa1` (chain 5003) across the whole fork ladder; see
+    /// `MANTLE_CHANGES.md` §3.2j.
+    ///
+    /// Returns `None` for non-Mantle chains and for L1 forks Mantle does not remap.
+    fn mantle_ethereum_fork_condition(&self, fork: EthereumHardfork) -> Option<ForkCondition> {
+        if !self.is_mantle() {
+            return None;
+        }
+
+        let mantle_time = match fork {
+            // `alignEthWithMantle`: Shanghai / Cancun / Prague ← MantleSkadiTime.
+            EthereumHardfork::Shanghai | EthereumHardfork::Cancun | EthereumHardfork::Prague => {
+                self.mantle_hardforks.mantle_skadi_time
+            }
+            // `alignEthWithMantle`: Osaka ← MantleLimbTime.
+            EthereumHardfork::Osaka => self.mantle_hardforks.mantle_limb_time,
+
+            // Everything from Berlin down is handled by the caller. London, ArrowGlacier,
+            // GrayGlacier and Paris all ride Bedrock and are genuinely `Block(0)` on any
+            // OP-derived chain, so they keep the OP routing. Expressed as an ordering test rather
+            // than a variant list so that an upstream insertion below Shanghai cannot silently
+            // land in the fail-closed arm below and flip a `Block(0)` fork to `Never`.
+            f if f < EthereumHardfork::Shanghai => return None,
+
+            // [MANTLE] Everything else — Amsterdam, BPO1..BPO5 and any L1 fork added upstream
+            // later — resolves to `Never`, deliberately, rather than falling through to the OP
+            // ladder.
+            //
+            // This is a *fail-closed* default and it points the opposite way to the fall-through
+            // above, on purpose. `alignEthWithMantle` sets exactly the fields listed in the table
+            // above and leaves every other L1 fork nil, so "not named here" must mean "op-geth
+            // never activates it". The OP routing cannot express that: `activating_op_fork`
+            // consults `alloy-op-hardforks`, an **in-tree** crate, so the day someone adds an
+            // `activates_l1_fork` mapping to any of Canyon..Jovian, a Mantle chain would light up
+            // an L1 fork at Arsia that op-geth has no configuration for — which is precisely the
+            // class of divergence this function exists to remove. Fail-closed keeps that edit
+            // from silently becoming a consensus change.
+            //
+            // If Mantle ever does adopt one of these, add it to the table above rather than
+            // relaxing this arm.
+            _ => return Some(ForkCondition::Never),
+        };
+
+        Some(mantle_time.map(ForkCondition::Timestamp).unwrap_or(ForkCondition::Never))
     }
 }
 
@@ -723,6 +808,98 @@ mod tests {
     /// the second. Before `mantle_op_fork_condition` existed, the trait path read the raw
     /// per-fork timestamps that `AlignOpWithMantle` overwrites — so a config whose
     /// `ecotone_time` differed from `mantle_arsia_time` resolved two different forks at once.
+    /// `[MANTLE]` Pins the equivalence that `kona-engine`'s `versions.rs` relies on.
+    ///
+    /// Since `mantle_ethereum_fork_condition` put Cancun/Prague on Skadi and Osaka on Limb, the
+    /// `|| cfg.is_mantle_skadi_active(..)` / `|| cfg.is_mantle_limb_active(..)` disjuncts in
+    /// `EngineForkchoiceVersion` / `EngineNewPayloadVersion` / `EngineGetPayloadVersion` became
+    /// redundant. Redundant code cannot be pinned through observable behaviour — deleting those
+    /// disjuncts leaves every `versions.rs` test green — so the equivalence itself is pinned here
+    /// instead. If this test fails, the disjuncts have gone back to being load-bearing and the
+    /// comments in `versions.rs` need to change with it.
+    #[test]
+    fn test_mantle_l1_axis_matches_the_engine_disjuncts() {
+        let cfg = RollupConfig {
+            hardforks: HardForkConfig { regolith_time: Some(0), ..Default::default() },
+            mantle_hardforks: MantleHardForkConfig {
+                mantle_skadi_time: Some(40),
+                mantle_limb_time: Some(70),
+                mantle_arsia_time: Some(100),
+                ..MantleHardForkConfig::NONE
+            },
+            ..Default::default()
+        };
+
+        for ts in [0, 1, 39, 40, 41, 69, 70, 71, 99, 100, 101, 1_000] {
+            assert_eq!(
+                cfg.is_cancun_active_at_timestamp(ts),
+                cfg.is_mantle_skadi_active(ts),
+                "cancun vs skadi at {ts}",
+            );
+            assert_eq!(
+                cfg.is_prague_active_at_timestamp(ts),
+                cfg.is_mantle_skadi_active(ts),
+                "prague vs skadi at {ts}",
+            );
+            assert_eq!(
+                cfg.is_osaka_active_at_timestamp(ts),
+                cfg.is_mantle_limb_active(ts),
+                "osaka vs limb at {ts}",
+            );
+        }
+
+        // Guard against a degenerate config where every predicate is trivially false.
+        assert!(cfg.is_cancun_active_at_timestamp(40) && !cfg.is_cancun_active_at_timestamp(39));
+        assert!(cfg.is_osaka_active_at_timestamp(70) && !cfg.is_osaka_active_at_timestamp(69));
+    }
+
+    /// `[MANTLE]` Pins the resolution of **every** [`EthereumHardfork`] variant on a Mantle
+    /// config, so that an upstream insertion cannot silently change one.
+    ///
+    /// Two directions are load-bearing:
+    /// - a new variant below Shanghai must keep riding Bedrock (`Block(0)`), not fail closed;
+    /// - a new variant above Osaka must fail closed (`Never`), not fall through to the OP ladder
+    ///   and light up at Arsia — `alloy-op-hardforks` is an in-tree crate, so its
+    ///   `activates_l1_fork` table can change under us.
+    ///
+    /// If this test fails after a dependency bump, decide which side the new fork belongs on and
+    /// update `mantle_ethereum_fork_condition`'s table — do not just re-record the output.
+    #[test]
+    fn test_mantle_l1_fork_axis_is_pinned_for_every_variant() {
+        use alloy_hardforks::EthereumHardfork as E;
+
+        let cfg = RollupConfig {
+            hardforks: HardForkConfig { regolith_time: Some(0), ..Default::default() },
+            mantle_hardforks: MantleHardForkConfig {
+                mantle_skadi_time: Some(40),
+                mantle_limb_time: Some(70),
+                mantle_arsia_time: Some(100),
+                ..MantleHardForkConfig::NONE
+            },
+            ..Default::default()
+        };
+
+        for fork in E::VARIANTS.iter().copied() {
+            let got = cfg.ethereum_fork_activation(fork);
+            let want = match fork {
+                E::Shanghai | E::Cancun | E::Prague => ForkCondition::Timestamp(40),
+                E::Osaka => ForkCondition::Timestamp(70),
+                // Berlin and below are `Block(0)` by the `<= Berlin` arm; London through Paris
+                // (including both Glacier forks) ride Bedrock, which is also `Block(0)`.
+                f if f < E::Shanghai => ForkCondition::Block(0),
+                // Anything Mantle does not map must fail closed.
+                _ => ForkCondition::Never,
+            };
+            assert_eq!(got, want, "{fork:?} resolved to {got:?}, expected {want:?}");
+        }
+
+        // The fail-closed arm is only meaningful if some variant actually reaches it.
+        assert!(
+            E::VARIANTS.iter().any(|f| *f > E::Osaka),
+            "no variant above Osaka: the fail-closed arm is untested, re-check this test",
+        );
+    }
+
     #[test]
     fn test_mantle_inherent_and_trait_fork_predicates_agree() {
         // Deliberately hostile: every OP fork timestamp disagrees with `mantle_arsia_time`,
@@ -741,6 +918,8 @@ mod tests {
                 ..Default::default()
             },
             mantle_hardforks: MantleHardForkConfig {
+                mantle_skadi_time: Some(40),
+                mantle_limb_time: Some(70),
                 mantle_arsia_time: Some(100),
                 ..MantleHardForkConfig::NONE
             },
@@ -775,11 +954,28 @@ mod tests {
         assert!(!config.is_ecotone_active(99));
         assert!(config.is_ecotone_active(100));
 
-        // The L1 fork mapping follows: Cancun rides Ecotone, Prague rides Isthmus.
-        assert!(!config.is_cancun_active_at_timestamp(99));
-        assert!(config.is_cancun_active_at_timestamp(100));
-        assert!(!config.is_prague_active_at_timestamp(99));
-        assert!(config.is_prague_active_at_timestamp(100));
+        // [MANTLE] **Consensus.** The L1 fork axis does NOT ride the OP fork axis on Mantle.
+        // `alignEthWithMantle` (op-chain-ops/genesis/mantle_config.go:162-176) puts
+        // Shanghai/Cancun/Prague on Skadi and Osaka on Limb, while Canyon..Isthmus sit on Arsia.
+        //
+        // This block is the regression guard for the `[Skadi, Arsia)` state-root divergence: if
+        // anyone routes Cancun back through Ecotone (or Prague through Isthmus), these flip and
+        // the executor silently stops making the EIP-4788 / EIP-2935 pre-block system calls for
+        // the whole window. The `40 != 100` gap is the entire point — do not collapse it.
+        assert!(!config.is_shanghai_active_at_timestamp(39));
+        assert!(config.is_shanghai_active_at_timestamp(40), "Shanghai must ride Skadi, not Arsia");
+        assert!(!config.is_cancun_active_at_timestamp(39));
+        assert!(config.is_cancun_active_at_timestamp(40), "Cancun must ride Skadi, not Ecotone");
+        assert!(!config.is_prague_active_at_timestamp(39));
+        assert!(config.is_prague_active_at_timestamp(40), "Prague must ride Skadi, not Isthmus");
+        assert!(!config.is_osaka_active_at_timestamp(69));
+        assert!(config.is_osaka_active_at_timestamp(70), "Osaka must ride Limb");
+
+        // And the two axes really are separate: at Skadi the L1 forks are on while every OP fork
+        // is still off, which is precisely the window op-geth spends emitting Isthmus-shaped
+        // blocks that kona used to mis-execute.
+        assert!(config.is_cancun_active_at_timestamp(40) && !config.is_ecotone_active(40));
+        assert!(config.is_prague_active_at_timestamp(40) && !config.is_isthmus_active(40));
 
         // Non-Mantle chains keep the standard per-fork schedule.
         let op_config = RollupConfig {

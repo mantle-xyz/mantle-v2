@@ -407,7 +407,23 @@ impl NodeCommand {
                 debug!("Loading l2 config from file: {:?}", path);
                 let file = File::open(path)
                     .map_err(|e| anyhow::anyhow!("Failed to open l2 config file: {e}"))?;
-                from_reader(file).map_err(|e| anyhow::anyhow!("Failed to parse l2 config: {e}"))
+                let cfg: RollupConfig = from_reader(file)
+                    .map_err(|e| anyhow::anyhow!("Failed to parse l2 config: {e}"))?;
+
+                // [MANTLE] Reject an out-of-order Mantle fork schedule here, the way op-node's
+                // `CheckMantleForks` does at startup (`op-node/rollup/mantle_types.go`). The
+                // fault-proof hosts already do this (`bin/host/src/{single,interop}/cfg.rs`), but
+                // `kona-node` did not, and Mantle does not run fault proofs — so this path was the
+                // unguarded one.
+                //
+                // Without it a hand-edited rollup.json that omits, say, `mantle_skadi_time` while
+                // setting `mantle_arsia_time` starts up fine and then silently negotiates the
+                // Engine API at V2 forever: the L1 fork axis is keyed off the Mantle forks
+                // (`RollupConfig::mantle_ethereum_fork_condition`), so a missing Mantle fork makes
+                // Cancun/Prague resolve to `Never` rather than merely late. Failing at load is the
+                // only place that turns into a legible error.
+                cfg.check_mantle_fork_order()?;
+                Ok(cfg)
             }
             None => {
                 debug!("Loading l2 config from superchain registry");
