@@ -60,6 +60,9 @@ The table below is kept because two of its traps are still live when auditing th
 | Sync `rust-develop-20260511` → `rust-kona-client-v1.5.1` | 7 upstream commits, 38 files, 1 trivial conflict + 1 KARST fix | ✅ |
 | Phase 5 | remove `op-reth/` (EL node now lives in `mantle-xyz/reth`); revert `alloy-evm` to upstream `alloy-rs/evm` v0.34.0 + drop the 2 dead `token_ratio` stubs in `alloy-op-evm` | ✅ |
 | Sync `op-reth/v2.4.2` anchor → `kona-client/v1.7.0` | Back through the bridge. 184 conflicts (165 mechanical / 19 judged); kona compiles again — the 22 errors the previous round left are gone. Brings upstream PR #22126 (span-batch `uvarint` ↔ op-node parity, a **consensus** fix). `[MANTLE]` markers 101 → 208 across 71 files (re-measured 2026-09-16; the 117/44 figure recorded here originally was taken mid-sync and was never trued up). Verified: `check --workspace` 0/0; `cargo test` on the 8 Mantle-touched crates 931 pass / 0 fail; nightly fmt clean; clippy clean outside `op-revm/` (which carries a pre-existing baseline, §2.1); `no_std`/riscv32 20/20. **A full `cargo test --workspace` is not green** — see §4.3 for the four tests parked with `#[ignore]` and why. | ✅ |
+| Two consensus fixes in the `[Skadi, Arsia)` window | The L1 fork axis was riding the OP fork axis, so Cancun/Prague resolved to Arsia and the executor skipped EIP-4788 / EIP-2935 for the whole 252-day window; separately, deposit-nonce stripping was gated on Skadi, so pre-Skadi `receipts_root` was wrong. **Both latent on `main` and on `dev/mantle-v1.6.3`, neither introduced by the sync** — building `origin/main` and running the same blocks reproduces the same failure set. Surfaced only once an executor fixture came from *inside* the window, the gap §3.2c had flagged. See §3.2j. | ✅ |
+| Verification pipeline restored | `cargo nextest` executed **zero** tests (`binary(e2e_testsuite)` in upstream's config hard-errors against a workspace that excludes `op-reth/`); **every** `just` recipe aborted during parsing (upstream's `[script]` attribute is unstable in the pinned just 1.37.0); `mise.toml` pinned rust 1.94 against a workspace requiring 1.95. `cargo deny check sources` had never passed. See §4.3. | ✅ |
+| Upstream directories filtered out of the bridge (Strategy B) | `op-reth/` (180 files / ~60k lines), `lokahi/`, `op-reth-test-engine/` and `kona/sp1/` (64 files / 26,330 lines) are no longer carried by subtree pulls. Also removed the cannon/MIPS64 FPVM prestate family, the `release` recipe and the `docs-*` recipes from `rust/justfile` (483 lines). Dropping `sp1-sdk` with `kona/sp1/` took **310 packages** out of `Cargo.lock` and `cargo deny` advisories from 9 errors to 6. See §3.11. | ✅ |
 | Phase 2 | op-succinct upgrade (independent fork) | ⏸️ |
 | Phase 3 | kona security patch follow-up | ⏸️ |
 
@@ -1053,6 +1056,22 @@ packages** from `Cargo.lock`. Measured consequences:
 `output-kona-prestate-hash`, `reproducible-kona-prestate`, `clean-kona-prestates`,
 `kona-prestate-variants`, plus the MIPS64 cross-toolchain variables — 369 lines). Mantle does not
 run fault proofs, so nothing consumes the artifacts.
+
+**Two more dead recipe groups went with it**, both verified non-functional rather than merely
+unused:
+
+- `release` — drove `cargo-release` to publish op-alloy, alloy-op-evm and the kona crates to
+  crates.io in two topologically-ordered batches (to stay under the "existing crates" rate limit
+  of 30). That is upstream's publishing workflow; Mantle publishes none of these crates —
+  `mantle-xyz/reth` and `mantle-xyz/op-succinct` depend on this repository by git branch or tag.
+- `docs-dev` / `docs-build` / `docs-preview` — delegate to `rust/docs/justfile`, and `rust/docs/`
+  does not exist in this tree. They failed on invocation.
+
+`rust/justfile` went from 797 lines to 329. What is left is load-bearing and should not be
+trimmed further without care: it is the **only** record of the canonical verification commands,
+because `rust/` has no CI. `check-no-std` in particular encodes *which* 20 packages must stay
+`no_std` (they run inside the zkVM), and `lint-clippy` encodes the exact flag set — dropping
+`--all-targets` silently stops linting test code.
 
 Verified before removing that the family had **no consumers outside `rust/justfile`**: the six
 apparent external references were self-references within it, and the comment listing external
