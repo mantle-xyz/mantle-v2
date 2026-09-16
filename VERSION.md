@@ -7,7 +7,7 @@ Current round: **`mantle-v1.6` (Elysium)**
 | Component | Version | Released | Previous version |
 |---|---|---|---|
 | op-geth | — | — | `v1.6.1` |
-| mantle-v2 | — | — | `v1.6.2` |
+| mantle-v2 | [`mantle-v1.6.3`](https://github.com/mantle-xyz/mantle-v2/releases/tag/mantle-v1.6.3) | 2026-09-16 | — |
 | reth | — | — | `op-reth-v2.2.1-mantle-arsia.2` |
 | op-succinct | [`mantle-v1.6.0`](https://github.com/mantle-xyz/op-succinct/releases/tag/mantle-v1.6.0) | 2026-09-02 | `v3.8.1-testnet-mantle-arsia.2` |
 | mantle-da-indexer | — | — | `v1.6.0` |
@@ -22,6 +22,7 @@ Current round: **`mantle-v1.6` (Elysium)**
 
 | Version | Component | Date | Upgrade | Consensus | Summary |
 |---|---|---|---|---|---|
+| [`mantle-v1.6.3`](https://github.com/mantle-xyz/mantle-v2/releases/tag/mantle-v1.6.3) | mantle-v2 | 2026-09-16 | required | **state transition** | BVM_ETH deposit values (`eth_value`, `eth_tx_value`) widened from `u128` to `U256` to cover the full 32-byte word the portal packs and op-node decodes; the derivation decoder now reads the whole word. No database migration. First release under unified numbering |
 | [`mantle-v1.6.0`](https://github.com/mantle-xyz/op-succinct/releases/tag/mantle-v1.6.0) | op-succinct | 2026-09-02 | recommended | none | Merge upstream op-succinct v3.12.0; first release under unified numbering |
 
 <!-- Insert new rows directly below the header, newest first. One line per release;
