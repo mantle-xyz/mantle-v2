@@ -133,7 +133,7 @@ impl Arsia {
                 gas_limit: 700_000,
                 is_system_transaction: false,
                 input: Self::l1_block_deployment_bytecode(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // 2. Deploy new GasPriceOracle implementation
@@ -146,7 +146,7 @@ impl Arsia {
                 gas_limit: 1_800_000,
                 is_system_transaction: false,
                 input: Self::gas_price_oracle_deployment_bytecode(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // 3. Deploy new OperatorFeeVault implementation
@@ -159,7 +159,7 @@ impl Arsia {
                 gas_limit: 500_000,
                 is_system_transaction: false,
                 input: Self::operator_fee_vault_deployment_bytecode(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // 4. Upgrade L1Block proxy
@@ -172,7 +172,7 @@ impl Arsia {
                 gas_limit: 50_000,
                 is_system_transaction: false,
                 input: crate::upgrade_to_calldata(Self::ARSIA_L1_BLOCK_ADDRESS),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // 5. Upgrade GasPriceOracle proxy
@@ -185,7 +185,7 @@ impl Arsia {
                 gas_limit: 50_000,
                 is_system_transaction: false,
                 input: crate::upgrade_to_calldata(Self::ARSIA_GAS_PRICE_ORACLE_ADDRESS),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // 6. Upgrade OperatorFeeVault proxy
@@ -198,7 +198,7 @@ impl Arsia {
                 gas_limit: 50_000,
                 is_system_transaction: false,
                 input: crate::upgrade_to_calldata(Self::ARSIA_OPERATOR_FEE_VAULT_ADDRESS),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // 7. Enable Arsia in GasPriceOracle
@@ -211,7 +211,7 @@ impl Arsia {
                 gas_limit: 100_000,
                 is_system_transaction: false,
                 input: Bytes::from(Self::ENABLE_ARSIA_INPUT.to_vec()),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
         ]

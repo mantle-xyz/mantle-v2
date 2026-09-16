@@ -85,18 +85,23 @@ struct CompactTxDeposit {
     value: U256,
     gas_limit: u64,
     is_system_transaction: bool,
-    // [MANTLE] BVM_ETH fields. Stored as `Option<u128>` (1 flag bit each) and placed
-    // BEFORE `input` to reproduce the exact 2-byte Compact bitfield layout written by
-    // reth v1.9.3-mantle-arsia (15 used bits -> 2 bytes). The op-alloy `TxDeposit` uses
-    // `u128` for `eth_value`; the conversion impls map `0 <-> None` (same pattern as `mint`).
+    // [MANTLE] BVM_ETH fields. Stored as `Option<_>` (1 flag bit each) and placed BEFORE
+    // `input` to reproduce the exact 2-byte Compact bitfield layout written by
+    // reth v1.9.3-mantle-arsia (15 used bits -> 2 bytes). The conversion impls map
+    // `0 <-> None` for `eth_value` (same pattern as `mint`).
     //
-    // DO NOT change these types or reorder these fields: it shifts the bitfield and makes
-    // ALL existing on-disk deposit data unreadable (the original op-reth-rpc41 sync failure).
-    // The earlier `reth_codecs_derive: Compact not satisfied` claim was a misdiagnosis;
-    // `Option<u128>` is the same shape as the already-working `mint` field above.
-    // Guarded by `compact_txdeposit_bitfield_is_2_bytes` below.
-    eth_value: Option<u128>,
-    eth_tx_value: Option<u128>,
+    // These are `Option<U256>`, widened from `Option<u128>` so they cover the full 32-byte
+    // ABI word the portal packs. **The widening is byte-compatible**: reth's Compact gives an
+    // `Option` one flag bit regardless of the inner type and length-prefixes the payload, so
+    // the bitfield and the encoded bytes are unchanged for every value that fit in `u128` —
+    // i.e. everything already on disk. Proven by `compact_layout_is_unchanged_by_widening`
+    // below, which diffs real encoder output against a frozen `Option<u128>` mirror.
+    //
+    // DO NOT reorder these fields or change `Option<_>` to a bare value: either shifts the
+    // bitfield and makes ALL existing on-disk deposit data unreadable (the original
+    // op-reth-rpc41 sync failure). The frozen-mirror test is what makes that detectable.
+    eth_value: Option<U256>,
+    eth_tx_value: Option<U256>,
     input: Bytes,
 }
 
@@ -113,11 +118,8 @@ impl From<&TxDeposit> for CompactTxDeposit {
             value: tx.value,
             gas_limit: tx.gas_limit,
             is_system_transaction: tx.is_system_transaction,
-            // [MANTLE] map u128 `0` -> `None` (same convention as `mint`).
-            eth_value: match tx.eth_value {
-                0 => None,
-                v => Some(v),
-            },
+            // [MANTLE] map `0` -> `None` (same convention as `mint`).
+            eth_value: (!tx.eth_value.is_zero()).then_some(tx.eth_value),
             eth_tx_value: tx.eth_tx_value,
             input: tx.input.clone(),
         }
@@ -179,9 +181,160 @@ mod mantle_txdeposit_compact_tests {
         assert_eq!(CompactTxDeposit::bitflag_encoded_bytes(), 2);
     }
 
+    /// `[MANTLE]` Frozen mirror of the **pre-widening** layout, when `eth_value` /
+    /// `eth_tx_value` were `Option<u128>`. Only ever used by the test below.
+    ///
+    /// **DO NOT widen these fields to match [`CompactTxDeposit`].** They are `u128` on purpose:
+    /// this struct is the *control* side of the comparison — the layout that produced every
+    /// deposit already written to disk. Widening it would make the test compare the current
+    /// struct against itself, which is trivially equal, and the guard would silently stop
+    /// guarding anything.
+    ///
+    /// If [`CompactTxDeposit`] gains or loses a field, this mirror stays as it is and the test
+    /// is expected to fail. That failure is the signal to decide whether the on-disk format
+    /// really is changing, and to plan a migration if so — not a prompt to re-sync the mirror.
+    #[derive(reth_codecs_derive::Compact)]
+    #[reth_codecs(crate = "reth_codecs")]
+    struct FrozenCompactTxDeposit {
+        source_hash: B256,
+        from: Address,
+        to: TxKind,
+        mint: Option<u128>,
+        value: U256,
+        gas_limit: u64,
+        is_system_transaction: bool,
+        eth_value: Option<u128>,
+        eth_tx_value: Option<u128>,
+        input: Bytes,
+    }
+
+    /// `[MANTLE]` **On-disk compatibility guard for the `u128 -> U256` widening.**
+    ///
+    /// `compact_txdeposit_bitfield_is_2_bytes` above is necessary but not sufficient: the
+    /// bitfield can stay two bytes while its *contents* shift, which is exactly the failure
+    /// mode that made every stored deposit unreadable once before. This diffs real encoder
+    /// output against a frozen copy of the old struct across a value matrix, so a layout shift
+    /// shows up as differing bytes rather than as a surviving byte count.
+    ///
+    /// Every value here fits in `u128`, i.e. everything already written to disk. If this test
+    /// passes, existing databases stay readable and no migration is required.
+    /// `[MANTLE]` **The decode direction of the compatibility guard.**
+    ///
+    /// `compact_layout_is_unchanged_by_widening` proves the *encoder* still writes the old
+    /// bytes. That is only half the question a live node asks: it mostly *reads*, and every
+    /// deposit already in its database was written by the narrow (`Option<u128>`) layout.
+    ///
+    /// This encodes with the frozen old struct and decodes with the current one, asserting the
+    /// values come back intact. Symmetric codecs make this follow from the encode test, but
+    /// "follows from" is not a measurement, and the cost of being wrong here is an unreadable
+    /// database.
+    #[test]
+    fn current_decoder_reads_bytes_written_by_the_old_layout() {
+        let vals: [u128; 6] = [0, 1, 255, 256, u64::MAX as u128, u128::MAX];
+        let mut checked = 0usize;
+
+        for &mint in &vals {
+            for &ev in &vals {
+                for &etv in &[None, Some(1u128), Some(u128::MAX)] {
+                    let frozen = FrozenCompactTxDeposit {
+                        source_hash: B256::repeat_byte(7),
+                        from: Address::repeat_byte(3),
+                        to: TxKind::Call(Address::repeat_byte(9)),
+                        mint: (mint != 0).then_some(mint),
+                        value: U256::from(12_345u64),
+                        gas_limit: 21_000,
+                        is_system_transaction: true,
+                        eth_value: (ev != 0).then_some(ev),
+                        eth_tx_value: etv,
+                        input: Bytes::from(vec![1u8, 2, 3]),
+                    };
+
+                    // Bytes exactly as the pre-widening node wrote them to disk.
+                    let mut on_disk = Vec::new();
+                    let _ = frozen.to_compact(&mut on_disk);
+
+                    // Read them back with the current, widened decoder.
+                    let (tx, rest) = TxDeposit::from_compact(&on_disk, on_disk.len());
+                    assert!(rest.is_empty(), "decoder left trailing bytes at mint={mint} ev={ev}");
+
+                    assert_eq!(tx.mint, mint, "mint changed");
+                    assert_eq!(tx.eth_value, U256::from(ev), "eth_value changed at {ev}");
+                    assert_eq!(
+                        tx.eth_tx_value,
+                        etv.map(U256::from),
+                        "eth_tx_value changed at {etv:?}",
+                    );
+                    assert_eq!(tx.value, U256::from(12_345u64));
+                    assert_eq!(tx.gas_limit, 21_000);
+                    assert!(tx.is_system_transaction);
+                    assert_eq!(tx.input, Bytes::from(vec![1u8, 2, 3]));
+                    checked += 1;
+                }
+            }
+        }
+
+        assert_eq!(checked, 108, "matrix shrank; the guard is weaker than it reads");
+    }
+
+    #[test]
+    fn compact_layout_is_unchanged_by_widening() {
+        assert_eq!(
+            CompactTxDeposit::bitflag_encoded_bytes(),
+            FrozenCompactTxDeposit::bitflag_encoded_bytes(),
+            "bitfield width changed",
+        );
+
+        let vals: [u128; 6] = [0, 1, 255, 256, u64::MAX as u128, u128::MAX];
+        let mut compared = 0usize;
+
+        for &mint in &vals {
+            for &ev in &vals {
+                for &etv in &[None, Some(0u128), Some(1u128), Some(u128::MAX)] {
+                    let frozen = FrozenCompactTxDeposit {
+                        source_hash: B256::repeat_byte(7),
+                        from: Address::repeat_byte(3),
+                        to: TxKind::Call(Address::repeat_byte(9)),
+                        mint: (mint != 0).then_some(mint),
+                        value: U256::from(12_345u64),
+                        gas_limit: 21_000,
+                        is_system_transaction: false,
+                        eth_value: (ev != 0).then_some(ev),
+                        eth_tx_value: etv,
+                        input: Bytes::from(vec![1u8, 2, 3]),
+                    };
+                    let current = CompactTxDeposit {
+                        source_hash: B256::repeat_byte(7),
+                        from: Address::repeat_byte(3),
+                        to: TxKind::Call(Address::repeat_byte(9)),
+                        mint: (mint != 0).then_some(mint),
+                        value: U256::from(12_345u64),
+                        gas_limit: 21_000,
+                        is_system_transaction: false,
+                        eth_value: (ev != 0).then_some(U256::from(ev)),
+                        eth_tx_value: etv.map(U256::from),
+                        input: Bytes::from(vec![1u8, 2, 3]),
+                    };
+
+                    let mut a = Vec::new();
+                    let mut b = Vec::new();
+                    let _ = frozen.to_compact(&mut a);
+                    let _ = current.to_compact(&mut b);
+                    assert_eq!(
+                        a, b,
+                        "encoding diverged at mint={mint} eth_value={ev} eth_tx_value={etv:?}",
+                    );
+                    compared += 1;
+                }
+            }
+        }
+
+        assert_eq!(compared, 144, "matrix shrank; the guard is weaker than it reads");
+    }
+
     #[test]
     fn roundtrip_zero_bvm_eth() {
-        let tx = TxDeposit { eth_value: 0, eth_tx_value: None, ..Default::default() };
+        let tx =
+            TxDeposit { eth_value: U256::from(0u128), eth_tx_value: None, ..Default::default() };
         assert_eq!(roundtrip(&tx), tx);
     }
 
@@ -198,13 +351,17 @@ mod mantle_txdeposit_compact_tests {
             value: U256::from(9u64),
             gas_limit: 300_000,
             is_system_transaction: false,
-            eth_value: 123_456_000_000_000_000,
+            eth_value: U256::from(123_456_000_000_000_000u128),
             input: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
-            eth_tx_value: Some(123_456_000_000_000_000),
+            eth_tx_value: Some(U256::from(123_456_000_000_000_000u128)),
         };
         let rt = roundtrip(&tx);
-        assert_eq!(rt.eth_value, 123_456_000_000_000_000, "eth_value was dropped");
-        assert_eq!(rt.eth_tx_value, Some(123_456_000_000_000_000), "eth_tx_value was dropped");
+        assert_eq!(rt.eth_value, U256::from(123_456_000_000_000_000u128), "eth_value was dropped");
+        assert_eq!(
+            rt.eth_tx_value,
+            Some(U256::from(123_456_000_000_000_000u128)),
+            "eth_tx_value was dropped"
+        );
         assert_eq!(rt.input, tx.input, "input corrupted (bitfield shift)");
         assert_eq!(rt, tx);
     }
@@ -213,8 +370,8 @@ mod mantle_txdeposit_compact_tests {
     /// the value being zero.
     #[test]
     fn roundtrip_eth_tx_value_some_zero() {
-        let tx = TxDeposit { eth_tx_value: Some(0), ..Default::default() };
-        assert_eq!(roundtrip(&tx).eth_tx_value, Some(0));
+        let tx = TxDeposit { eth_tx_value: Some(U256::from(0u128)), ..Default::default() };
+        assert_eq!(roundtrip(&tx).eth_tx_value, Some(U256::from(0u128)));
     }
 }
 

@@ -843,8 +843,8 @@ mod tests {
             value: U256::from(4_u64),
             input: Bytes::from(vec![5]),
             is_system_transaction: false,
-            eth_value: 100,
-            eth_tx_value: Some(100),
+            eth_value: U256::from(100u128),
+            eth_tx_value: Some(U256::from(100u128)),
         };
         let tx_envelope = OpTxEnvelope::Deposit(tx.seal_slow());
         let encoded = tx_envelope.encoded_2718();
@@ -865,8 +865,8 @@ mod tests {
             from: Address::random(),
             mint: u128::MAX,
             is_system_transaction: false,
-            eth_value: 100,
-            eth_tx_value: Some(100),
+            eth_value: U256::from(100u128),
+            eth_tx_value: Some(U256::from(100u128)),
         };
         let tx_envelope = OpTxEnvelope::Deposit(tx.seal_slow());
 
@@ -892,7 +892,7 @@ mod tests {
             value: U256::ZERO,
             gas_limit: 1_000_000,
             is_system_transaction: false,
-            eth_value: 0,
+            eth_value: U256::from(0u128),
             input: Bytes::from_static(&hex!("440a5e20000008dd00101c1200000000000000040000000066c352bb000000000139c4f500000000000000000000000000000000000000000000000000000000c0cff1460000000000000000000000000000000000000000000000000000000000000001d4c88f4065ac9671e8b1329b90773e89b5ddff9cf8675b2b5e9c1b28320609930000000000000000000000005050f69a9786f081509234f1a7f4684b5e5b76c9")),
             eth_tx_value: None,
         };

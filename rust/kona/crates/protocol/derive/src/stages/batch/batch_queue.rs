@@ -1009,7 +1009,7 @@ mod tests {
             input: deposit_tx_calldata,
             is_system_transaction: false,
             eth_tx_value: None,
-            eth_value: 0,
+            eth_value: U256::ZERO,
         };
         let mut buf = BytesMut::new();
         tx.encode(&mut buf);
