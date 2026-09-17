@@ -149,6 +149,7 @@ contract L2CrossDomainMessenger is CrossDomainMessenger, Semver {
     /// @param _ethValue    ETH value to send with the message.
     /// @param _minGasLimit Minimum amount of gas that the message can be executed with.
     /// @param _message     Message to send to the target.
+    /// @dev Copy the payload into memory before checking gas and calculating the finalization reserve.
     function relayMessage(
         uint256 _nonce,
         address _sender,
@@ -156,7 +157,7 @@ contract L2CrossDomainMessenger is CrossDomainMessenger, Semver {
         uint256 _mntValue,
         uint256 _ethValue,
         uint256 _minGasLimit,
-        bytes calldata _message
+        bytes memory _message
     )
         external
         payable

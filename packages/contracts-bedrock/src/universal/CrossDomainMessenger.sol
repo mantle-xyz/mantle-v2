@@ -291,6 +291,7 @@ abstract contract CrossDomainMessenger is
     /// @param _value       ETH value to send with the message.
     /// @param _minGasLimit Minimum amount of gas that the message can be executed with.
     /// @param _message     Message to send to the target.
+    /// @dev Copy the payload into memory before checking gas and calculating the finalization reserve.
     function relayMessage(
         uint256 _nonce,
         address _sender,
@@ -298,7 +299,7 @@ abstract contract CrossDomainMessenger is
         uint256 _mntValue,
         uint256 _value,
         uint256 _minGasLimit,
-        bytes calldata _message
+        bytes memory _message
     )
         external
         payable
@@ -421,7 +422,7 @@ abstract contract CrossDomainMessenger is
     function baseGas(bytes calldata _message, uint32 _minGasLimit) public pure returns (uint64) {
         return
         // Constant overhead
-        RELAY_CONSTANT_OVERHEAD
+            RELAY_CONSTANT_OVERHEAD
             // Calldata overhead
             + (uint64(_message.length) * MIN_GAS_CALLDATA_OVERHEAD)
             // Hash message

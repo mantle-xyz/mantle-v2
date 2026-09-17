@@ -8,6 +8,7 @@ import { Encoding } from "src/libraries/Encoding.sol";
 import { Hashing } from "src/libraries/Hashing.sol";
 import { AddressAliasHelper } from "src/vendor/AddressAliasHelper.sol";
 import { L2CrossDomainMessenger } from "src/L2/L2CrossDomainMessenger.sol";
+import { RelayGasBurner, RelayGasForwarder } from "./mocks/RelayGas.sol";
 
 contract L2RelayGasConsumer {
     uint256 internal immutable gasToBurn;
@@ -22,6 +23,53 @@ contract L2RelayGasConsumer {
 }
 
 contract L2CrossDomainMessengerGas_Test is Messenger_Initializer {
+    /// @dev Keep the inner relay budget separate from the isolated transaction's calldata floor.
+    ///      Amsterdam execution here also covers a future L2 activation of its state-gas rules.
+    function _relayPayloadAndRetry(uint256 _size) internal {
+        RelayGasBurner target = new RelayGasBurner();
+        RelayGasForwarder forwarder = new RelayGasForwarder();
+        address caller = AddressAliasHelper.applyL1ToL2Alias(address(L1Messenger));
+        vm.etch(caller, address(forwarder).code);
+        bytes memory message = new bytes(_size);
+        uint256 nonce = Encoding.encodeVersionedNonce(0, 1);
+        bytes32 messageHash = Hashing.hashCrossDomainMessageV1(nonce, alice, address(target), 1, 0, 25_000, message);
+        bytes memory data = abi.encodeCall(
+            L2CrossDomainMessenger.relayMessage, (nonce, alice, address(target), 1, 0, 25_000, message)
+        );
+        assertLe(data.length, 120_000);
+
+        bool completed = RelayGasForwarder(caller).forward{ gas: 12_000_000, value: 1 }(
+            address(L2Messenger), L1Messenger.baseGas(message, 25_000), data
+        );
+        assertTrue(completed, "relay must finish recording the target's failure");
+        assertTrue(L2Messenger.failedMessages(messageHash));
+        assertFalse(L2Messenger.successfulMessages(messageHash));
+        assertEq(address(target).balance, 0);
+        assertEq(address(L2Messenger).balance, 1);
+
+        target.stopBurning();
+        (completed,) = address(L2Messenger).call{ gas: 12_000_000 }(data);
+        assertTrue(completed);
+        assertTrue(L2Messenger.successfulMessages(messageHash));
+        assertEq(address(target).balance, 1);
+        assertEq(address(L2Messenger).balance, 0);
+        (completed,) = address(L2Messenger).call{ gas: 12_000_000 }(data);
+        assertFalse(completed, "successful message must not execute twice");
+        assertEq(address(target).balance, 1);
+    }
+
+    function test_relayMessage_smallPayloadGasRetry_succeeds() external {
+        _relayPayloadAndRetry(164);
+    }
+
+    function test_relayMessage_largePayloadGasRetry_succeeds() external {
+        _relayPayloadAndRetry(34_000);
+    }
+
+    function test_relayMessage_nearMaxPayloadGasRetry_succeeds() external {
+        _relayPayloadAndRetry(119_712);
+    }
+
     /// @dev Also run with --isolate so the relay has a transaction-sized state-gas budget.
     function test_relayMessage_targetOutOfGasRetry_succeeds() external {
         address target = address(new L2RelayGasConsumer(1_000_000));

@@ -12,6 +12,7 @@ import { OptimismPortal } from "src/L1/OptimismPortal.sol";
 import { L1CrossDomainMessenger } from "src/L1/L1CrossDomainMessenger.sol";
 import { L1StandardBridge } from "src/L1/L1StandardBridge.sol";
 import { L1MantleToken } from "./mocks/TestMantleToken.sol";
+import { RelayGasBurner, RelayGasForwarder } from "./mocks/RelayGas.sol";
 import { TransparentUpgradeableProxy } from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
 contract RelayGasConsumer {
@@ -46,6 +47,66 @@ contract L1CrossDomainMessengerGas_Test is Bridge_Initializer {
 
     function _authenticatePortal() internal {
         vm.store(address(op), bytes32(uint256(50)), bytes32(uint256(uint160(Predeploys.L2_CROSS_DOMAIN_MESSENGER))));
+    }
+
+    /// @dev Exercise the actual Portal finalization path with a message whose target exhausts gas.
+    ///      The outer transaction covers Amsterdam's calldata floor while the inner Portal call
+    ///      supplies the message budget. A direct isolated Messenger call would conflate the two.
+    function _finalizePayloadAndRetry(uint256 _size) internal {
+        RelayGasBurner target = new RelayGasBurner();
+        RelayGasForwarder forwarder = new RelayGasForwarder();
+        bytes memory message = new bytes(_size);
+        uint256 nonce = Encoding.encodeVersionedNonce(0, 1);
+        bytes32 messageHash = Hashing.hashCrossDomainMessageV1(nonce, alice, address(target), 0, 1, 25_000, message);
+        Types.WithdrawalTransaction memory withdrawal = Types.WithdrawalTransaction({
+            nonce: 0,
+            sender: Predeploys.L2_CROSS_DOMAIN_MESSENGER,
+            target: address(L1Messenger),
+            mntValue: 0,
+            ethValue: 1,
+            gasLimit: L2Messenger.baseGas(message, 25_000),
+            data: abi.encodeCall(
+                L1CrossDomainMessenger.relayMessage, (nonce, alice, address(target), 0, 1, 25_000, message)
+            )
+        });
+        assertLe(withdrawal.data.length, 120_000);
+        bytes32 withdrawalHash = _proveWithdrawal(withdrawal);
+        vm.deal(address(op), 1);
+
+        bool completed = forwarder.forward{ gas: 12_000_000 }(
+            address(op),
+            withdrawal.gasLimit + 800_000,
+            abi.encodeCall(OptimismPortal.finalizeWithdrawalTransaction, (withdrawal))
+        );
+        assertTrue(completed, "Portal must finish finalization");
+        assertTrue(op.finalizedWithdrawals(withdrawalHash));
+        assertTrue(L1Messenger.failedMessages(messageHash), "target failure must remain replayable");
+        assertFalse(L1Messenger.successfulMessages(messageHash));
+        assertEq(address(target).balance, 0);
+        assertEq(address(L1Messenger).balance, 1);
+
+        target.stopBurning();
+        (completed,) = address(L1Messenger).call{ gas: 12_000_000 }(withdrawal.data);
+        assertTrue(completed);
+        assertTrue(L1Messenger.successfulMessages(messageHash));
+        assertEq(address(target).balance, 1);
+        assertEq(address(L1Messenger).balance, 0);
+        (completed,) = address(L1Messenger).call{ gas: 12_000_000 }(withdrawal.data);
+        assertFalse(completed, "successful message must not execute twice");
+        assertEq(address(target).balance, 1);
+    }
+
+    function test_finalizeWithdrawal_smallPayloadGasRetry_succeeds() external {
+        _finalizePayloadAndRetry(164);
+    }
+
+    function test_finalizeWithdrawal_largePayloadGasRetry_succeeds() external {
+        _finalizePayloadAndRetry(34_000);
+    }
+
+    function test_finalizeWithdrawal_nearMaxPayloadGasRetry_succeeds() external {
+        // Mantle's seven-argument relay encodes to 119,972 bytes, below Portal's 120k cap.
+        _finalizePayloadAndRetry(119_712);
     }
 
     /// @dev Also run with --isolate so each relay has a transaction-sized state-gas budget.
