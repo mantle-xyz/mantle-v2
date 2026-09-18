@@ -36,6 +36,7 @@ type Orchestrator struct {
 	l2ChallengerOpts        l2ChallengerOpts
 	SyncTesterELOptions     SyncTesterELOptionBundle
 	deployerPipelineOptions []DeployerPipelineOption
+	manualL1Mining          bool
 
 	superchains     locks.RWMap[stack.SuperchainID, *Superchain]
 	clusters        locks.RWMap[stack.ClusterID, *Cluster]
