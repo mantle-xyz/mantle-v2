@@ -1,7 +1,7 @@
 //! Block executor for Optimism.
 
 use crate::{OpEvmFactory, spec_by_timestamp_after_bedrock};
-use alloc::{boxed::Box, collections::BTreeMap, format, string::String, vec, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeMap, format, string::String, vec::Vec};
 use alloy_consensus::{Eip658Value, Header, Transaction, TransactionEnvelope, TxReceipt};
 use alloy_eips::{Encodable2718, Typed2718, eip7685::Requests};
 use alloy_evm::{
@@ -21,6 +21,9 @@ use op_alloy::consensus::{
     OpDepositReceipt, OpTransaction as OpConsensusTransaction, POST_EXEC_TX_TYPE_ID,
     PostExecPayload, SDMGasEntry,
 };
+// [MANTLE] Upstream imports `encoded_tx_da_footprint` / `tx_da_footprint` from op-revm here.
+// Mantle's op-revm does not export them, and the pre-refactor `estimate_tx_compressed_size` form
+// is kept on purpose — see `jovian_da_footprint_estimation` for why the two differ.
 use op_revm::{
     L1BlockInfo, OpTransaction,
     constants::{BASE_FEE_RECIPIENT, L1_BLOCK_CONTRACT, OPERATOR_FEE_RECIPIENT},
@@ -33,7 +36,7 @@ use revm::{
     Database as _, DatabaseCommit, Inspector,
     context::{
         Block, TxEnv,
-        result::{ExecutionResult, Output, ResultAndState, SuccessReason},
+        result::{ExecutionResult, ResultAndState},
     },
     database::DatabaseCommitExt,
     state::{Account, AccountStatus, EvmState},
@@ -42,6 +45,7 @@ use revm::{
 use crate::post_exec::{
     PostExecEvm, PostExecEvmFactoryAdapter, PostExecEvmFactoryHooks, PostExecExecutedTx,
     PostExecRefundEvent, PostExecRefundInspector, PostExecTxContext, PostExecTxKind,
+    noop_post_exec_result,
 };
 
 mod canyon;
@@ -508,7 +512,16 @@ where
         tx_env: &E::Tx,
         tx: impl RecoveredTx<R::Transaction>,
     ) -> Result<u64, BlockExecutionError> {
-        // Try to use the enveloped tx if it exists, otherwise use the encoded 2718 bytes
+        // [MANTLE] Upstream replaced this body with op-revm's `tx_da_footprint` /
+        // `encoded_tx_da_footprint` helpers, which compute `(size * scalar) / 1e6`. Mantle keeps
+        // the pre-refactor `(size / 1e6) * scalar` order. The two truncate differently — e.g.
+        // size=1_500_000, scalar=2 gives 2 here and 3 upstream — and Mantle has Jovian
+        // DA-footprint enforcement enabled, so the difference is consensus-visible. This is a
+        // registered deviation (see the op-reth/v2.4.2 sync commit); the v1.7.0 subtree merge
+        // silently adopted upstream's form because this body did not surface as a conflict, and
+        // it is restored here on purpose. Do NOT "simplify" it back to the helpers.
+        //
+        // Try to use the enveloped tx if it exists, otherwise use the encoded 2718 bytes.
         let encoded = tx_env
             .encoded_bytes()
             .map_or_else(
@@ -521,9 +534,10 @@ where
         // database will panic when trying to fetch the DA footprint gas scalar.
         self.evm.db_mut().basic(L1_BLOCK_CONTRACT).map_err(BlockExecutionError::other)?;
 
-        let da_footprint_gas_scalar = L1BlockInfo::fetch_da_footprint_gas_scalar(self.evm.db_mut())
-            .map_err(BlockExecutionError::other)?
-            .into();
+        let da_footprint_gas_scalar: u64 =
+            L1BlockInfo::fetch_da_footprint_gas_scalar(self.evm.db_mut())
+                .map_err(BlockExecutionError::other)?
+                .into();
 
         Ok(encoded.saturating_mul(da_footprint_gas_scalar))
     }
@@ -567,6 +581,11 @@ where
         Ok(refund)
     }
 
+    /// Applies the post-exec refund to `total_gas_spent` so `tx_gas_used()` reports canonical gas.
+    ///
+    /// The EVM refund counter stays unchanged to avoid subtracting the refund twice. If the
+    /// EIP-7623 floor binds, `tx_gas_used()` remains clamped and may exceed canonical gas; whether
+    /// SDM rebates can reduce gas below that floor remains an open spec question.
     const fn canonicalize_result_gas(
         result: &mut ExecutionResult<E::HaltReason>,
         post_exec_refund: u64,
@@ -576,12 +595,9 @@ where
         }
 
         match result {
-            ExecutionResult::Success { gas, .. } => {
-                *gas = gas
-                    .with_total_gas_spent(gas.total_gas_spent().saturating_sub(post_exec_refund))
-                    .with_refunded(gas.inner_refunded().saturating_add(post_exec_refund));
-            }
-            ExecutionResult::Revert { gas, .. } | ExecutionResult::Halt { gas, .. } => {
+            ExecutionResult::Success { gas, .. } |
+            ExecutionResult::Revert { gas, .. } |
+            ExecutionResult::Halt { gas, .. } => {
                 *gas = gas
                     .with_total_gas_spent(gas.total_gas_spent().saturating_sub(post_exec_refund));
             }
@@ -868,6 +884,12 @@ where
         Ok(Some(self.commit_transaction(output)))
     }
 
+    /// In Produce mode, this method does not snapshot or restore producer-policy state. A failing
+    /// transaction still records its fee-vault touches on the `transact_raw` error path, and a
+    /// successfully executed transaction does the same even if its commit is later declined.
+    /// Callers that may discard a candidate must snapshot and restore the policy themselves or use
+    /// [`execute_transaction_with_commit_condition`](Self::execute_transaction_with_commit_condition),
+    /// which restores the per-candidate snapshot on execution error and declined commit.
     fn execute_transaction_without_commit(
         &mut self,
         tx: impl ExecutableTx<Self>,
@@ -910,15 +932,7 @@ where
             self.verifier_post_exec_refund_for_tx(tx_index, false, true, 0)?;
             return Ok(OpTxResult {
                 inner: EthTxResult {
-                    result: ResultAndState::new(
-                        ExecutionResult::Success {
-                            reason: SuccessReason::Stop,
-                            gas: revm::context::result::ResultGas::default(),
-                            logs: vec![],
-                            output: Output::Call(Bytes::default()),
-                        },
-                        EvmState::default(),
-                    ),
+                    result: noop_post_exec_result(),
                     blob_gas_used: 0,
                     tx_type: tx.tx().tx_type(),
                 },

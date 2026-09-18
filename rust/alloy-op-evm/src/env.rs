@@ -374,7 +374,7 @@ mod tests {
         assert_eq!(actual_spec, expected_spec);
     }
 
-    /// [MANTLE] Tests that `spec_by_timestamp_after_bedrock` correctly resolves
+    /// `[MANTLE]` Tests that `spec_by_timestamp_after_bedrock` correctly resolves
     /// Mantle-specific OpSpecId variants (ARSIA, OSAKA, ISTHMUS) when `is_mantle()` is true.
     #[test]
     fn test_mantle_spec_routing_arsia() {

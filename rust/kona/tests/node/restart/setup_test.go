@@ -3,10 +3,12 @@ package node_restart
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/sysgo"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
 	node_utils "github.com/ethereum-optimism/optimism/rust/kona/tests/node/utils"
 )
@@ -18,6 +20,14 @@ type packageInitResult struct {
 }
 
 func TestMain(m *testing.M) {
+	// go test -list executes TestMain; when only listing, print the names and
+	// exit before booting the shared devstack runtime below.
+	for _, arg := range os.Args[1:] {
+		if arg == "-test.list" || strings.HasPrefix(arg, "-test.list=") {
+			os.Exit(m.Run())
+		}
+	}
+
 	logger := oplog.NewLogger(os.Stderr, oplog.DefaultCLIConfig())
 	pkg := devtest.NewP(context.Background(), logger, func(_ bool) {
 		panic(packageInitResult{code: 1})
@@ -40,9 +50,11 @@ func TestMain(m *testing.M) {
 		}()
 
 		sharedRestartRuntime = node_utils.NewSharedMixedOpKonaRuntimeForConfig(pkg, node_utils.L2NodeConfig{
-			KonaSequencerNodesWithGeth: 1,
-			KonaNodesWithGeth:          1,
-		})
+			KonaSequencerNodesWithReth: 1,
+			KonaNodesWithReth:          1,
+		}, sysgo.WithL2BlockTimes(map[eth.ChainID]uint64{
+			sysgo.DefaultL2AID: 1,
+		}))
 		code = m.Run()
 	}()
 

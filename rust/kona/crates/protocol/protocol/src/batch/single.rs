@@ -127,18 +127,18 @@ impl SingleBatch {
             return BatchValidity::Drop(BatchDropReason::SequencerDriftOverflow);
         };
 
-        let no_txs = self.transactions.is_empty();
-        if self.timestamp > max && !no_txs {
-            // If the sequencer is ignoring the time drift rule, then drop the batch and force an
-            // empty batch instead, as the sequencer is not allowed to include anything
-            // past this point without moving to the next epoch.
-            return BatchValidity::Drop(BatchDropReason::SequencerDriftExceeded);
-        }
-        if self.timestamp > max && no_txs {
-            // If the sequencer is co-operating by producing an empty batch,
-            // allow the batch if it was the right thing to do to maintain the L2 time >= L1 time
-            // invariant. Only check batches that do not advance the epoch, to ensure
-            // epoch advancement regardless of time drift is allowed.
+        if self.timestamp > max {
+            if !self.transactions.is_empty() {
+                // If the sequencer is ignoring the time drift rule, then drop the batch and force
+                // an empty batch instead, as the sequencer is not allowed to include anything past
+                // this point without moving to the next epoch.
+                return BatchValidity::Drop(BatchDropReason::SequencerDriftExceeded);
+            }
+
+            // If the sequencer is co-operating by producing an empty batch, allow the batch if it
+            // was the right thing to do to maintain the L2 time >= L1 time invariant. Only check
+            // batches that do not advance the epoch, to ensure epoch advancement regardless of time
+            // drift is allowed.
             if epoch.number == batch_origin.number {
                 if l1_blocks.len() < 2 {
                     return BatchValidity::Undecided;
@@ -153,33 +153,45 @@ impl SingleBatch {
             }
         }
 
-        // If this is the first block in the jovian or interop hardfork, and the batch contains any
-        // transactions, it must be dropped.
+        // A jovian, karst, or lagoon transition block must be empty; drop it otherwise.
         if (cfg.is_first_jovian_block(self.timestamp) ||
             cfg.is_first_karst_block(self.timestamp) ||
-            cfg.is_first_interop_block(self.timestamp)) &&
+            cfg.is_first_lagoon_block(self.timestamp)) &&
             !self.transactions.is_empty()
         {
             warn!(
                 target: "single_batch",
-                "Sequencer included user transactions in jovian, karst, or interop transition block. Dropping batch."
+                "Sequencer included user transactions in jovian, karst, or lagoon transition block. Dropping batch."
             );
             return BatchValidity::Drop(BatchDropReason::NonEmptyTransitionBlock);
         }
 
         // We can do this check earlier, but it's intensive so we do it last for the sad-path.
         for tx in &self.transactions {
-            if tx.is_empty() {
+            let Some(first_byte) = tx.as_ref().first().copied() else {
                 return BatchValidity::Drop(BatchDropReason::EmptyTransaction);
-            }
-            if tx.as_ref().first() == Some(&(OpTxType::Deposit as u8)) {
-                return BatchValidity::Drop(BatchDropReason::DepositTransaction);
-            }
-            // If isthmus is not active yet and the transaction is a 7702, drop the batch.
-            if !cfg.is_isthmus_active(self.timestamp) &&
-                tx.as_ref().first() == Some(&(OpTxType::Eip7702 as u8))
-            {
-                return BatchValidity::Drop(BatchDropReason::Eip7702PreIsthmus);
+            };
+            // A leading byte that doesn't decode to a typed transaction (e.g. a legacy RLP
+            // list header) isn't one of the restricted types, so it falls through to `Accept`.
+            match OpTxType::try_from(first_byte) {
+                Ok(OpTxType::Deposit) => {
+                    return BatchValidity::Drop(BatchDropReason::DepositTransaction);
+                }
+                // [MANTLE] op-node drops a `SetCodeTxType` only when
+                // `!IsIsthmus && !IsMantleSkadi` (derive/batches.go). Skadi enables EIP-7702 on
+                // Mantle ahead of Isthmus, which is pinned to `mantle_arsia_time` — without the
+                // disjunct every 7702 batch in the `[Skadi, Arsia)` window is dropped here while
+                // op-node accepts it, stalling the safe head.
+                Ok(OpTxType::Eip7702)
+                    if !cfg.is_isthmus_active(self.timestamp) &&
+                        !cfg.is_mantle_skadi_active(self.timestamp) =>
+                {
+                    return BatchValidity::Drop(BatchDropReason::Eip7702PreIsthmus);
+                }
+                Ok(OpTxType::PostExec) if !cfg.is_sdm_active(self.timestamp) => {
+                    return BatchValidity::Drop(BatchDropReason::PostExecPreLagoon);
+                }
+                _ => {}
             }
         }
 
@@ -197,7 +209,9 @@ mod tests {
     use alloy_eips::eip2718::{Decodable2718, Encodable2718};
     use alloy_primitives::{Address, Sealed, Signature, TxKind, U256};
     use kona_genesis::HardForkConfig;
-    use op_alloy_consensus::{OpTxEnvelope, TxDeposit};
+    use op_alloy_consensus::{
+        OpTxEnvelope, POST_EXEC_PAYLOAD_VERSION, PostExecPayload, TxDeposit, TxPostExec,
+    };
     use tracing::Level;
     use tracing_subscriber::layer::SubscriberExt;
 
@@ -485,6 +499,50 @@ mod tests {
         );
     }
 
+    /// `[MANTLE]` Skadi enables EIP-7702 ahead of Isthmus, which on a Mantle chain is pinned to
+    /// `mantle_arsia_time`. op-node's gate is `!IsIsthmus && !IsMantleSkadi`; dropping on
+    /// `!IsIsthmus` alone rejects every 7702 batch in the `[Skadi, Arsia)` window that op-node
+    /// accepts, which stalls the safe head rather than merely diverging.
+    #[test]
+    fn test_check_batch_accept_7702_after_mantle_skadi_before_arsia() {
+        let mut transactions = example_transactions();
+        let envelope: TxEnvelope = eip_7702_tx().into_signed(Signature::test_signature()).into();
+        transactions.push(envelope.encoded_2718().into());
+
+        let timestamp = 1;
+        let single_batch = SingleBatch {
+            parent_hash: BlockHash::ZERO,
+            epoch_num: 1,
+            epoch_hash: BlockHash::ZERO,
+            timestamp,
+            transactions,
+        };
+
+        let cfg = RollupConfig {
+            max_sequencer_drift: 1,
+            mantle_hardforks: kona_genesis::MantleHardForkConfig {
+                mantle_skadi_time: Some(0),
+                // Arsia far out: every OP fork, Isthmus included, stays inactive.
+                mantle_arsia_time: Some(u64::MAX),
+                ..kona_genesis::MantleHardForkConfig::NONE
+            },
+            ..Default::default()
+        };
+        // Premise: Isthmus is inactive, so the pre-Mantle gate alone would drop this batch.
+        assert!(!cfg.is_isthmus_active(timestamp));
+        assert!(cfg.is_mantle_skadi_active(timestamp));
+
+        let l1_blocks = vec![BlockInfo::default(), BlockInfo::default()];
+        let l2_safe_head = L2BlockInfo {
+            block_info: BlockInfo { timestamp: 1, ..Default::default() },
+            ..Default::default()
+        };
+        assert_eq!(
+            single_batch.check_batch(&cfg, &l1_blocks, l2_safe_head, &BlockInfo::default()),
+            BatchValidity::Accept,
+        );
+    }
+
     #[test]
     fn test_check_batch_accept_7702_post_isthmus() {
         // Use the example transaction
@@ -511,6 +569,74 @@ mod tests {
         let cfg = RollupConfig {
             max_sequencer_drift: 1,
             hardforks: HardForkConfig { isthmus_time: Some(0), ..Default::default() },
+            ..Default::default()
+        };
+        let l1_blocks = vec![BlockInfo::default(), BlockInfo::default()];
+        let l2_safe_head = L2BlockInfo {
+            block_info: BlockInfo { timestamp: 1, ..Default::default() },
+            ..Default::default()
+        };
+        let inclusion_block = BlockInfo::default();
+        assert_eq!(
+            single_batch.check_batch(&cfg, &l1_blocks, l2_safe_head, &inclusion_block),
+            BatchValidity::Accept
+        );
+    }
+
+    #[test]
+    fn test_check_batch_drop_post_exec_pre_sdm() {
+        let mut transactions = example_transactions();
+        let tx: OpTxEnvelope = TxPostExec::new(PostExecPayload {
+            version: POST_EXEC_PAYLOAD_VERSION,
+            block_number: 1,
+            gas_refund_entries: vec![],
+        })
+        .into();
+        transactions.push(tx.encoded_2718().into());
+
+        let single_batch = SingleBatch {
+            parent_hash: BlockHash::ZERO,
+            epoch_num: 1,
+            epoch_hash: BlockHash::ZERO,
+            timestamp: 1,
+            transactions,
+        };
+
+        let cfg = RollupConfig { max_sequencer_drift: 1, ..Default::default() };
+        let l1_blocks = vec![BlockInfo::default(), BlockInfo::default()];
+        let l2_safe_head = L2BlockInfo {
+            block_info: BlockInfo { timestamp: 1, ..Default::default() },
+            ..Default::default()
+        };
+        let inclusion_block = BlockInfo::default();
+        assert_eq!(
+            single_batch.check_batch(&cfg, &l1_blocks, l2_safe_head, &inclusion_block),
+            BatchValidity::Drop(BatchDropReason::PostExecPreLagoon)
+        );
+    }
+
+    #[test]
+    fn test_check_batch_accept_post_exec_post_sdm() {
+        let mut transactions = example_transactions();
+        let tx: OpTxEnvelope = TxPostExec::new(PostExecPayload {
+            version: POST_EXEC_PAYLOAD_VERSION,
+            block_number: 1,
+            gas_refund_entries: vec![],
+        })
+        .into();
+        transactions.push(tx.encoded_2718().into());
+
+        let single_batch = SingleBatch {
+            parent_hash: BlockHash::ZERO,
+            epoch_num: 1,
+            epoch_hash: BlockHash::ZERO,
+            timestamp: 1,
+            transactions,
+        };
+
+        let cfg = RollupConfig {
+            max_sequencer_drift: 1,
+            hardforks: HardForkConfig { lagoon_time: Some(0), ..Default::default() },
             ..Default::default()
         };
         let l1_blocks = vec![BlockInfo::default(), BlockInfo::default()];
@@ -569,7 +695,7 @@ mod tests {
             gas_limit: 5,
             is_system_transaction: false,
             // [MANTLE] BVM_ETH fields (no BVM_ETH semantics in this test fixture).
-            eth_value: 0,
+            eth_value: U256::ZERO,
             input: Default::default(),
             eth_tx_value: None,
         };
@@ -623,7 +749,7 @@ mod tests {
         let cfg = RollupConfig {
             max_sequencer_drift: 1,
             block_time: 1,
-            hardforks: HardForkConfig { interop_time: Some(1), ..Default::default() },
+            hardforks: HardForkConfig { lagoon_time: Some(1), ..Default::default() },
             ..Default::default()
         };
         let l1_blocks = vec![BlockInfo::default(), BlockInfo::default()];

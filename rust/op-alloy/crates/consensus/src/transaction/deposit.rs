@@ -44,29 +44,32 @@ pub struct TxDeposit {
         )
     )]
     pub is_system_transaction: bool,
-    /// [MANTLE] BVM_ETH: ETH value to mint on L2 (0 = no mint). Added by the
+    /// `[MANTLE]` `BVM_ETH`: ETH value to mint on L2 (0 = no mint). Added by the
     /// Mantle protocol; serialised between `is_system_transaction` and
     /// `input` in the RLP wire format.
+    ///
+    /// `U256`, not `u128`: `OptimismPortal.depositTransaction` takes `_ethValue` as an
+    /// unbounded `uint256` and op-node decodes the full 32-byte word into a `big.Int`.
+    /// Narrowing diverged from op-node at or above 2^128. Widening is wire-compatible — RLP
+    /// encodes integers as minimal big-endian, so the two are byte-identical below 2^128.
     #[cfg_attr(
         feature = "serde",
-        serde(default, with = "alloy_serde::quantity", rename = "ethValue")
+        // [MANTLE] No `alloy_serde::quantity` wrapper: `U256` already serialises as a
+        // hex quantity, and the wrapper only supports the primitive uints.
+        serde(default, rename = "ethValue")
     )]
-    pub eth_value: u128,
+    pub eth_value: U256,
     /// Input has two uses depending if transaction is Create or Call (if `to` field is None or
     /// Some).
     pub input: Bytes,
-    /// [MANTLE] BVM_ETH: ETH value to transfer to recipient (None = no transfer).
-    /// Optional trailing field — see `decode_optional_u128_from_rlp`.
+    /// `[MANTLE]` `BVM_ETH`: ETH value to transfer to recipient (None = no transfer).
+    /// Optional trailing field — see `decode_optional_u256_from_rlp`. `U256` for the same
+    /// reason as [`Self::eth_value`].
     #[cfg_attr(
         feature = "serde",
-        serde(
-            default,
-            with = "alloy_serde::quantity::opt",
-            rename = "ethTxValue",
-            skip_serializing_if = "Option::is_none"
-        )
+        serde(default, rename = "ethTxValue", skip_serializing_if = "Option::is_none")
     )]
-    pub eth_tx_value: Option<u128>,
+    pub eth_tx_value: Option<U256>,
 }
 
 impl TxDeposit {
@@ -82,9 +85,9 @@ impl TxDeposit {
     /// - `value`
     /// - `gas_limit`
     /// - `is_system_transaction`
-    /// - `eth_value`        (Mantle BVM_ETH mint amount)
+    /// - `eth_value`        (Mantle `BVM_ETH` mint amount)
     /// - `input`
-    /// - `eth_tx_value`     (Mantle BVM_ETH tx value, optional / trailing)
+    /// - `eth_tx_value`     (Mantle `BVM_ETH` tx value, optional / trailing)
     pub fn rlp_decode_fields(buf: &mut &[u8]) -> alloy_rlp::Result<Self> {
         Ok(Self {
             source_hash: Decodable::decode(buf)?,
@@ -96,17 +99,17 @@ impl TxDeposit {
             is_system_transaction: Decodable::decode(buf)?,
             eth_value: Decodable::decode(buf)?,
             input: Decodable::decode(buf)?,
-            eth_tx_value: Self::decode_optional_u128_from_rlp(buf)?,
+            eth_tx_value: Self::decode_optional_u256_from_rlp(buf)?,
         })
     }
 
-    /// Mantle BVM_ETH: decode optional trailing u128 field. Returns `None` when the buffer is
+    /// Mantle `BVM_ETH`: decode optional trailing u128 field. Returns `None` when the buffer is
     /// empty (legacy deposit without `eth_tx_value`); otherwise decodes a u128.
     ///
-    /// [MANTLE] Visibility restored to `pub` for ABI parity with upstream
+    /// `[MANTLE]` Visibility restored to `pub` for ABI parity with upstream
     /// mantle-xyz/op-alloy@main — downstream crates may rely on calling this
     /// helper directly when constructing custom decoders.
-    pub fn decode_optional_u128_from_rlp(buf: &mut &[u8]) -> alloy_rlp::Result<Option<u128>> {
+    pub fn decode_optional_u256_from_rlp(buf: &mut &[u8]) -> alloy_rlp::Result<Option<U256>> {
         if buf.is_empty() {
             return Ok(None);
         }
@@ -181,7 +184,7 @@ impl TxDeposit {
         mem::size_of::<U256>() + // value
         mem::size_of::<u128>() + // gas_limit
         mem::size_of::<bool>() + // is_system_transaction
-        mem::size_of::<u128>() + // eth_value (Mantle BVM_ETH)
+        mem::size_of::<U256>() + // eth_value (Mantle BVM_ETH)
         self.input.len() + // input
         mem::size_of::<Option<u128>>() // eth_tx_value (Mantle BVM_ETH)
     }
@@ -350,9 +353,10 @@ impl Decodable2718 for TxDeposit {
         Ok(tx)
     }
 
-    fn fallback_decode(data: &mut &[u8]) -> Eip2718Result<Self> {
-        let tx = Self::decode(data)?;
-        Ok(tx)
+    fn fallback_decode(_data: &mut &[u8]) -> Eip2718Result<Self> {
+        // Deposits have no untyped form: reaching untyped dispatch means the 0x7E tag was absent,
+        // so reject rather than resurrect the type from the body.
+        Err(Eip2718Error::UnexpectedType(OpTxType::Deposit as u8))
     }
 }
 
@@ -487,8 +491,8 @@ mod tests {
             gas_limit: 50000,
             is_system_transaction: true,
             input: Bytes::default(),
-            eth_value: 100,
-            eth_tx_value: Some(100),
+            eth_value: U256::from(100u128),
+            eth_tx_value: Some(U256::from(100u128)),
         };
 
         assert_eq!(tx.source_hash(), Some(B256::with_last_byte(42)));
@@ -507,8 +511,8 @@ mod tests {
             gas_limit: 50000,
             is_system_transaction: false,
             input: Bytes::default(),
-            eth_value: 100,
-            eth_tx_value: Some(100),
+            eth_value: U256::from(100u128),
+            eth_tx_value: Some(U256::from(100u128)),
         };
 
         assert_eq!(tx.source_hash(), Some(B256::default()));
@@ -528,8 +532,8 @@ mod tests {
             gas_limit: 100000,
             is_system_transaction: false,
             input: Bytes::from_static(&[1, 2, 3]),
-            eth_value: 100,
-            eth_tx_value: Some(100),
+            eth_value: U256::from(100u128),
+            eth_tx_value: Some(U256::from(100u128)),
         };
 
         assert_eq!(tx.source_hash(), Some(B256::default()));
@@ -554,9 +558,11 @@ mod tests {
             value: U256::ZERO,
             gas_limit: 150_000_000,
             is_system_transaction: true,
-            eth_value: 100,
-            input: Bytes::from_static(&hex!("015d8eb900000000000000000000000000000000000000000000000000000000008057650000000000000000000000000000000000000000000000000000000063d96d10000000000000000000000000000000000000000000000000000000000009f35273d89754a1e0387b89520d989d3be9c37c1f32495a88faf1ea05c61121ab0d1900000000000000000000000000000000000000000000000000000000000000010000000000000000000000002d679b567db6187c0c8323fa982cfb88b74dbcc7000000000000000000000000000000000000000000000000000000000000083400000000000000000000000000000000000000000000000000000000000f4240")),
-            eth_tx_value: Some(100),
+            eth_value: U256::from(100u128),
+            input: Bytes::from_static(&hex!(
+                "015d8eb900000000000000000000000000000000000000000000000000000000008057650000000000000000000000000000000000000000000000000000000063d96d10000000000000000000000000000000000000000000000000000000000009f35273d89754a1e0387b89520d989d3be9c37c1f32495a88faf1ea05c61121ab0d1900000000000000000000000000000000000000000000000000000000000000010000000000000000000000002d679b567db6187c0c8323fa982cfb88b74dbcc7000000000000000000000000000000000000000000000000000000000000083400000000000000000000000000000000000000000000000000000000000f4240"
+            )),
+            eth_tx_value: Some(U256::from(100u128)),
         };
 
         let mut encoded = BytesMut::default();
@@ -580,8 +586,8 @@ mod tests {
             gas_limit: 50000,
             is_system_transaction: true,
             input: Bytes::default(),
-            eth_value: 100,
-            eth_tx_value: Some(100),
+            eth_value: U256::from(100u128),
+            eth_tx_value: Some(U256::from(100u128)),
         };
 
         let mut buffer = BytesMut::new();
@@ -602,8 +608,8 @@ mod tests {
             gas_limit: 50000,
             is_system_transaction: true,
             input: Bytes::default(),
-            eth_value: 100,
-            eth_tx_value: Some(100),
+            eth_value: U256::from(100u128),
+            eth_tx_value: Some(U256::from(100u128)),
         };
 
         let mut buffer_with_header = BytesMut::new();
@@ -626,8 +632,8 @@ mod tests {
             gas_limit: 50000,
             is_system_transaction: true,
             input: Bytes::default(),
-            eth_value: 100,
-            eth_tx_value: Some(100),
+            eth_value: U256::from(100u128),
+            eth_tx_value: Some(U256::from(100u128)),
         };
 
         assert!(tx_deposit.size() > tx_deposit.rlp_encoded_fields_length());
@@ -644,8 +650,8 @@ mod tests {
             gas_limit: 50000,
             is_system_transaction: true,
             input: Bytes::default(),
-            eth_value: 100,
-            eth_tx_value: Some(100),
+            eth_value: U256::from(100u128),
+            eth_tx_value: Some(U256::from(100u128)),
         };
 
         let mut buffer_with_header = BytesMut::new();
@@ -668,8 +674,8 @@ mod tests {
             gas_limit: 50000,
             is_system_transaction: true,
             input: Bytes::default(),
-            eth_value: 100,
-            eth_tx_value: Some(100),
+            eth_value: U256::from(100u128),
+            eth_tx_value: Some(U256::from(100u128)),
         };
 
         let total_len = tx_deposit.network_encoded_length();
@@ -685,26 +691,32 @@ mod tests {
         // the current Mantle field set (eth_value + optional eth_tx_value).
         let txs = [
             TxDeposit {
-                source_hash: b256!("871ec5fb6afe7e5ae950bbb4cfd7d7cb277b413e67da806d50834a814b14c9f4"),
+                source_hash: b256!(
+                    "871ec5fb6afe7e5ae950bbb4cfd7d7cb277b413e67da806d50834a814b14c9f4"
+                ),
                 from: address!("deaddeaddeaddeaddeaddeaddeaddeaddead0001"),
                 to: TxKind::Call(address!("4200000000000000000000000000000000000015")),
                 mint: 0,
                 value: U256::ZERO,
                 gas_limit: 1_000_000,
                 is_system_transaction: false,
-                eth_value: 100,
-                input: Bytes::from_static(&hex!("440a5e20000008dd00101c12000000000000000400000000681c941f0000000001566261000000000000000000000000000000000000000000000000000000005f629c020000000000000000000000000000000000000000000000000000000000000001937badfbcce566e0ba932a3f7659644aa0c6ef019541d3134a1d8cb9f84d45c70000000000000000000000005050f69a9786f081509234f1a7f4684b5e5b76c9")),
-                eth_tx_value: Some(100),
+                eth_value: U256::from(100u128),
+                input: Bytes::from_static(&hex!(
+                    "440a5e20000008dd00101c12000000000000000400000000681c941f0000000001566261000000000000000000000000000000000000000000000000000000005f629c020000000000000000000000000000000000000000000000000000000000000001937badfbcce566e0ba932a3f7659644aa0c6ef019541d3134a1d8cb9f84d45c70000000000000000000000005050f69a9786f081509234f1a7f4684b5e5b76c9"
+                )),
+                eth_tx_value: Some(U256::from(100u128)),
             },
             TxDeposit {
-                source_hash: b256!("0000000000000000000000000000000000000000000000000000000000000001"),
+                source_hash: b256!(
+                    "0000000000000000000000000000000000000000000000000000000000000001"
+                ),
                 from: Address::ZERO,
                 to: TxKind::Create,
                 mint: 7,
                 value: U256::from(11_u64),
                 gas_limit: 21_000,
                 is_system_transaction: false,
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 input: Bytes::new(),
                 eth_tx_value: None,
             },
@@ -740,8 +752,8 @@ mod tests {
             gas_limit: 50000,
             is_system_transaction: true,
             input: Bytes::default(),
-            eth_value: 0, // Test zero value
-            eth_tx_value: Some(100),
+            eth_value: U256::ZERO, // Test zero value
+            eth_tx_value: Some(U256::from(100u128)),
         };
 
         let mut buffer = BytesMut::new();
@@ -749,7 +761,7 @@ mod tests {
         let decoded = TxDeposit::rlp_decode_fields(&mut &buffer[..]).expect("Failed to decode");
 
         assert_eq!(tx_deposit, decoded);
-        assert_eq!(decoded.eth_value, 0);
+        assert_eq!(decoded.eth_value, U256::from(0u128));
     }
 
     #[test]
@@ -763,8 +775,8 @@ mod tests {
             gas_limit: 50000,
             is_system_transaction: true,
             input: Bytes::default(),
-            eth_value: 0,
-            eth_tx_value: Some(0), // Test zero value
+            eth_value: U256::ZERO,
+            eth_tx_value: Some(U256::from(0u128)), // Test zero value
         };
 
         let mut buffer = BytesMut::new();
@@ -772,8 +784,8 @@ mod tests {
         let decoded = TxDeposit::rlp_decode_fields(&mut &buffer[..]).expect("Failed to decode");
 
         assert_eq!(tx_deposit, decoded);
-        assert_eq!(decoded.eth_value, 0);
-        assert_eq!(decoded.eth_tx_value, Some(0));
+        assert_eq!(decoded.eth_value, U256::from(0u128));
+        assert_eq!(decoded.eth_tx_value, Some(U256::from(0u128)));
     }
 
     #[test]
@@ -787,8 +799,8 @@ mod tests {
             gas_limit: 50000,
             is_system_transaction: true,
             input: Bytes::default(),
-            eth_value: u128::MAX, // Test maximum value
-            eth_tx_value: Some(u128::MAX),
+            eth_value: U256::from(u128::MAX), // Test maximum value
+            eth_tx_value: Some(U256::from(u128::MAX)),
         };
 
         let mut buffer = BytesMut::new();
@@ -796,8 +808,8 @@ mod tests {
         let decoded = TxDeposit::rlp_decode_fields(&mut &buffer[..]).expect("Failed to decode");
 
         assert_eq!(tx_deposit, decoded);
-        assert_eq!(decoded.eth_value, u128::MAX);
-        assert_eq!(decoded.eth_tx_value, Some(u128::MAX));
+        assert_eq!(decoded.eth_value, U256::from(u128::MAX));
+        assert_eq!(decoded.eth_tx_value, Some(U256::from(u128::MAX)));
     }
 
     #[test]
@@ -811,8 +823,8 @@ mod tests {
             gas_limit: 100000,
             is_system_transaction: false,
             input: Bytes::from_static(&[1, 2, 3, 4]),
-            eth_value: 200,
-            eth_tx_value: Some(300),
+            eth_value: U256::from(200u128),
+            eth_tx_value: Some(U256::from(300u128)),
         };
 
         // Test EIP-2718 encoding
@@ -824,8 +836,8 @@ mod tests {
         let decoded = TxDeposit::decode_2718(&mut encoded_slice).expect("Failed to decode");
 
         assert_eq!(tx_deposit, decoded);
-        assert_eq!(decoded.eth_value, 200);
-        assert_eq!(decoded.eth_tx_value, Some(300));
+        assert_eq!(decoded.eth_value, U256::from(200u128));
+        assert_eq!(decoded.eth_tx_value, Some(U256::from(300u128)));
     }
 
     #[test]
@@ -839,7 +851,7 @@ mod tests {
             gas_limit: 100000,
             is_system_transaction: false,
             input: Bytes::from_static(&[1, 2, 3, 4]),
-            eth_value: 200,
+            eth_value: U256::from(200u128),
             eth_tx_value: None, // Test None value
         };
 
@@ -852,7 +864,7 @@ mod tests {
         let decoded = TxDeposit::decode_2718(&mut encoded_slice).expect("Failed to decode");
 
         assert_eq!(tx_deposit, decoded);
-        assert_eq!(decoded.eth_value, 200);
+        assert_eq!(decoded.eth_value, U256::from(200u128));
         assert_eq!(decoded.eth_tx_value, None);
     }
 
@@ -874,8 +886,12 @@ mod tests {
             // Only test if the encoding is valid for u128 (first byte < 0xc0)
             if first_byte < 0xc0 {
                 let mut buf = encoded.as_ref();
-                let result = TxDeposit::decode_optional_u128_from_rlp(&mut buf);
-                assert_eq!(result.unwrap(), Some(value), "Failed to decode value: {}", value);
+                let result = TxDeposit::decode_optional_u256_from_rlp(&mut buf);
+                assert_eq!(
+                    result.unwrap(),
+                    Some(U256::from(value)),
+                    "Failed to decode value: {value}"
+                );
                 assert!(buf.is_empty(), "Buffer should be consumed after decoding");
             }
         }
@@ -885,7 +901,7 @@ mod tests {
     // Port of mantle-xyz/op-alloy@498abec: "fix(consensus): make optional ethTxValue
     // RLP decode strict and add malformed-input tests". The companion implementation
     // change (return error rather than silently None on decode failure) is already
-    // in place in `decode_optional_u128_from_rlp`.
+    // in place in `decode_optional_u256_from_rlp`.
     #[test]
     fn test_rlp_decode_fields_rejects_malformed_present_eth_tx_value() {
         let tx_deposit = TxDeposit {
@@ -897,17 +913,96 @@ mod tests {
             gas_limit: 50000,
             is_system_transaction: true,
             input: Bytes::default(),
-            eth_value: 100,
+            eth_value: U256::from(100u128),
             eth_tx_value: None,
         };
 
         let mut buffer = BytesMut::new();
         tx_deposit.rlp_encode_fields(&mut buffer);
-        // Simulate an explicitly present but malformed eth_tx_value field (list instead of integer).
+        // Simulate an explicitly present but malformed eth_tx_value field (list instead of
+        // integer).
         buffer.extend_from_slice(&[0xc0]);
 
         let result = TxDeposit::rlp_decode_fields(&mut &buffer[..]);
         assert!(result.is_err());
+    }
+
+    /// `[MANTLE]` Builds a deposit carrying both `BVM_ETH` values, for the serde tests below.
+    #[cfg(feature = "serde")]
+    fn bvm_eth_deposit() -> TxDeposit {
+        TxDeposit {
+            source_hash: B256::with_last_byte(9),
+            from: address!("1111111111111111111111111111111111111111"),
+            to: TxKind::Call(address!("2222222222222222222222222222222222222222")),
+            mint: 7,
+            value: U256::from(11u64),
+            gas_limit: 21_000,
+            is_system_transaction: false,
+            input: Bytes::from_static(&[0xAB, 0xCD]),
+            eth_value: U256::from(123_456_000_000_000_000u128),
+            eth_tx_value: Some(U256::from(42u128)),
+        }
+    }
+
+    /// `[MANTLE]` The RLP path is covered above; this pins the **serde** path, which nothing else
+    /// tested. It matters because `alloy_compat`'s `TryFrom<UnknownTypedTransaction> for
+    /// TxDeposit` converts RPC responses via `fields.deserialize_into()` — serde is the only
+    /// thing carrying `BVM_ETH` there.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_serde_json_roundtrip_preserves_bvm_eth() {
+        let tx = bvm_eth_deposit();
+        let json = serde_json::to_string(&tx).unwrap();
+        let back: TxDeposit = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.eth_value, tx.eth_value, "eth_value did not survive JSON round-trip");
+        assert_eq!(back.eth_tx_value, tx.eth_tx_value, "eth_tx_value did not survive round-trip");
+        assert_eq!(back, tx);
+    }
+
+    /// `[MANTLE]` Pins the wire names and the quantity (hex) encoding. A rename or a switch away
+    /// from `alloy_serde::quantity` would silently change what op-node/RPC peers must send, and
+    /// `serde(default)` would then hand us `eth_value = 0` with no error.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_serde_json_field_names_are_eth_value_and_eth_tx_value() {
+        let json = serde_json::to_value(bvm_eth_deposit()).unwrap();
+        assert_eq!(
+            json.get("ethValue").and_then(|v| v.as_str()),
+            Some("0x1b69a93f1640000"), // 123_456_000_000_000_000
+            "ethValue must serialise as a hex quantity under exactly this key"
+        );
+        assert_eq!(
+            json.get("ethTxValue").and_then(|v| v.as_str()),
+            Some("0x2a"),
+            "ethTxValue must serialise as a hex quantity under exactly this key"
+        );
+    }
+
+    /// `[MANTLE]` `skip_serializing_if = "Option::is_none"`: a deposit with no `BVM_ETH` transfer
+    /// must not emit the key at all, and must read back as `None` (not `Some(0)`).
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_serde_json_omits_eth_tx_value_when_none() {
+        let tx = TxDeposit { eth_tx_value: None, ..bvm_eth_deposit() };
+        let json = serde_json::to_value(&tx).unwrap();
+        assert!(json.get("ethTxValue").is_none(), "ethTxValue must be omitted when None");
+        let back: TxDeposit = serde_json::from_value(json).unwrap();
+        assert_eq!(back.eth_tx_value, None);
+        assert_eq!(back.eth_value, tx.eth_value, "omitting ethTxValue must not disturb ethValue");
+    }
+
+    /// `[MANTLE]` Documents the one genuinely lossy serde behaviour: `serde(default)` means a
+    /// payload with no `ethValue` deserialises to `0` — i.e. "no `BVM_ETH` mint" — rather than
+    /// failing. That is required for compatibility with non-Mantle payloads, but it also means a
+    /// producer that forgets the field is indistinguishable from one that means zero. If this
+    /// test ever has to change, re-read how `alloy_compat` feeds RPC data into `TxDeposit`.
+    #[test]
+    #[cfg(feature = "serde")]
+    fn test_serde_json_missing_eth_value_defaults_to_zero_silently() {
+        let mut json = serde_json::to_value(bvm_eth_deposit()).unwrap();
+        json.as_object_mut().unwrap().remove("ethValue");
+        let back: TxDeposit = serde_json::from_value(json).unwrap();
+        assert_eq!(back.eth_value, 0, "a missing ethValue must default to 0, not error");
     }
 
     #[test]
@@ -921,9 +1016,9 @@ mod tests {
             gas_limit: 100000,
             is_system_transaction: false,
             input: Bytes::from_static(&[1, 2, 3, 4]),
-            eth_value: 200,
+            eth_value: U256::from(200u128),
             // Use a one-byte integer so we can mutate it in-place without changing length fields.
-            eth_tx_value: Some(1),
+            eth_tx_value: Some(U256::from(1u128)),
         };
 
         let mut encoded = BytesMut::new();
@@ -970,13 +1065,28 @@ pub(super) mod serde_bincode_compat {
         value: U256,
         gas_limit: u64,
         is_system_transaction: bool,
-        /// [MANTLE] BVM_ETH mint amount.
+        /// `[MANTLE]` `BVM_ETH` mint amount.
+        ///
+        /// `U256`, matching [`super::TxDeposit`] and op-node's `big.Int`. Widening this changed
+        /// the bincode byte width (ruint writes a length-prefixed big-endian byte string, not a
+        /// fixed 16-byte integer), so bincode blobs written by an older binary do not decode
+        /// here. bincode-compat is an in-process/IPC shim, not a persisted format -- nothing in
+        /// this workspace or in mantle-xyz/reth stores it across restarts.
         #[serde(default)]
-        eth_value: u128,
+        eth_value: U256,
         input: Cow<'a, Bytes>,
-        /// [MANTLE] BVM_ETH transfer value (None when omitted).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        eth_tx_value: Option<u128>,
+        /// `[MANTLE]` `BVM_ETH` transfer value (None when omitted).
+        ///
+        /// **No `skip_serializing_if` here, unlike the JSON-facing field on
+        /// [`super::TxDeposit`].** bincode is not self-describing: skipping the field writes
+        /// nothing, and the decoder — which reads positionally — then runs off the end with
+        /// `UnexpectedEnd`. `serde(default)` cannot rescue it, because bincode never learns the
+        /// field was absent. Every deposit that transfers no `BVM_ETH` (i.e. most of them)
+        /// would
+        /// fail to round-trip. Pinned by
+        /// `test_tx_deposit_bincode_roundtrip_eth_tx_value_none_and_some`.
+        #[serde(default)]
+        eth_tx_value: Option<U256>,
     }
 
     impl<'a> From<&'a super::TxDeposit> for TxDeposit<'a> {
@@ -1036,12 +1146,47 @@ pub(super) mod serde_bincode_compat {
 
     #[cfg(test)]
     mod tests {
+        use alloy_primitives::U256;
         use arbitrary::Arbitrary;
         use rand::Rng;
         use serde::{Deserialize, Serialize};
         use serde_with::serde_as;
 
         use super::super::{TxDeposit, serde_bincode_compat};
+
+        /// `[MANTLE]` Deterministic counterpart to the randomised round-trip below.
+        ///
+        /// `eth_tx_value: None` is the common case (any deposit that transfers no `BVM_ETH`),
+        /// and
+        /// it is exactly the case the random test only hits by chance. Pin both polarities.
+        #[test]
+        fn test_tx_deposit_bincode_roundtrip_eth_tx_value_none_and_some() {
+            #[serde_as]
+            #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+            struct Data {
+                #[serde_as(as = "serde_bincode_compat::TxDeposit")]
+                transaction: TxDeposit,
+            }
+
+            for eth_tx_value in [None, Some(U256::ZERO), Some(U256::from(7u128)), Some(U256::MAX)] {
+                let data = Data {
+                    transaction: TxDeposit {
+                        source_hash: alloy_primitives::B256::with_last_byte(3),
+                        eth_value: U256::from(5u128),
+                        eth_tx_value,
+                        ..Default::default()
+                    },
+                };
+                let encoded =
+                    bincode::serde::encode_to_vec(&data, bincode::config::legacy()).unwrap();
+                let (decoded, _) = bincode::serde::decode_from_slice::<Data, _>(
+                    &encoded,
+                    bincode::config::legacy(),
+                )
+                .unwrap_or_else(|e| panic!("decode failed for eth_tx_value={eth_tx_value:?}: {e}"));
+                assert_eq!(decoded, data, "round-trip differed for {eth_tx_value:?}");
+            }
+        }
 
         #[test]
         fn test_tx_deposit_bincode_roundtrip() {
@@ -1065,5 +1210,70 @@ pub(super) mod serde_bincode_compat {
                     .unwrap();
             assert_eq!(decoded, data);
         }
+    }
+}
+
+#[cfg(test)]
+mod mantle_bvm_eth_wire_compat {
+    use super::*;
+    use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
+    use alloy_rlp::{Decodable, Encodable};
+
+    /// `[MANTLE]` The `u128 -> U256` widening must not change the RLP wire format, or every
+    /// historical deposit would decode differently.
+    ///
+    /// It does not: RLP encodes integers as big-endian with leading zeros stripped, so the
+    /// encoding depends on the *value*, not on the static width of the type holding it. This
+    /// pins that, and that the widened decoder still reads bytes the narrow encoder produced.
+    #[test]
+    fn rlp_encoding_is_unchanged_by_the_widening() {
+        for v in [0u128, 1, 255, 256, 500, u64::MAX as u128, u128::MAX] {
+            let mut narrow = Vec::new();
+            v.encode(&mut narrow);
+            let mut wide = Vec::new();
+            U256::from(v).encode(&mut wide);
+            assert_eq!(narrow, wide, "RLP encoding differs at {v}");
+
+            let decoded = U256::decode(&mut narrow.as_slice())
+                .expect("widened decoder must read narrow-encoder output");
+            assert_eq!(decoded, U256::from(v));
+        }
+    }
+
+    /// `[MANTLE]` The widening must not change the JSON shape either — these fields are visible
+    /// over RPC, and op-geth emits them as `*hexutil.Big` (`json:"ethValue,omitempty"`).
+    ///
+    /// The `alloy_serde::quantity` wrapper was dropped when the fields became `U256` (it only
+    /// supports the primitive uints), so this checks the replacement produces the same hex
+    /// quantity the wrapper did, and that payloads written by the old code still deserialise.
+    #[test]
+    fn json_shape_is_unchanged_by_the_widening() {
+        let tx = TxDeposit {
+            source_hash: B256::repeat_byte(1),
+            from: Address::repeat_byte(2),
+            to: TxKind::Call(Address::repeat_byte(3)),
+            mint: 1000,
+            value: U256::from(200u64),
+            gas_limit: 21000,
+            is_system_transaction: false,
+            eth_value: U256::from(500u64),
+            input: Bytes::from(vec![1u8]),
+            eth_tx_value: Some(U256::from(300u64)),
+        };
+        let json = serde_json::to_string(&tx).unwrap();
+        assert!(json.contains(r#""ethValue":"0x1f4""#), "unexpected ethValue shape: {json}");
+        assert!(json.contains(r#""ethTxValue":"0x12c""#), "unexpected ethTxValue shape: {json}");
+
+        // A payload as the pre-widening code would have written it.
+        let legacy = r#"{"sourceHash":"0x0101010101010101010101010101010101010101010101010101010101010101","from":"0x0202020202020202020202020202020202020202","to":"0x0303030303030303030303030303030303030303","mint":"0x3e8","value":"0xc8","gas":"0x5208","ethValue":"0x1f4","input":"0x01","ethTxValue":"0x12c"}"#;
+        let back: TxDeposit = serde_json::from_str(legacy).expect("must read legacy payload");
+        assert_eq!(back.eth_value, U256::from(500u64));
+        assert_eq!(back.eth_tx_value, Some(U256::from(300u64)));
+
+        // Zero and the omitted trailing field are the two shapes most likely to drift.
+        let zero = TxDeposit { eth_value: U256::ZERO, eth_tx_value: None, ..Default::default() };
+        let json = serde_json::to_string(&zero).unwrap();
+        assert!(json.contains(r#""ethValue":"0x0""#), "zero ethValue shape: {json}");
+        assert!(!json.contains("ethTxValue"), "absent ethTxValue must stay absent: {json}");
     }
 }

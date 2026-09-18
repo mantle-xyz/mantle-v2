@@ -378,7 +378,7 @@ fn recovered_deposit() -> Recovered<OpTxEnvelope> {
         // [MANTLE] TxDeposit carries the BVM_ETH fields (MANTLE_CHANGES.md §3.2). This helper
         // emulates an L1-attributes / network-upgrade deposit, which has no BVM_ETH semantics,
         // so the defaults documented in §6 apply.
-        eth_value: 0,
+        eth_value: U256::ZERO,
         eth_tx_value: None,
     };
     Recovered::new_unchecked(

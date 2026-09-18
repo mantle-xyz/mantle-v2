@@ -230,6 +230,8 @@ impl OpHardfork {
     }
 }
 
+// [MANTLE] Mantle's own fork enum and its activation schedule. Everything from here to
+// `is_mantle_meta_tx` below is Mantle-authored and has no upstream counterpart.
 hardfork!(
     /// Mantle-specific hardforks extending the OP Stack.
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -287,6 +289,7 @@ impl MantleHardfork {
     }
 }
 
+// [MANTLE] MetaTx tag, permanently disabled since MantleEverest.
 /// 32-byte prefix that identifies a Mantle `MetaTx` (permanently disabled since `MantleEverest`).
 pub const MANTLE_META_TX_PREFIX: [u8; 32] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4D, 0x61,
@@ -392,6 +395,9 @@ pub trait OpHardforks: EthereumHardforks {
 
     // ===== Mantle =====
 
+    // [MANTLE] Mantle predicates on the `OpHardforks` trait. They default to `false`, so an
+    // implementor that does not override them is treated as a plain OP chain — see §2.2 of
+    // MANTLE_CHANGES.md; `RollupConfig` overrides all four, `OpChainHardforks` does not.
     /// Returns `true` if this chain uses Mantle semantics.
     /// Mantle chains have `MantleHardfork::Skadi` in their hardfork set.
     /// Default returns `false` for standard OP Stack chains.
@@ -411,6 +417,14 @@ pub trait OpHardforks: EthereumHardforks {
 
     /// Returns `true` if Mantle Arsia is active at the given timestamp.
     fn is_mantle_arsia_active_at_timestamp(&self, _timestamp: u64) -> bool {
+        false
+    }
+
+    /// Returns `true` if Mantle Elysium is active at the given timestamp.
+    ///
+    /// Defaults to `false` so non-Mantle chain specs need no change; Mantle implementors must
+    /// override it (see `kona_genesis::RollupConfig`).
+    fn is_mantle_elysium_active_at_timestamp(&self, _timestamp: u64) -> bool {
         false
     }
 }
@@ -978,16 +992,19 @@ mod tests {
 
     #[test]
     fn mantle_timestamp_constants() {
+        // `const` blocks: every operand is a compile-time constant, so these are checked when
+        // the crate builds rather than when the test runs. A bad activation timestamp then
+        // fails the build instead of waiting for `cargo test`.
         // Mainnet ordering: Skadi < Limb < Arsia
-        assert!(MANTLE_MAINNET_SKADI_TIMESTAMP < MANTLE_MAINNET_LIMB_TIMESTAMP);
-        assert!(MANTLE_MAINNET_LIMB_TIMESTAMP < MANTLE_MAINNET_ARSIA_TIMESTAMP);
+        const { assert!(MANTLE_MAINNET_SKADI_TIMESTAMP < MANTLE_MAINNET_LIMB_TIMESTAMP) };
+        const { assert!(MANTLE_MAINNET_LIMB_TIMESTAMP < MANTLE_MAINNET_ARSIA_TIMESTAMP) };
         // Sepolia ordering: Skadi < Limb < Arsia
-        assert!(MANTLE_SEPOLIA_SKADI_TIMESTAMP < MANTLE_SEPOLIA_LIMB_TIMESTAMP);
-        assert!(MANTLE_SEPOLIA_LIMB_TIMESTAMP < MANTLE_SEPOLIA_ARSIA_TIMESTAMP);
+        const { assert!(MANTLE_SEPOLIA_SKADI_TIMESTAMP < MANTLE_SEPOLIA_LIMB_TIMESTAMP) };
+        const { assert!(MANTLE_SEPOLIA_LIMB_TIMESTAMP < MANTLE_SEPOLIA_ARSIA_TIMESTAMP) };
         // Mainnet always later than Sepolia
-        assert!(MANTLE_MAINNET_SKADI_TIMESTAMP > MANTLE_SEPOLIA_SKADI_TIMESTAMP);
-        assert!(MANTLE_MAINNET_LIMB_TIMESTAMP > MANTLE_SEPOLIA_LIMB_TIMESTAMP);
-        assert!(MANTLE_MAINNET_ARSIA_TIMESTAMP > MANTLE_SEPOLIA_ARSIA_TIMESTAMP);
+        const { assert!(MANTLE_MAINNET_SKADI_TIMESTAMP > MANTLE_SEPOLIA_SKADI_TIMESTAMP) };
+        const { assert!(MANTLE_MAINNET_LIMB_TIMESTAMP > MANTLE_SEPOLIA_LIMB_TIMESTAMP) };
+        const { assert!(MANTLE_MAINNET_ARSIA_TIMESTAMP > MANTLE_SEPOLIA_ARSIA_TIMESTAMP) };
     }
 
     #[test]

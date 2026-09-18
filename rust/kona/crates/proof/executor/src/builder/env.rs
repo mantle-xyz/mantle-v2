@@ -8,22 +8,15 @@ use crate::{
     },
 };
 use alloy_consensus::{BlockHeader, Header};
-use alloy_eips::{calc_next_block_base_fee, eip1559::BaseFeeParams, eip7840::BlobParams};
-use alloy_evm::{EvmEnv, EvmFactory};
-use alloy_primitives::U256;
+use alloy_eips::{calc_next_block_base_fee, eip1559::BaseFeeParams};
+use alloy_evm::{EvmEnv, EvmFactory, eth::NextEvmEnvAttributes};
+use alloy_op_evm::evm_env_for_op_next_block;
 use kona_genesis::RollupConfig;
 use kona_mpt::TrieHinter;
 use op_alloy_rpc_types_engine::OpPayloadAttributes;
 use op_revm::OpSpecId;
-use revm::{
-    context::{BlockEnv, CfgEnv},
-    context_interface::block::BlobExcessGasAndPrice,
-    primitives::eip4844::{
-        BLOB_BASE_FEE_UPDATE_FRACTION_CANCUN, BLOB_BASE_FEE_UPDATE_FRACTION_PRAGUE,
-    },
-};
 
-impl<P, H, Evm> StatelessL2Builder<'_, P, H, Evm>
+impl<P, H, Evm, R> StatelessL2Builder<'_, P, H, Evm, R>
 where
     P: TrieDBProvider,
     H: TrieHinter,
@@ -32,37 +25,42 @@ where
     /// Returns the active [`EvmEnv`] for the executor.
     pub(crate) fn evm_env(
         &self,
-        spec_id: OpSpecId,
         parent_header: &Header,
         payload_attrs: &OpPayloadAttributes,
         base_fee_params: &BaseFeeParams,
         min_base_fee: u64,
     ) -> ExecutorResult<EvmEnv<OpSpecId>> {
-        let block_env = self.prepare_block_env(
-            spec_id,
-            parent_header,
-            payload_attrs,
-            base_fee_params,
-            min_base_fee,
-        )?;
-        let cfg_env = self.evm_cfg_env(payload_attrs.payload_attributes.timestamp);
-        Ok(EvmEnv::new(cfg_env, block_env))
-    }
+        let gas_limit = payload_attrs.gas_limit.ok_or(ExecutorError::MissingGasLimit)?;
+        // [MANTLE] Pre-Arsia blocks inherit the parent's base fee instead of recomputing it.
+        // Upstream recomputes unconditionally; the v1.7.0 refactor folded the old
+        // `prepare_block_env` (which carried this gate) into `evm_env_for_op_next_block`, so the
+        // gate is reapplied here. Dropping it would change the base fee of every pre-Arsia block.
+        let next_block_base_fee = if !self.config.is_mantle_arsia_active(parent_header.timestamp())
+        {
+            parent_header.base_fee_per_gas.unwrap_or_default()
+        } else {
+            self.next_block_base_fee(*base_fee_params, parent_header, min_base_fee)
+                .unwrap_or_default()
+        };
 
-    /// Returns the active [`CfgEnv`] for the executor.
-    pub(crate) fn evm_cfg_env(&self, timestamp: u64) -> CfgEnv<OpSpecId> {
-        // [MANTLE] Use revm_spec_id (Mantle-aware: gates Jovian/Holocene/Granite/etc. behind
-        // mantle_arsia on Mantle chains) for the revm executor, distinct from spec_id which
-        // drives kona protocol-layer feature checks.
-        let spec = self.config.revm_spec_id(timestamp);
-        let mut cfg = CfgEnv::new()
-            .with_chain_id(self.config.l2_chain_id.id())
-            .with_spec_and_mainnet_gas_params(spec);
-        // [MANTLE] Mantle's Osaka-level forks do not activate EIP-7825; see
-        // `OpSpecId::tx_gas_limit_cap_override`. The proof executor has to agree with the
-        // sequencer here, or a block carrying a transaction above the cap proves invalid.
-        cfg.tx_gas_limit_cap = spec.tx_gas_limit_cap_override();
-        cfg
+        // [MANTLE] The EIP-7825 exemption arrives through `evm_env_for_op_next_block`, which
+        // delegates to `alloy_op_evm::env::evm_env_for_op` and applies
+        // `OpSpecId::tx_gas_limit_cap_override` there. The proof executor must agree with the
+        // sequencer on this, or a block carrying a transaction above the cap proves invalid.
+        // Do not rebuild `CfgEnv` by hand here — that path would bypass the override.
+        Ok(evm_env_for_op_next_block(
+            parent_header,
+            NextEvmEnvAttributes {
+                timestamp: payload_attrs.payload_attributes.timestamp,
+                suggested_fee_recipient: payload_attrs.payload_attributes.suggested_fee_recipient,
+                prev_randao: payload_attrs.payload_attributes.prev_randao,
+                gas_limit,
+                slot_number: None,
+            },
+            next_block_base_fee,
+            self.config,
+            self.config.l2_chain_id.id(),
+        ))
     }
 
     fn next_block_base_fee(
@@ -98,47 +96,6 @@ where
         }
 
         Some(next_block_base_fee)
-    }
-
-    /// Prepares a [`BlockEnv`] with the given [`OpPayloadAttributes`].
-    pub(crate) fn prepare_block_env(
-        &self,
-        spec_id: OpSpecId,
-        parent_header: &Header,
-        payload_attrs: &OpPayloadAttributes,
-        base_fee_params: &BaseFeeParams,
-        min_base_fee: u64,
-    ) -> ExecutorResult<BlockEnv> {
-        let (params, fraction) = if spec_id.is_enabled_in(OpSpecId::ISTHMUS) {
-            (Some(BlobParams::prague()), BLOB_BASE_FEE_UPDATE_FRACTION_PRAGUE)
-        } else if spec_id.is_enabled_in(OpSpecId::ECOTONE) {
-            (Some(BlobParams::cancun()), BLOB_BASE_FEE_UPDATE_FRACTION_CANCUN)
-        } else {
-            (None, 0)
-        };
-
-        let blob_excess_gas_and_price = parent_header
-            .maybe_next_block_excess_blob_gas(params)
-            .or_else(|| spec_id.is_enabled_in(OpSpecId::ECOTONE).then_some(0))
-            .map(|excess| BlobExcessGasAndPrice::new(excess, fraction));
-
-        let next_block_base_fee = if !self.config.is_mantle_arsia_active(parent_header.timestamp()) {
-            parent_header.base_fee_per_gas.unwrap_or_default()
-        } else {
-            self.next_block_base_fee(*base_fee_params, parent_header, min_base_fee)
-                .unwrap_or_default()
-        };
-
-        Ok(BlockEnv {
-            number: U256::from(parent_header.number + 1),
-            beneficiary: payload_attrs.payload_attributes.suggested_fee_recipient,
-            timestamp: U256::from(payload_attrs.payload_attributes.timestamp),
-            gas_limit: payload_attrs.gas_limit.ok_or(ExecutorError::MissingGasLimit)?,
-            basefee: next_block_base_fee,
-            prevrandao: Some(payload_attrs.payload_attributes.prev_randao),
-            blob_excess_gas_and_price,
-            ..Default::default()
-        })
     }
 
     /// Returns the active base fee parameters for the parent header.

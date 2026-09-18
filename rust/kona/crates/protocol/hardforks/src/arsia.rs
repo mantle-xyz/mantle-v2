@@ -3,7 +3,9 @@
 use alloc::{string::String, vec::Vec};
 use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::{Address, B256, Bytes, TxKind, U256, address, hex};
-use kona_protocol::Predeploys;
+// [MANTLE] `Predeploys` moved from kona-protocol to kona-genesis upstream; kona-hardforks
+// depends on kona-genesis (not kona-protocol), so the old path no longer resolves here.
+use kona_genesis::Predeploys;
 use op_alloy_consensus::{TxDeposit, UpgradeDepositSource};
 
 use crate::Hardfork;
@@ -133,7 +135,7 @@ impl Arsia {
                 gas_limit: 700_000,
                 is_system_transaction: false,
                 input: Self::l1_block_deployment_bytecode(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // 2. Deploy new GasPriceOracle implementation
@@ -146,7 +148,7 @@ impl Arsia {
                 gas_limit: 1_800_000,
                 is_system_transaction: false,
                 input: Self::gas_price_oracle_deployment_bytecode(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // 3. Deploy new OperatorFeeVault implementation
@@ -159,7 +161,7 @@ impl Arsia {
                 gas_limit: 500_000,
                 is_system_transaction: false,
                 input: Self::operator_fee_vault_deployment_bytecode(),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // 4. Upgrade L1Block proxy
@@ -172,7 +174,7 @@ impl Arsia {
                 gas_limit: 50_000,
                 is_system_transaction: false,
                 input: crate::upgrade_to_calldata(Self::ARSIA_L1_BLOCK_ADDRESS),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // 5. Upgrade GasPriceOracle proxy
@@ -185,7 +187,7 @@ impl Arsia {
                 gas_limit: 50_000,
                 is_system_transaction: false,
                 input: crate::upgrade_to_calldata(Self::ARSIA_GAS_PRICE_ORACLE_ADDRESS),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // 6. Upgrade OperatorFeeVault proxy
@@ -198,7 +200,7 @@ impl Arsia {
                 gas_limit: 50_000,
                 is_system_transaction: false,
                 input: crate::upgrade_to_calldata(Self::ARSIA_OPERATOR_FEE_VAULT_ADDRESS),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
             // 7. Enable Arsia in GasPriceOracle
@@ -211,7 +213,7 @@ impl Arsia {
                 gas_limit: 100_000,
                 is_system_transaction: false,
                 input: Bytes::from(Self::ENABLE_ARSIA_INPUT.to_vec()),
-                eth_value: 0,
+                eth_value: U256::ZERO,
                 eth_tx_value: None,
             },
         ]
@@ -294,8 +296,15 @@ mod tests {
         assert_eq!(hash, Arsia::ENABLE_ARSIA_INPUT);
     }
 
-    // TODO: fix this test
-    #[ignore]
+    // [MANTLE] These three were `#[ignore]`d behind a bare "TODO: fix this test". Two of them
+    // always passed; only the Gas Price Oracle failed, and it failed because the *expected*
+    // constant was stale, not because the deployment was wrong. The bare ignore hid that.
+    //
+    // All three expected hashes are now the ones op-node asserts in
+    // `op-e2e/actions/mantletests/proofs/isthmus_fork_test.go` — the authoritative list. The
+    // deployment bytecode in `bytecode/arsia_*.hex` is byte-identical to
+    // `op-node/rollup/derive/arsia_upgrade_transactions.go`, so these tests check that kona
+    // *executes* it to the same runtime code op-node expects on chain.
     #[test]
     fn test_verify_arsia_l1_block_deployment_code_hash() {
         let txs = Arsia::deposits().collect::<Vec<_>>();
@@ -306,20 +315,18 @@ mod tests {
         );
     }
 
-    // TODO: fix this test
-    #[ignore]
     #[test]
     fn test_verify_arsia_gas_price_oracle_deployment_code_hash() {
         let txs = Arsia::deposits().collect::<Vec<_>>();
         check_deployment_code(
             txs[1].clone(),
             Arsia::ARSIA_GAS_PRICE_ORACLE_ADDRESS,
-            hex!("0b858803e58087bde3ffdb2ecd4e84cf3cca421d4a81f232f8f89a685a13e332").into(),
+            // op-node `arsiaGasPriceOracleCodeHash`. The previous value
+            // (0x0b858803…) matched no op-node constant and no deployed contract.
+            hex!("fc61bf7a97018cc6dacc1c54a59bffa0f55bea29c532e4c5ddfdecca3cb11e94").into(),
         );
     }
 
-    // TODO: fix this test
-    #[ignore]
     #[test]
     fn test_verify_arsia_operator_fee_vault_deployment_code_hash() {
         let txs = Arsia::deposits().collect::<Vec<_>>();

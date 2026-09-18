@@ -129,8 +129,8 @@ impl BvmEth {
         // zero-value Mint/Transfer log — so a stray `Some(0)` would diverge from op-geth. Filtering
         // it out at the execution layer keeps this correct regardless of how the deposit was
         // constructed (engine API, direct tx-env, or the conversion layer).
-        let eth_value = tx.eth_value().filter(|&v| v != 0);
-        let eth_tx_value = tx.eth_tx_value().filter(|&v| v != 0);
+        let eth_value = tx.eth_value().filter(|v| !v.is_zero());
+        let eth_tx_value = tx.eth_tx_value().filter(|v| !v.is_zero());
 
         // Only load and touch BVM_ETH account when there's actual work to do.
         // This avoids warming the contract address unnecessarily.
@@ -146,13 +146,13 @@ impl BvmEth {
         // Handle mint if eth_value is present in the transaction
         if let Some(eth_value) = eth_value {
             let from = tx.caller();
-            Self::mint_inner(journal, tx, from, U256::from(eth_value))?;
+            Self::mint_inner(journal, tx, from, eth_value)?;
         }
 
         // Handle transfer if eth_tx_value is present in the transaction
         if let Some(eth_tx_value) = eth_tx_value {
             if !mint_only {
-                Self::transfer_inner(journal, tx, U256::from(eth_tx_value))?;
+                Self::transfer_inner(journal, tx, eth_tx_value)?;
             }
         }
 
@@ -398,7 +398,7 @@ mod tests {
     #[test]
     fn test_process_eth_deposit_only_eth_value() {
         // When only eth_value is present, should mint BVM_ETH
-        let eth_value = 1_000_000_000_000_000_000u128; // 1 ETH
+        let eth_value = U256::from(1_000_000_000_000_000_000u128); // 1 ETH
         let caller = address!("1234567890123456789012345678901234567890");
         let to = address!("abcdefabcdefabcdefabcdefabcdefabcdefabcd");
 
@@ -433,7 +433,7 @@ mod tests {
     #[test]
     fn test_process_eth_deposit_only_eth_tx_value() {
         // When only eth_tx_value is present, should transfer BVM_ETH
-        let eth_tx_value = 500_000_000_000_000_000u128; // 0.5 ETH
+        let eth_tx_value = U256::from(500_000_000_000_000_000u128); // 0.5 ETH
         let caller = address!("1234567890123456789012345678901234567890");
         let to = address!("abcdefabcdefabcdefabcdefabcdefabcdefabcd");
 
@@ -478,8 +478,8 @@ mod tests {
     #[test]
     fn test_process_eth_deposit_both_values() {
         // When both eth_value and eth_tx_value are present, should mint and transfer
-        let eth_value = 1_000_000_000_000_000_000u128; // 1 ETH
-        let eth_tx_value = 500_000_000_000_000_000u128; // 0.5 ETH
+        let eth_value = U256::from(1_000_000_000_000_000_000u128); // 1 ETH
+        let eth_tx_value = U256::from(500_000_000_000_000_000u128); // 0.5 ETH
         let caller = address!("1234567890123456789012345678901234567890");
         let to = address!("abcdefabcdefabcdefabcdefabcdefabcdefabcd");
 
@@ -520,8 +520,8 @@ mod tests {
     #[test]
     fn test_process_eth_deposit_mint_only_flag() {
         // When mint_only is true and eth_tx_value is present, should only mint
-        let eth_value = 1_000_000_000_000_000_000u128;
-        let eth_tx_value = 500_000_000_000_000_000u128;
+        let eth_value = U256::from(1_000_000_000_000_000_000u128);
+        let eth_tx_value = U256::from(500_000_000_000_000_000u128);
         let caller = address!("1234567890123456789012345678901234567890");
         let to = address!("abcdefabcdefabcdefabcdefabcdefabcdefabcd");
 
@@ -550,7 +550,7 @@ mod tests {
     fn test_process_eth_deposit_mint_only_no_eth_value() {
         // When mint_only is true but only eth_tx_value is present,
         // should return early because needs_transfer is false when mint_only=true
-        let eth_tx_value = 500_000_000_000_000_000u128;
+        let eth_tx_value = U256::from(500_000_000_000_000_000u128);
         let caller = address!("1234567890123456789012345678901234567890");
         let to = address!("abcdefabcdefabcdefabcdefabcdefabcdefabcd");
 
@@ -588,7 +588,7 @@ mod tests {
         // mint never warms the EVM access list. This is what makes the static gas
         // compensation unnecessary.
         let caller = Address::from([0x11; 20]);
-        let eth_value = 1_000_000_000_000_000u128; // 0.001 ETH
+        let eth_value = U256::from(1_000_000_000_000_000u128); // 0.001 ETH
 
         let mut ctx = Context::op().with_db(InMemoryDB::default()).modify_tx_chained(|tx| {
             tx.base.caller = caller;
@@ -620,7 +620,7 @@ mod tests {
         // The removed BVM_ETH_MINT_GAS_COMPENSATION (4500) previously inflated reth to 25628,
         // diverging from op-geth and forking the chain at this block.
         let caller = Address::from([0x74; 20]);
-        let eth_value = 1_000_000_000_000_000u128; // 0.001 ETH
+        let eth_value = U256::from(1_000_000_000_000_000u128); // 0.001 ETH
 
         let op_tx = OpTransaction {
             base: TxEnv {
@@ -686,7 +686,7 @@ mod tests {
         // This ensures mark_address_cold covers every slot, not just one.
         let caller = Address::from([0x11; 20]);
         let recipient = Address::from([0x22; 20]); // different from caller
-        let eth_value = 1_000_000_000_000_000u128;
+        let eth_value = U256::from(1_000_000_000_000_000u128);
 
         let mut ctx = Context::op().with_db(InMemoryDB::default()).modify_tx_chained(|tx| {
             tx.base.caller = caller;
@@ -729,7 +729,7 @@ mod tests {
         // Slots warmed: balance(caller) + totalSupply. Both must be cold after.
         let caller = Address::from([0x33; 20]);
         let recipient = Address::from([0x44; 20]);
-        let eth_value = 2_000_000_000_000_000u128;
+        let eth_value = U256::from(2_000_000_000_000_000u128);
 
         let mut ctx = Context::op().with_db(InMemoryDB::default()).modify_tx_chained(|tx| {
             tx.base.caller = caller;
@@ -769,7 +769,7 @@ mod tests {
         // When from == to, transfer_inner returns early (no-op).
         // Only mint_inner runs. Verify cold state is still correct.
         let caller = Address::from([0x55; 20]);
-        let eth_value = 500_000_000_000_000u128;
+        let eth_value = U256::from(500_000_000_000_000u128);
 
         let mut ctx = Context::op().with_db(InMemoryDB::default()).modify_tx_chained(|tx| {
             tx.base.caller = caller;
@@ -830,8 +830,8 @@ mod tests {
             tx.base.caller = caller;
             tx.base.kind = TxKind::Call(caller);
             tx.deposit.source_hash = B256::from([6u8; 32]);
-            tx.deposit.eth_value = Some(0);
-            tx.deposit.eth_tx_value = Some(0);
+            tx.deposit.eth_value = Some(U256::from(0u128));
+            tx.deposit.eth_tx_value = Some(U256::from(0u128));
         });
 
         BvmEth::process_eth_deposit(&mut ctx, false).expect("deposit should succeed");
@@ -851,7 +851,7 @@ mod tests {
         // Only the warm/cold flags should be reset.
         let caller = Address::from([0x77; 20]);
         let recipient = Address::from([0x88; 20]);
-        let eth_value = 3_000_000_000_000_000u128; // 0.003 ETH
+        let eth_value = U256::from(3_000_000_000_000_000u128); // 0.003 ETH
 
         let mut ctx = Context::op().with_db(InMemoryDB::default()).modify_tx_chained(|tx| {
             tx.base.caller = caller;
@@ -1013,8 +1013,8 @@ mod tests {
             source_hash,
             mint: Some(0),
             is_system_transaction: false,
-            eth_value: Some(eth_value.to::<u128>()),
-            eth_tx_value: Some(eth_tx_value.to::<u128>()),
+            eth_value: Some(eth_value),
+            eth_tx_value: Some(eth_tx_value),
         };
 
         // Build complete OpTransaction
@@ -1254,7 +1254,7 @@ mod tests {
         // so no balance slot is written. BVM_ETH account itself was loaded
         // by process_eth_deposit and must be cold afterwards.
         let caller = Address::from([0x11; 20]);
-        let eth_tx_value = 500_000_000_000_000u128;
+        let eth_tx_value = U256::from(500_000_000_000_000u128);
 
         let mut ctx = Context::op().with_db(InMemoryDB::default()).modify_tx_chained(|tx| {
             tx.base.caller = caller;
@@ -1287,7 +1287,7 @@ mod tests {
 
         let caller = Address::from([0x11; 20]);
         let recipient = Address::from([0x22; 20]);
-        let eth_tx_value = 500_000_000_000_000u128;
+        let eth_tx_value = U256::from(500_000_000_000_000u128);
 
         let mut ctx = Context::op().with_db(InMemoryDB::default()).modify_tx_chained(|tx| {
             tx.base.caller = caller;
@@ -1322,8 +1322,8 @@ mod tests {
         // (total_supply, balance[caller]) end up cold.
         let caller = Address::from([0x11; 20]);
         let recipient = Address::from([0x22; 20]);
-        let eth_value = 1_000_000_000_000_000_000u128;
-        let eth_tx_value = 500_000_000_000_000u128;
+        let eth_value = U256::from(1_000_000_000_000_000_000u128);
+        let eth_tx_value = U256::from(500_000_000_000_000u128);
 
         let mut ctx = Context::op().with_db(InMemoryDB::default()).modify_tx_chained(|tx| {
             tx.base.caller = caller;
@@ -1392,8 +1392,8 @@ mod tests {
                 tx.base.data = Bytes::from(hex::decode("deadbeef01020304").unwrap());
                 tx.deposit.source_hash = B256::from([0x20; 32]);
                 tx.deposit.mint = Some(0);
-                tx.deposit.eth_value = Some(0x38d7ea4c68000u128);
-                tx.deposit.eth_tx_value = Some(0x38d7ea4c68000u128);
+                tx.deposit.eth_value = Some(U256::from(0x38d7ea4c68000u128));
+                tx.deposit.eth_tx_value = Some(U256::from(0x38d7ea4c68000u128));
             });
 
         let mut evm = ctx.build_op();
@@ -1458,7 +1458,7 @@ mod tests {
                 tx.base.data = Bytes::from(hex::decode("deadbeef").unwrap());
                 tx.deposit.source_hash = B256::from([0x21; 32]);
                 tx.deposit.mint = Some(0);
-                tx.deposit.eth_value = Some(0x38d7ea4c68000u128);
+                tx.deposit.eth_value = Some(U256::from(0x38d7ea4c68000u128));
                 tx.deposit.eth_tx_value = None;
             });
 
@@ -1523,7 +1523,7 @@ mod tests {
                 tx.base.data = Bytes::from(hex::decode("deadbeef").unwrap());
                 tx.deposit.source_hash = B256::from([0x22; 32]);
                 tx.deposit.mint = Some(0);
-                tx.deposit.eth_value = Some(0x38d7ea4c68000u128);
+                tx.deposit.eth_value = Some(U256::from(0x38d7ea4c68000u128));
                 tx.deposit.eth_tx_value = None;
             });
 
@@ -1592,7 +1592,7 @@ mod tests {
                 tx.base.data = Bytes::from(hex::decode("deadbeef").unwrap());
                 tx.deposit.source_hash = B256::from([0x30; 32]);
                 tx.deposit.mint = Some(0);
-                tx.deposit.eth_value = Some(0x38d7ea4c68000u128);
+                tx.deposit.eth_value = Some(U256::from(0x38d7ea4c68000u128));
                 tx.deposit.eth_tx_value = None;
             });
 
@@ -1677,7 +1677,7 @@ mod tests {
                 tx.base.data = Bytes::from(hex::decode("deadbeef").unwrap());
                 tx.deposit.source_hash = B256::from([0x31; 32]);
                 tx.deposit.mint = Some(0);
-                tx.deposit.eth_value = Some(mint_amount);
+                tx.deposit.eth_value = Some(U256::from(mint_amount));
                 tx.deposit.eth_tx_value = None;
             });
 
@@ -1726,8 +1726,8 @@ mod tests {
 
         let caller = Address::from([0x11; 20]);
         let recipient = Address::from([0x22; 20]);
-        let eth_value = 1_000_000_000_000_000_000u128;
-        let eth_tx_value = 500_000_000_000_000u128;
+        let eth_value = U256::from(1_000_000_000_000_000_000u128);
+        let eth_tx_value = U256::from(500_000_000_000_000u128);
 
         let mut ctx = Context::op().with_db(InMemoryDB::default()).modify_tx_chained(|tx| {
             tx.base.caller = caller;
@@ -1798,7 +1798,7 @@ mod tests {
             tx.base.caller = caller;
             tx.base.kind = TxKind::Call(recipient);
             tx.deposit.source_hash = B256::from([0x41; 32]);
-            tx.deposit.eth_value = Some(1_000_000_000_000_000_000u128);
+            tx.deposit.eth_value = Some(U256::from(1_000_000_000_000_000_000u128));
             tx.deposit.eth_tx_value = None;
         });
 
@@ -1863,7 +1863,7 @@ mod tests {
             tx.base.kind = TxKind::Create;
             tx.deposit.source_hash = B256::from([0x50; 32]);
             tx.deposit.eth_value = None;
-            tx.deposit.eth_tx_value = Some(500_000_000_000_000_000u128);
+            tx.deposit.eth_tx_value = Some(U256::from(500_000_000_000_000_000u128));
         });
 
         // Pre-seed caller balance for transfer to succeed.
@@ -1899,8 +1899,8 @@ mod tests {
             tx.base.caller = caller;
             tx.base.kind = TxKind::Create;
             tx.deposit.source_hash = B256::from([0x51; 32]);
-            tx.deposit.eth_value = Some(1_000_000_000_000_000_000u128);
-            tx.deposit.eth_tx_value = Some(500_000_000_000_000_000u128);
+            tx.deposit.eth_value = Some(U256::from(1_000_000_000_000_000_000u128));
+            tx.deposit.eth_tx_value = Some(U256::from(500_000_000_000_000_000u128));
         });
 
         let caller_nonce =
@@ -1994,7 +1994,7 @@ mod tests {
                 tx.base.data = Bytes::new();
                 tx.deposit.source_hash = B256::from([0x60; 32]);
                 tx.deposit.mint = Some(0);
-                tx.deposit.eth_value = Some(0x38d7ea4c68000u128);
+                tx.deposit.eth_value = Some(U256::from(0x38d7ea4c68000u128));
                 tx.deposit.eth_tx_value = None;
             });
 
