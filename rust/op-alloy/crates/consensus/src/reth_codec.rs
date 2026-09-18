@@ -243,8 +243,15 @@ mod mantle_txdeposit_compact_tests {
 /// bitfield width. If a future change to `CompactTxDeposit` shifts the layout, `encodings_match`
 /// fails with the two byte strings side by side.
 ///
-/// Do not "clean this up" by deleting the frozen struct: the whole point is that it does not
-/// track `CompactTxDeposit`.
+/// Do not "clean this up" by deleting the frozen struct, and **do not widen its fields to match
+/// `CompactTxDeposit`** -- the whole point is that it does not track `CompactTxDeposit`. It is
+/// the *control* side of the comparison: the layout that produced every deposit already on disk.
+/// Widening it would make these tests compare the current struct against itself, which is
+/// trivially equal, and the guard would stop guarding anything without failing.
+///
+/// If `CompactTxDeposit` gains or loses a field, this mirror stays as it is and the tests are
+/// expected to fail. That failure is the signal to decide whether the on-disk format really is
+/// changing, and to plan a migration if so -- not a prompt to re-sync the mirror.
 #[cfg(test)]
 mod mantle_compact_layout_tests {
     use super::*;
@@ -358,16 +365,54 @@ mod mantle_compact_layout_tests {
 
     /// The widened decoder must read bytes produced by the frozen (pre-widening) encoder.
     /// This is the actual failure mode for an existing node: old bytes, new binary.
+    ///
+    /// `encodings_match_for_all_u128_representable_values` above covers the *encode* direction.
+    /// A live node mostly reads, so the decode direction gets the same matrix rather than a
+    /// single sample -- symmetric codecs make one follow from the other, but "follows from" is
+    /// not a measurement and the cost of being wrong here is an unreadable database.
     #[test]
     fn widened_decoder_reads_frozen_encoder_output() {
-        let (frozen_bytes, _) = encode_pair(Some(123_456_000_000_000_000), Some(42), &[0xde, 0xad]);
-        let (decoded, rest) = CompactTxDeposit::from_compact(&frozen_bytes, frozen_bytes.len());
-        assert!(rest.is_empty(), "trailing bytes: bitfield is misaligned");
-        assert_eq!(decoded.eth_value, Some(U256::from(123_456_000_000_000_000u128)));
-        assert_eq!(decoded.eth_tx_value, Some(U256::from(42u128)));
-        assert_eq!(decoded.input, Bytes::from(vec![0xde, 0xad]));
-        assert_eq!(decoded.mint, Some(7));
-        assert_eq!(decoded.gas_limit, 300_000);
+        let interesting = [
+            None,
+            Some(0u128),
+            Some(1),
+            Some(0xff),
+            Some(0x100),
+            Some(123_456_000_000_000_000),
+            Some(u64::MAX as u128),
+            Some(u64::MAX as u128 + 1),
+            Some(u128::MAX),
+        ];
+        let mut checked = 0usize;
+        for ev in interesting {
+            for etv in interesting {
+                for input in [&[][..], &[0xde, 0xad, 0xbe, 0xef][..]] {
+                    let (frozen_bytes, _) = encode_pair(ev, etv, input);
+                    let (decoded, rest) =
+                        CompactTxDeposit::from_compact(&frozen_bytes, frozen_bytes.len());
+                    assert!(
+                        rest.is_empty(),
+                        "trailing bytes: bitfield is misaligned at eth_value={ev:?} \
+                         eth_tx_value={etv:?}",
+                    );
+                    assert_eq!(
+                        decoded.eth_value,
+                        ev.map(U256::from),
+                        "eth_value changed on the way back in",
+                    );
+                    assert_eq!(
+                        decoded.eth_tx_value,
+                        etv.map(U256::from),
+                        "eth_tx_value changed on the way back in",
+                    );
+                    assert_eq!(decoded.input, Bytes::copy_from_slice(input));
+                    assert_eq!(decoded.mint, Some(7));
+                    assert_eq!(decoded.gas_limit, 300_000);
+                    checked += 1;
+                }
+            }
+        }
+        assert_eq!(checked, 162, "matrix shrank; the guard is weaker than it reads");
     }
 }
 

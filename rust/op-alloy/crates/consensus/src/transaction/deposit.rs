@@ -1212,3 +1212,68 @@ pub(super) mod serde_bincode_compat {
         }
     }
 }
+
+#[cfg(test)]
+mod mantle_bvm_eth_wire_compat {
+    use super::*;
+    use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
+    use alloy_rlp::{Decodable, Encodable};
+
+    /// `[MANTLE]` The `u128 -> U256` widening must not change the RLP wire format, or every
+    /// historical deposit would decode differently.
+    ///
+    /// It does not: RLP encodes integers as big-endian with leading zeros stripped, so the
+    /// encoding depends on the *value*, not on the static width of the type holding it. This
+    /// pins that, and that the widened decoder still reads bytes the narrow encoder produced.
+    #[test]
+    fn rlp_encoding_is_unchanged_by_the_widening() {
+        for v in [0u128, 1, 255, 256, 500, u64::MAX as u128, u128::MAX] {
+            let mut narrow = Vec::new();
+            v.encode(&mut narrow);
+            let mut wide = Vec::new();
+            U256::from(v).encode(&mut wide);
+            assert_eq!(narrow, wide, "RLP encoding differs at {v}");
+
+            let decoded = U256::decode(&mut narrow.as_slice())
+                .expect("widened decoder must read narrow-encoder output");
+            assert_eq!(decoded, U256::from(v));
+        }
+    }
+
+    /// `[MANTLE]` The widening must not change the JSON shape either — these fields are visible
+    /// over RPC, and op-geth emits them as `*hexutil.Big` (`json:"ethValue,omitempty"`).
+    ///
+    /// The `alloy_serde::quantity` wrapper was dropped when the fields became `U256` (it only
+    /// supports the primitive uints), so this checks the replacement produces the same hex
+    /// quantity the wrapper did, and that payloads written by the old code still deserialise.
+    #[test]
+    fn json_shape_is_unchanged_by_the_widening() {
+        let tx = TxDeposit {
+            source_hash: B256::repeat_byte(1),
+            from: Address::repeat_byte(2),
+            to: TxKind::Call(Address::repeat_byte(3)),
+            mint: 1000,
+            value: U256::from(200u64),
+            gas_limit: 21000,
+            is_system_transaction: false,
+            eth_value: U256::from(500u64),
+            input: Bytes::from(vec![1u8]),
+            eth_tx_value: Some(U256::from(300u64)),
+        };
+        let json = serde_json::to_string(&tx).unwrap();
+        assert!(json.contains(r#""ethValue":"0x1f4""#), "unexpected ethValue shape: {json}");
+        assert!(json.contains(r#""ethTxValue":"0x12c""#), "unexpected ethTxValue shape: {json}");
+
+        // A payload as the pre-widening code would have written it.
+        let legacy = r#"{"sourceHash":"0x0101010101010101010101010101010101010101010101010101010101010101","from":"0x0202020202020202020202020202020202020202","to":"0x0303030303030303030303030303030303030303","mint":"0x3e8","value":"0xc8","gas":"0x5208","ethValue":"0x1f4","input":"0x01","ethTxValue":"0x12c"}"#;
+        let back: TxDeposit = serde_json::from_str(legacy).expect("must read legacy payload");
+        assert_eq!(back.eth_value, U256::from(500u64));
+        assert_eq!(back.eth_tx_value, Some(U256::from(300u64)));
+
+        // Zero and the omitted trailing field are the two shapes most likely to drift.
+        let zero = TxDeposit { eth_value: U256::ZERO, eth_tx_value: None, ..Default::default() };
+        let json = serde_json::to_string(&zero).unwrap();
+        assert!(json.contains(r#""ethValue":"0x0""#), "zero ethValue shape: {json}");
+        assert!(!json.contains("ethTxValue"), "absent ethTxValue must stay absent: {json}");
+    }
+}
