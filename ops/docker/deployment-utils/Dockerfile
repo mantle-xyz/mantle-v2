@@ -18,7 +18,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > rustup.sh && \
 
 RUN source $HOME/.profile && rustup update nightly
 RUN curl -L https://foundry.paradigm.xyz | bash
-RUN foundryup
+RUN foundryup --install v1.8.3
 
 FROM debian:12.7-slim
 

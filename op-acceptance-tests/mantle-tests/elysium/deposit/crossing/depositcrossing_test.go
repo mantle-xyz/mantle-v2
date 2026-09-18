@@ -8,8 +8,6 @@ import (
 	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
 	"github.com/ethereum-optimism/optimism/op-devstack/dsl"
 	"github.com/ethereum-optimism/optimism/op-devstack/presets"
-	"github.com/ethereum-optimism/optimism/op-devstack/stack"
-	"github.com/ethereum-optimism/optimism/op-devstack/stack/match"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/txintent/bindings"
@@ -44,23 +42,21 @@ func TestDerivation_AcrossL1Upgrade(gt *testing.T) {
 	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
 
 	ts := sys.TestSequencer.Escape().ControlAPI(sys.L1Network.ChainID())
-	cl := sys.L1Network.Escape().L1CLNode(match.FirstL1CL)
+	// Accounts are funded in genesis so setup never consumes a pre-upgrade block.
+	userBefore := dsl.NewKey(t, sys.L2Chain.Escape().Keys().Secret(userBeforeKey)).User(sys.L1EL)
+	userAt := dsl.NewKey(t, sys.L2Chain.Escape().Keys().Secret(userAtKey)).User(sys.L1EL)
+	userAfter := dsl.NewKey(t, sys.L2Chain.Escape().Keys().Secret(userAfterKey)).User(sys.L1EL)
+	for _, user := range []*dsl.EOA{userBefore, userAt, userAfter} {
+		require.Equal(eth.OneTenthEther.ToBig(), user.GetBalance().ToBig(), "depositor must be funded in genesis")
+	}
 
-	sys.L1Network.WaitForBlock()
-
-	// Fund before stopping FakePoS; funding needs L1 blocks.
-	userBefore := sys.FunderL1.NewFundedEOA(eth.OneTenthEther)
-	userAt := sys.FunderL1.NewFundedEOA(eth.OneTenthEther)
-	userAfter := sys.FunderL1.NewFundedEOA(eth.OneTenthEther)
-
-	// Take manual control of L1 production so deposits can be placed in exact L1 blocks.
-	sys.ControlPlane.FakePoSState(cl.ID(), stack.Stop)
-
-	// Amsterdam activates at L1 block expectedBoundary (offset is seconds; 6s blocks).
-	expectedBoundary := amsterdamOffset / uint64(l1BlockTime/time.Second)
+	genesis := sys.L1EL.BlockRefByNumber(0)
+	require.Equal(genesis.Hash, sys.L1EL.BlockRefByLabel(eth.Unsafe).Hash,
+		"manual L1 mining must prevent automatic blocks during system startup")
+	blockTime := uint64(l1BlockTime / time.Second)
+	require.Greater(*l1Config.AmsterdamTime, genesis.Time)
+	expectedBoundary := (*l1Config.AmsterdamTime - genesis.Time + blockTime - 1) / blockTime
 	require.GreaterOrEqual(expectedBoundary, uint64(3), "offset must leave room for a pre-Amsterdam deposit block")
-	require.Less(sys.L1EL.BlockRefByLabel(eth.Unsafe).Number, expectedBoundary-1,
-		"must take L1 control before the activation block so a deposit can land pre-Amsterdam")
 
 	bridgeAddr := sys.L2Chain.Escape().Deployment().L1StandardBridgeProxyAddr()
 	bridge := bindings.NewBindings[bindings.MantleL1StandardBridge](
@@ -68,8 +64,12 @@ func TestDerivation_AcrossL1Upgrade(gt *testing.T) {
 	portalAddr := sys.L2Chain.Escape().RollupConfig().DepositContractAddress
 
 	produceL1Block := func() {
-		require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: common.Hash{}}))
+		parent := sys.L1EL.BlockRefByLabel(eth.Unsafe)
+		require.NoError(ts.New(ctx, seqtypes.BuildOpts{Parent: parent.Hash}))
 		require.NoError(ts.Next(ctx))
+		head := sys.L1EL.BlockRefByLabel(eth.Unsafe)
+		require.Equal(parent.Number+1, head.Number)
+		require.Equal(parent.Time+blockTime, head.Time)
 	}
 	driveL1To := func(target uint64) {
 		for sys.L1EL.BlockRefByLabel(eth.Unsafe).Number < target {
@@ -135,6 +135,9 @@ func TestDerivation_AcrossL1Upgrade(gt *testing.T) {
 	l1Before, hashBefore := checkL1("before", txBefore, false)
 	l1At, hashAt := checkL1("at", txAt, true)
 	l1After, hashAfter := checkL1("after", txAfter, true)
+	require.Equal(expectedBoundary-1, l1Before)
+	require.Equal(expectedBoundary, l1At)
+	require.Equal(expectedBoundary+1, l1After)
 
 	// Pre-resolve each depositor against the sequencer and the verifier EL.
 	seqBefore, verBefore := userBefore.AsEL(sys.L2EL), userBefore.AsEL(sys.L2ELB)
