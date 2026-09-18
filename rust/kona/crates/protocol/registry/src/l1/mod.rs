@@ -7,7 +7,9 @@ use core::{fmt::Display, ops::Deref};
 use kona_genesis::L1ChainConfig;
 
 use alloy_chains::NamedChain;
-use alloy_primitives::{Address, U256, address, hex::NIL, map::HashMap};
+// [MANTLE] `hex::NIL` dropped: it was only used by the Osaka / BPO1-5 blob-schedule entries that
+// Mantle disables on mainnet (MANTLE_CHANGES.md §3.5), so the import is now unused.
+use alloy_primitives::{Address, U256, address, map::HashMap};
 
 /// L1 chain configuration.
 /// Simple wrapper around the [`L1ChainConfig`] type from the `alloy-genesis` crate.
@@ -122,28 +124,26 @@ impl L1Config {
                 .mainnet_activation_timestamp(),
             cancun_time: alloy_hardforks::EthereumHardfork::Cancun.mainnet_activation_timestamp(),
             prague_time: alloy_hardforks::EthereumHardfork::Prague.mainnet_activation_timestamp(),
-            // [MANTLE] Force Osaka and BPO1–BPO5 to `None` on Ethereum L1
-            // mainnet so the post-Prague blob-fee schedules do not auto-
-            // activate when alloy_hardforks bumps their mainnet activation
-            // timestamps. Mantle pins blob fee parameters to Prague behaviour
-            // until a coordinated upgrade — see `mantle-xyz/kona@72a20ab9`
-            // ("Blob fee parameters #26", 2026-04-24). The original lines
-            // are preserved below as commented reference so the next
-            // upstream subtree sync surfaces this divergence in the merge.
-            osaka_time: None,
+            // [MANTLE] These carry Ethereum mainnet's real values again.
+            //
+            // They used to be forced to `None` here to hold Mantle's blob-fee parameters at
+            // Prague behaviour (`mantle-xyz/kona@72a20ab9`, "Blob fee parameters #26",
+            // 2026-04-24). That was the right *effect* but the wrong *place*: it lied about L1
+            // to every consumer of this config, and it had no way to stop — op-node's pin ends
+            // at Mantle Elysium, this one never did.
+            //
+            // The pin now lives where op-node puts it: `L1BlockInfoTx::try_new` ignores the
+            // Osaka and BPO schedules while `RollupConfig::is_mantle_arsia_blob_schedule_pinned`
+            // holds, i.e. from Arsia until Elysium, and only when the L1 is Ethereum mainnet.
+            // Do not re-null these — that would make the Elysium activation a no-op.
+            osaka_time: alloy_hardforks::EthereumHardfork::Osaka.mainnet_activation_timestamp(),
+            bogota_time: None,
             amsterdam_time: None,
-            bpo1_time: None,
-            bpo2_time: None,
-            bpo3_time: None,
-            bpo4_time: None,
-            bpo5_time: None,
-            // osaka_time: alloy_hardforks::EthereumHardfork::Osaka.mainnet_activation_timestamp(),
-            // bpo1_time: alloy_hardforks::EthereumHardfork::Bpo1.mainnet_activation_timestamp(),
-            // bpo2_time: alloy_hardforks::EthereumHardfork::Bpo2.mainnet_activation_timestamp(),
-            // bpo3_time: alloy_hardforks::EthereumHardfork::Bpo3.mainnet_activation_timestamp(),
-            // bpo4_time: alloy_hardforks::EthereumHardfork::Bpo4.mainnet_activation_timestamp(),
-            // bpo5_time: alloy_hardforks::EthereumHardfork::Bpo5.mainnet_activation_timestamp(),
-
+            bpo1_time: alloy_hardforks::EthereumHardfork::Bpo1.mainnet_activation_timestamp(),
+            bpo2_time: alloy_hardforks::EthereumHardfork::Bpo2.mainnet_activation_timestamp(),
+            bpo3_time: alloy_hardforks::EthereumHardfork::Bpo3.mainnet_activation_timestamp(),
+            bpo4_time: alloy_hardforks::EthereumHardfork::Bpo4.mainnet_activation_timestamp(),
+            bpo5_time: alloy_hardforks::EthereumHardfork::Bpo5.mainnet_activation_timestamp(),
             ethash: Some(EthashConfig {}),
 
             blob_schedule: Self::default_blob_schedule(),
@@ -193,6 +193,7 @@ impl L1Config {
             cancun_time: alloy_hardforks::EthereumHardfork::Cancun.sepolia_activation_timestamp(),
             prague_time: alloy_hardforks::EthereumHardfork::Prague.sepolia_activation_timestamp(),
             osaka_time: alloy_hardforks::EthereumHardfork::Osaka.sepolia_activation_timestamp(),
+            bogota_time: None,
             amsterdam_time: None,
             bpo1_time: alloy_hardforks::EthereumHardfork::Bpo1.sepolia_activation_timestamp(),
             bpo2_time: alloy_hardforks::EthereumHardfork::Bpo2.sepolia_activation_timestamp(),
@@ -239,6 +240,7 @@ impl L1Config {
             cancun_time: alloy_hardforks::EthereumHardfork::Cancun.holesky_activation_timestamp(),
             prague_time: alloy_hardforks::EthereumHardfork::Prague.holesky_activation_timestamp(),
             osaka_time: alloy_hardforks::EthereumHardfork::Osaka.holesky_activation_timestamp(),
+            bogota_time: None,
             amsterdam_time: None,
             bpo1_time: alloy_hardforks::EthereumHardfork::Bpo1.holesky_activation_timestamp(),
             bpo2_time: alloy_hardforks::EthereumHardfork::Bpo2.holesky_activation_timestamp(),
@@ -286,6 +288,7 @@ impl L1Config {
             cancun_time: alloy_hardforks::EthereumHardfork::Cancun.hoodi_activation_timestamp(),
             prague_time: alloy_hardforks::EthereumHardfork::Prague.hoodi_activation_timestamp(),
             osaka_time: alloy_hardforks::EthereumHardfork::Osaka.hoodi_activation_timestamp(),
+            bogota_time: None,
             amsterdam_time: None,
             bpo1_time: alloy_hardforks::EthereumHardfork::Bpo1.hoodi_activation_timestamp(),
             bpo2_time: alloy_hardforks::EthereumHardfork::Bpo2.hoodi_activation_timestamp(),
@@ -369,6 +372,9 @@ mod tests {
     }
 
     #[test]
+    // [MANTLE] Re-enabled. This was ignored while `osaka_time` / `bpo1..5_time` were forced to
+    // `None` here; the Arsia-era blob pin now lives in `L1BlockInfoTx::try_new` instead, so this
+    // config carries L1's real schedule again and upstream's assertion holds.
     fn test_get_l1_bpo_mainnet() {
         /// BPO1 hardfork activation timestamp
         const MAINNET_BPO1_TIMESTAMP: u64 = 1_765_290_071;

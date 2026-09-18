@@ -86,11 +86,6 @@ where
         .header_by_hash(safe_head_hash)
         .map(|header| Sealed::new_unchecked(header, safe_head_hash))?;
     let disputed_l2_block_number = safe_head.number + 1;
-    let agreed_l2_output_root = boot
-        .agreed_pre_state
-        .active_l2_output_root()
-        .map(|root| root.output_root)
-        .ok_or(FaultProofProgramError::StateTransitionFailed)?;
 
     // Check if we can no-op the transition. The Superchain STF happens once every second, but
     // chains have a variable block time, meaning there might be no transition to process.
@@ -151,6 +146,7 @@ where
         l2_provider.clone(),
         l2_provider,
         evm_factory,
+        OpAlloyReceiptBuilder::default(),
         None,
     );
     let mut driver = Driver::new(cursor, executor, pipeline);

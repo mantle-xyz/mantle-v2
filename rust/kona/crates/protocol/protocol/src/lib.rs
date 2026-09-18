@@ -16,8 +16,8 @@ pub use batch::{
     MAX_SPAN_BATCH_ELEMENTS, RawSpanBatch, SINGLE_BATCH_TYPE, SPAN_BATCH_TYPE, SingleBatch,
     SpanBatch, SpanBatchBits, SpanBatchEip1559TransactionData, SpanBatchEip2930TransactionData,
     SpanBatchEip7702TransactionData, SpanBatchElement, SpanBatchError,
-    SpanBatchLegacyTransactionData, SpanBatchPayload, SpanBatchPrefix, SpanBatchTransactionData,
-    SpanBatchTransactions, SpanDecodingError,
+    SpanBatchLegacyTransactionData, SpanBatchPayload, SpanBatchPostExecTransactionData,
+    SpanBatchPrefix, SpanBatchTransactionData, SpanBatchTransactions, SpanDecodingError,
 };
 
 mod brotli;
@@ -42,7 +42,7 @@ pub use frame::{
 };
 
 mod utils;
-pub use utils::{read_tx_data, to_system_config};
+pub use utils::{to_system_config, upgrade_gas};
 
 mod channel;
 pub use channel::{
@@ -54,9 +54,12 @@ mod ordered_channel;
 pub use ordered_channel::{OrderedChannel, ReadError};
 
 mod deposits;
+// [MANTLE] `DEPOSIT_EVENT_VERSION_1` is re-exported for symmetry with `_VERSION_0`. Mantle's L1
+// `OptimismPortal` emits version 1 for every user deposit (see MANTLE_CHANGES.md §3.5), so
+// downstream crates need the constant; without this it also trips `unreachable-pub`.
 pub use deposits::{
-    DEPOSIT_EVENT_ABI, DEPOSIT_EVENT_ABI_HASH, DEPOSIT_EVENT_VERSION_0, DepositError,
-    decode_deposit,
+    DEPOSIT_EVENT_ABI, DEPOSIT_EVENT_ABI_HASH, DEPOSIT_EVENT_VERSION_0, DEPOSIT_EVENT_VERSION_1,
+    DepositError, decode_deposit,
 };
 
 mod info;
@@ -69,8 +72,7 @@ pub use info::{
     L1BlockInfoJovianBaseFields, L1BlockInfoJovianFields, L1BlockInfoTx,
 };
 
-mod predeploys;
-pub use predeploys::Predeploys;
+pub use kona_genesis::Predeploys;
 
 mod output_root;
 pub use output_root::OutputRoot;

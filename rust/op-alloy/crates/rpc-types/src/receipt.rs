@@ -203,9 +203,9 @@ pub struct L1BlockInfo {
     /// Always null prior to the Jovian hardfork.
     #[serde(default, skip_serializing_if = "Option::is_none", with = "alloy_serde::quantity::opt")]
     pub da_footprint_gas_scalar: Option<u16>,
-    /// [MANTLE] Token ratio between ETH and MNT, surfaced on the receipt at the Jovian-class
-    /// hardfork. Port of mantle-xyz/op-alloy@57b9c10 ("fix: restore token_ratio in L1BlockInfo").
-    /// Always null prior to the hardfork that activates it.
+    /// `[MANTLE]` Token ratio between ETH and MNT, surfaced on the receipt at the Jovian-class
+    /// hardfork. Port of mantle-xyz/op-alloy@57b9c10 ("fix: restore `token_ratio` in
+    /// `L1BlockInfo`"). Always null prior to the hardfork that activates it.
     #[serde(default, skip_serializing_if = "Option::is_none", with = "alloy_serde::quantity::opt")]
     pub token_ratio: Option<u128>,
 }
