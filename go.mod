@@ -325,7 +325,7 @@ require (
 	lukechampine.com/blake3 v1.3.0 // indirect
 )
 
-replace github.com/ethereum/go-ethereum => github.com/mantle-xyz/op-geth v0.0.0-20260917082031-52f7aee74efd
+replace github.com/ethereum/go-ethereum => github.com/mantle-xyz/op-geth v1.6.3
 
 //replace github.com/ethereum/go-ethereum => ../op-geth
 
