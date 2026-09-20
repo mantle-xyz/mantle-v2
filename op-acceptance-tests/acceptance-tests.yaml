@@ -136,6 +136,87 @@ gates:
       - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/base/withdrawal
         timeout: 20m
 
+  # One gate, deliberately. Splitting a PR-only subset out of it was tried and
+  # reverted: it moved the reorg suites off the PR path, and those are the highest-value
+  # cases here (the fakepos rebuild-divergence bug lived in exactly that coverage). It also
+  # left no mechanism to decide which gate a NEW package belongs in, so tests would silently
+  # accumulate in the half that never runs on PRs. Wall-clock is handled by running this in
+  # its own parallel CI job instead, so the cost is max() against mantle-base, not sum().
+  #
+  # The system package is intentionally absent: it needs a real-CL sysext devnet (Kurtosis or
+  # a persistent network) that a PR runner cannot stand up. Run it against a real devnet.
+  - id: mantle-elysium
+    description: "Mantle Elysium tests for an Arsia L2 consuming a Glamsterdam (Amsterdam) L1."
+    tests:
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/beaconslot
+        timeout: 1m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/rpcschema
+        timeout: 15m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/rpcheader
+        timeout: 15m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/l2output
+        timeout: 15m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/ethtransferlog
+        timeout: 15m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/evm
+        timeout: 15m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/deposit
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/deposit/consistency
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/activationblock
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/preactivation
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/derivepoch
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/finality
+        timeout: 15m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/headernopollut
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/base/sequenceractive
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/da/blob
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/da/calldata
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/submission
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/da/cellproof
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/da/channeltimeout
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/da/windowexpiry
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/deposit/crossing
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/boundaryrestart
+        timeout: 15m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/consecutive
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/deep
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/epoch
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/fakepos
+        timeout: 10m
+      # §5 cases that reference no CL. They lived in elysium/system until it became clear the
+      # only thing keeping them out of the gate was sharing a package with the beacon cases.
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/system/smoke
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/system/midflight
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/system/proposer
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/system/verifierconverge
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/system/afterrestart
+        timeout: 10m
+      - package: github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/reorg/finalize
+        timeout: 15m
+
   - id: mantle-temp
     description: "Mantle network tests."
     tests:

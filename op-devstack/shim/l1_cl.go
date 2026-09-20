@@ -17,6 +17,7 @@ type rpcL1CLNode struct {
 	commonImpl
 	id     stack.L1CLNodeID
 	client apis.BeaconClient
+	http   client.HTTP
 }
 
 var _ stack.L1CLNode = (*rpcL1CLNode)(nil)
@@ -27,6 +28,7 @@ func NewL1CLNode(cfg L1CLNodeConfig) stack.L1CLNode {
 		commonImpl: newCommon(cfg.CommonConfig),
 		id:         cfg.ID,
 		client:     sources.NewBeaconHTTPClient(cfg.Client),
+		http:       cfg.Client,
 	}
 }
 
@@ -36,4 +38,8 @@ func (r *rpcL1CLNode) ID() stack.L1CLNodeID {
 
 func (r *rpcL1CLNode) BeaconClient() apis.BeaconClient {
 	return r.client
+}
+
+func (r *rpcL1CLNode) HTTPClient() client.HTTP {
+	return r.http
 }

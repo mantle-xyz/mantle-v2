@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/ethereum-optimism/optimism/op-service/apis"
+	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 )
 
@@ -74,4 +75,9 @@ type L1CLNode interface {
 	ID() L1CLNodeID
 
 	BeaconClient() apis.BeaconClient
+
+	// HTTPClient exposes the raw beacon HTTP transport, for the parts of the beacon API that
+	// BeaconClient does not model — e.g. the full /eth/v1/config/spec key set, or a block's
+	// fork version. Prefer BeaconClient wherever it suffices.
+	HTTPClient() client.HTTP
 }
