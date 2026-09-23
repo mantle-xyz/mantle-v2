@@ -31,7 +31,11 @@ func preflightServer(t *testing.T, chainID, genesisHash, version string) *httpte
 		case "eth_chainId":
 			result = chainID
 		case "eth_getBlockByNumber":
-			result = map[string]any{"hash": genesisHash}
+			if genesisHash == "" {
+				result = map[string]any{}
+			} else {
+				result = map[string]any{"hash": genesisHash}
+			}
 		case "web3_clientVersion":
 			result = version
 		default:
@@ -105,6 +109,31 @@ func TestPreflightNamesUnreachableEndpoint(t *testing.T) {
 	_, _, err := preflightEndpoints(t.Context(), pair)
 	if err == nil || !strings.Contains(err.Error(), "target-node") || strings.Contains(err.Error(), "task up") {
 		t.Fatalf("unreachable endpoint error = %v", err)
+	}
+}
+
+func TestPreflightRejectsMissingGenesisHash(t *testing.T) {
+	baseline := preflightServer(t, "0x1388", "", "baseline/v1")
+	defer baseline.Close()
+	target := preflightServer(t, "0x1388", "0x"+strings.Repeat("11", 32), "target/v2")
+	defer target.Close()
+	pair := rpc.NewClientPair(baseline.URL, "baseline-node", target.URL, "target-node", time.Second)
+	_, _, err := preflightEndpoints(t.Context(), pair)
+	if err == nil || !strings.Contains(err.Error(), "missing genesis hash") || !strings.Contains(err.Error(), "baseline-node") {
+		t.Fatalf("missing genesis error = %v", err)
+	}
+}
+
+func TestPreflightRejectsEmptyClientVersion(t *testing.T) {
+	genesis := "0x" + strings.Repeat("11", 32)
+	baseline := preflightServer(t, "0x1388", genesis, "")
+	defer baseline.Close()
+	target := preflightServer(t, "0x1388", genesis, "target/v2")
+	defer target.Close()
+	pair := rpc.NewClientPair(baseline.URL, "baseline-node", target.URL, "target-node", time.Second)
+	_, _, err := preflightEndpoints(t.Context(), pair)
+	if err == nil || !strings.Contains(err.Error(), "empty client version") || !strings.Contains(err.Error(), "baseline-node") {
+		t.Fatalf("empty version error = %v", err)
 	}
 }
 

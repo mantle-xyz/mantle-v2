@@ -553,8 +553,6 @@ func (t *Tester) CompareReceipts(ctx context.Context, testName string, baselineT
 func (t *Tester) WaitForReceiptAndCompare(ctx context.Context, txHash common.Hash, timeout time.Duration, testName string) (*TxReceipt, error) {
 	deadline := time.Now().Add(timeout)
 	req := rpc.NewRequest("eth_getTransactionReceipt", []interface{}{txHash.Hex()})
-	recorded := false // record a successful result only once
-
 	for time.Now().Before(deadline) {
 		baselineResp := t.baselineClient.Call(ctx, req)
 		targetResp := t.targetClient.Call(ctx, req)
@@ -599,7 +597,7 @@ func (t *Tester) WaitForReceiptAndCompare(ctx context.Context, txHash common.Has
 		}
 
 		// Record the comparison once the reference receipt is available.
-		if t.reporter != nil && !recorded {
+		if t.reporter != nil {
 			// Allow the target a short period to catch up with the reference.
 			if string(targetResp.Response.Result) == "null" {
 				if time.Until(deadline) > 2*time.Second {
@@ -641,7 +639,6 @@ func (t *Tester) WaitForReceiptAndCompare(ctx context.Context, txHash common.Has
 				Params: []interface{}{txHash.Hex()},
 			}
 			t.reporter.AddResult(tc, compareResult, diffResult, compareErr)
-			recorded = true
 		}
 
 		return receipt, nil

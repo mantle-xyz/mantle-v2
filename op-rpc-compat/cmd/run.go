@@ -192,7 +192,9 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 		recipient = common.HexToAddress(txRecipient)
 	} else {
 		randomBytes := make([]byte, 20)
-		rand.Read(randomBytes)
+		if _, err := rand.Read(randomBytes); err != nil {
+			return fmt.Errorf("generate random recipient: %w", err)
+		}
 		recipient = common.BytesToAddress(randomBytes)
 	}
 
@@ -265,9 +267,7 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 	fmt.Println(color.CyanString("合约测试"))
 	fmt.Println(color.CyanString("============================================================"))
 	contractResults := runContractTests(ctx, tester)
-	for _, result := range contractResults {
-		results = append(results, result)
-	}
+	results = append(results, contractResults...)
 
 	fmt.Println()
 	fmt.Println(color.CyanString("============================================================"))
@@ -796,12 +796,12 @@ func fetchTemplateVars(ctx context.Context, client *rpc.Client) (*TemplateVars, 
 	req := rpc.NewRequest("eth_getBlockByNumber", []interface{}{"latest", false})
 	resp := client.Call(ctx, req)
 	if resp.Error != nil {
-		return nil, fmt.Errorf("获取 latest block 失败: %v", resp.Error)
+		return nil, fmt.Errorf("获取 latest block 失败: %w", resp.Error)
 	}
 
 	var block map[string]interface{}
 	if err := json.Unmarshal(resp.RawBody, &block); err != nil {
-		return nil, fmt.Errorf("解析 block 响应失败: %v", err)
+		return nil, fmt.Errorf("解析 block 响应失败: %w", err)
 	}
 
 	if result, ok := block["result"].(map[string]interface{}); ok {

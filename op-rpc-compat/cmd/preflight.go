@@ -62,8 +62,11 @@ func inspectEndpoint(ctx context.Context, client *rpc.Client) (endpointIdentity,
 	var block struct {
 		Hash *common.Hash `json:"hash"`
 	}
-	if err := json.Unmarshal(blockResult, &block); err != nil || block.Hash == nil {
-		return identity, fmt.Errorf("eth_getBlockByNumber returned invalid genesis block: %v", err)
+	if err := json.Unmarshal(blockResult, &block); err != nil {
+		return identity, fmt.Errorf("eth_getBlockByNumber returned invalid genesis block: %w", err)
+	}
+	if block.Hash == nil {
+		return identity, fmt.Errorf("eth_getBlockByNumber returned missing genesis hash")
 	}
 	identity.genesis = *block.Hash
 
@@ -71,8 +74,11 @@ func inspectEndpoint(ctx context.Context, client *rpc.Client) (endpointIdentity,
 	if err != nil {
 		return identity, err
 	}
-	if err := json.Unmarshal(versionResult, &identity.metadata.ClientVersion); err != nil || strings.TrimSpace(identity.metadata.ClientVersion) == "" {
-		return identity, fmt.Errorf("web3_clientVersion returned invalid version: %v", err)
+	if err := json.Unmarshal(versionResult, &identity.metadata.ClientVersion); err != nil {
+		return identity, fmt.Errorf("web3_clientVersion returned invalid version: %w", err)
+	}
+	if strings.TrimSpace(identity.metadata.ClientVersion) == "" {
+		return identity, fmt.Errorf("web3_clientVersion returned empty client version")
 	}
 	return identity, nil
 }

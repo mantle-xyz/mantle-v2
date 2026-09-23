@@ -3,7 +3,6 @@ package preconf
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"math/big"
 	"strings"
 	"time"
@@ -153,64 +152,6 @@ func (r *Runner) l2BlockNumber(ctx context.Context) uint64 {
 	}
 	v, _ := hexutil.DecodeUint64(h)
 	return v
-}
-
-// sendL1Deposit submits a Mantle depositTransaction to the L1 portal targeting `to` on L2 with the
-// given L2 calldata (mnt value 0 → no approve needed), and waits for the L1 receipt. Reusable by any
-// scenario that needs a derived L2 deposit (A18). Returns error on build/send/revert.
-func (r *Runner) sendL1Deposit(ctx context.Context, to common.Address, l2Calldata []byte, l2GasLimit uint64) error {
-	l1 := rpc.NewClient(r.cfg.L1URL, "l1", 30*time.Second)
-	cid := l1.Call(ctx, rpc.NewRequest("eth_chainId", nil))
-	if cid.Error != nil || cid.Response == nil || cid.Response.Error != nil {
-		return fmt.Errorf("L1 (%s) unreachable", r.cfg.L1URL)
-	}
-	var cidHex string
-	_ = json.Unmarshal(cid.Response.Result, &cidHex)
-	l1ChainID, err := hexutil.DecodeBig(cidHex)
-	if err != nil {
-		return fmt.Errorf("L1 chainId: %w", err)
-	}
-	l1b, err := tx.NewBuilder(l1ChainID, r.cfg.FunderKey)
-	if err != nil {
-		return err
-	}
-	parsed, err := abi.JSON(strings.NewReader(depositTxABI))
-	if err != nil {
-		return err
-	}
-	calldata, err := parsed.Pack("depositTransaction",
-		big.NewInt(0), big.NewInt(0), to, big.NewInt(0), l2GasLimit, false, l2Calldata)
-	if err != nil {
-		return err
-	}
-	portal := common.HexToAddress(optimismPortal)
-	n, err := r.tester.GetNonce(ctx, l1, l1b.Address())
-	if err != nil {
-		return err
-	}
-	unsigned, err := l1b.BuildLegacyTx(&tx.TxParams{
-		Nonce: n, GasPrice: big.NewInt(1_000_000_000_000), Gas: 1_000_000,
-		To: &portal, Value: big.NewInt(0), Data: calldata,
-	})
-	if err != nil {
-		return err
-	}
-	signed, err := l1b.SignTx(unsigned)
-	if err != nil {
-		return err
-	}
-	l1Hash, err := r.tester.SendRawTransaction(ctx, l1, signed, "l1-deposit")
-	if err != nil {
-		return err
-	}
-	rcpt, err := r.tester.WaitForReceipt(ctx, l1, l1Hash, 60*time.Second)
-	if err != nil {
-		return err
-	}
-	if rcpt.Status != 1 {
-		return fmt.Errorf("L1 depositTransaction reverted (status 0) at portal %s", optimismPortal)
-	}
-	return nil
 }
 
 // findUserDeposit scans L2 blocks (fromBlock+1 .. head) for a deposit tx (type 0x7e) whose `to` is
