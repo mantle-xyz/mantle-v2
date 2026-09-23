@@ -225,4 +225,3 @@
     "description": "获取区块的存储范围（需要 5 个参数：blockHash, txIndex, address, startKey, maxResult）。reth 要求第一个参数必须是区块哈希，使用 latest_block_hash 模板变量"
   }
 ]
-
