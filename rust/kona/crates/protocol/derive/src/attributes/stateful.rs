@@ -13,7 +13,8 @@ use alloy_rpc_types_engine::PayloadAttributes;
 use async_trait::async_trait;
 use kona_genesis::{L1ChainConfig, RollupConfig};
 // [MANTLE] Skip every OP hardfork upgrade-tx bundle; emit only the Mantle ARSIA bundle.
-use kona_hardforks::{Hardfork, Hardforks, Interop, MantleHardforks};
+// `Interop` is gone: upstream replaced that bundle with `Hardforks::LAGOON`.
+use kona_hardforks::{Hardfork, Hardforks, MantleHardforks};
 use kona_interop::DependencySet;
 use kona_protocol::{
     DEPOSIT_EVENT_ABI_HASH, L1BlockInfoTx, L2BlockInfo, Predeploys, decode_deposit,
@@ -36,7 +37,7 @@ where
     /// The L1 receipts fetcher.
     receipts_fetcher: L1P,
     /// Optional interop dependency set. Required when interop is scheduled for the
-    /// chain (`rollup_cfg.hardforks.interop_time.is_some()`); ignored otherwise.
+    /// chain (`rollup_cfg.hardforks.lagoon_time.is_some()`); ignored otherwise.
     dependency_set: Option<Arc<DependencySet>>,
 }
 
@@ -49,7 +50,7 @@ where
     ///
     /// # Panics
     ///
-    /// Panics if `rcfg.hardforks.interop_time.is_some() && dependency_set.is_none()`.
+    /// Panics if `rcfg.hardforks.lagoon_time.is_some() && dependency_set.is_none()`.
     /// A chain that has interop scheduled must have a dependency set provided,
     /// otherwise the builder would silently diverge from op-node on interop
     /// activation (emitting different number of upgrade transactions, or the wrong
@@ -62,11 +63,11 @@ where
         dependency_set: Option<Arc<DependencySet>>,
     ) -> Self {
         assert!(
-            !(rcfg.hardforks.interop_time.is_some() && dependency_set.is_none()),
+            !(rcfg.hardforks.lagoon_time.is_some() && dependency_set.is_none()),
             "StatefulAttributesBuilder: interop is scheduled for this chain \
-             (interop_time = {:?}) but no DependencySet was provided. \
+             (lagoon_time = {:?}) but no DependencySet was provided. \
              This would silently diverge from op-node on interop activation.",
-            rcfg.hardforks.interop_time,
+            rcfg.hardforks.lagoon_time,
         );
         Self {
             rollup_cfg: rcfg,
@@ -94,7 +95,7 @@ where
 
         let mut sys_config = self
             .config_fetcher
-            .system_config_by_number(l2_parent.block_info.number, self.rollup_cfg.clone())
+            .system_config_by_l2_hash(l2_parent.block_info.hash, self.rollup_cfg.clone())
             .await
             .map_err(Into::into)?;
 
@@ -170,8 +171,23 @@ where
         let mut upgrade_gas: u64 = 0;
 
         if self.rollup_cfg.is_mantle() {
-            // [MANTLE] Mantle chains skip every OP hardfork upgrade-tx bundle and only emit
-            // the Arsia bundle at its activation block.
+            // [MANTLE] Mantle chains skip every OP hardfork upgrade-tx bundle and emit only
+            // their own. Mirrors op-node's `attributes.go`, which tests Skadi and Arsia
+            // independently and appends in that order — both fire if a chain happens to
+            // activate them at the same timestamp.
+            //
+            // op-node's gate is `IsX(t) && t >= BlockTime && !IsX(t - BlockTime)`; since
+            // `next_l2_time == parent.timestamp + block_time`, the form below is equivalent
+            // and cannot underflow near genesis.
+            if self.rollup_cfg.is_mantle_skadi_active(next_l2_time) &&
+                !self.rollup_cfg.is_mantle_skadi_active(l2_parent.block_info.timestamp)
+            {
+                // Deploys EIP-4788 + EIP-2935, which Mantle skipped along with the Ecotone and
+                // Isthmus bundles. Neither adds to the block gas limit (op-node appends them
+                // without touching `gasLimit`).
+                upgrade_transactions.append(&mut MantleHardforks::SKADI.txs().collect());
+            }
+
             if self.rollup_cfg.is_mantle_arsia_active(next_l2_time) &&
                 !self.rollup_cfg.is_mantle_arsia_active(l2_parent.block_info.timestamp)
             {
@@ -198,29 +214,40 @@ where
             {
                 upgrade_transactions.append(&mut Hardforks::JOVIAN.txs().collect());
             }
+            // Starting with Karst, upgrade transactions carry their own gas budget that is
+            // added to the block gas limit at the fork activation block.
             if self.rollup_cfg.is_karst_active(next_l2_time) &&
                 !self.rollup_cfg.is_karst_active(l2_parent.block_info.timestamp)
             {
                 upgrade_transactions.append(&mut Hardforks::KARST.txs().collect());
                 upgrade_gas += Hardforks::KARST.upgrade_gas();
             }
-            if self.rollup_cfg.is_interop_active(next_l2_time) &&
-                !self.rollup_cfg.is_interop_active(l2_parent.block_info.timestamp)
+            // [MANTLE] Upstream replaced the Interop bundle — plus the CrossL2Inbox pair that
+            // was emitted when the dependency set had more than one chain — with Lagoon's
+            // NUT-bundle form. Adopted verbatim from upstream: this whole `else` branch is
+            // unreachable on Mantle chains, which take the `is_mantle()` path above.
+            if self.rollup_cfg.is_lagoon_active(next_l2_time) &&
+                !self.rollup_cfg.is_lagoon_active(l2_parent.block_info.timestamp)
             {
-                // Base 7 txs: always emitted on interop activation.
-                upgrade_transactions.append(&mut Hardforks::INTEROP.txs().collect());
-
-                // CrossL2Inbox pair: only emitted when the dependency set has >1 chains.
-                // Matches op-node's gate at op-node/rollup/derive/attributes.go:178.
+                // The NUT bundle carries the fork's predeploy upgrades, so it executes on every
+                // chain activating Lagoon. The setFeature and ETHLiquidity funding wrappers are
+                // interop-specific: they additionally require the interop feature, and a
+                // multi-chain dependency set, which is what signals the L2ContractsManager to
+                // activate the Interop-gated contracts. Matches op-node's gate at
+                // op-node/rollup/derive/attributes.go.
                 // `dependency_set` is guaranteed Some(_) here because the constructor
-                // panics when interop_time.is_some() && dependency_set.is_none(), and
-                // we only reach this branch when interop is active.
+                // panics when lagoon_time.is_some() && dependency_set.is_none().
                 let dependency_set = self.dependency_set.as_ref().expect(
-                    "dependency_set must be Some when interop is active — constructor invariant",
+                    "dependency_set must be Some when Lagoon is active — constructor invariant",
                 );
-                if dependency_set.dependencies.len() > 1 {
-                    upgrade_transactions.extend(Interop::cross_l2_inbox_txs());
-                }
+                let activate_interop_contracts = self.rollup_cfg.is_interop_active(next_l2_time) &&
+                    dependency_set.dependencies.len() > 1;
+                upgrade_transactions.append(
+                    &mut Hardforks::LAGOON.txs_for_activation(activate_interop_contracts).collect(),
+                );
+                // The gas reservation does not vary with the dependency set, only the tx set
+                // does. See Hardforks::LAGOON::upgrade_gas.
+                upgrade_gas += Hardforks::LAGOON.upgrade_gas();
             }
         }
 
@@ -245,11 +272,19 @@ where
         txs.extend(deposit_transactions);
         txs.extend(upgrade_transactions);
 
-        let withdrawals = self.rollup_cfg.is_canyon_active(next_l2_time).then(Vec::default);
+        // [MANTLE] op-node gates these on `IsCanyon(t) || IsMantleSkadi(t)` and
+        // `IsEcotone(t) || IsMantleSkadi(t)` respectively (attributes.go). The Skadi disjunct is
+        // not redundant on a Mantle chain: `AlignOpWithMantle` pins every OP fork to
+        // `mantle_arsia_time`, so between Skadi and Arsia both `is_canyon_active` and
+        // `is_ecotone_active` are false while op-node still sets an empty withdrawals list and a
+        // parent beacon block root. On Mantle mainnet that window is months long, and omitting
+        // either field changes the block hash.
+        let mantle_skadi = self.rollup_cfg.is_mantle_skadi_active(next_l2_time);
 
-        let parent_beacon_root = self
-            .rollup_cfg
-            .is_ecotone_active(next_l2_time)
+        let withdrawals =
+            (self.rollup_cfg.is_canyon_active(next_l2_time) || mantle_skadi).then(Vec::default);
+
+        let parent_beacon_root = (self.rollup_cfg.is_ecotone_active(next_l2_time) || mantle_skadi)
             .then(|| l1_header.parent_beacon_block_root.unwrap_or_default());
 
         Ok(OpPayloadAttributes {
@@ -260,6 +295,7 @@ where
                 parent_beacon_block_root: parent_beacon_root,
                 withdrawals,
                 slot_number: None,
+                target_gas_limit: None,
             },
             transactions: Some(txs),
             no_tx_pool: Some(true),
@@ -323,7 +359,7 @@ mod tests {
     use alloc::vec;
     use alloy_consensus::Header;
     use alloy_primitives::{B256, Bytes, Log, LogData, U64, U256, address};
-    use kona_genesis::{CONFIG_UPDATE_TOPIC, HardForkConfig, SystemConfig};
+    use kona_genesis::{CONFIG_UPDATE_TOPIC, HardForkConfig, MantleHardForkConfig, SystemConfig};
     use kona_protocol::{BlockInfo, DepositError};
     use kona_registry::L1Config;
 
@@ -431,7 +467,7 @@ mod tests {
         let l1_cfg = Arc::new(L1Config::sepolia().into());
         let l2_number = 1;
         let mut fetcher = TestSystemConfigL2Fetcher::default();
-        fetcher.insert(l2_number, SystemConfig::default());
+        fetcher.insert(B256::ZERO, SystemConfig::default());
         let mut provider = TestChainProvider::default();
         let header = Header::default();
         let hash = header.hash_slow();
@@ -457,7 +493,7 @@ mod tests {
         let l1_cfg = Arc::new(L1Config::sepolia().into());
         let l2_number = 1;
         let mut fetcher = TestSystemConfigL2Fetcher::default();
-        fetcher.insert(l2_number, SystemConfig::default());
+        fetcher.insert(B256::ZERO, SystemConfig::default());
         let mut provider = TestChainProvider::default();
         let header = Header::default();
         let hash = header.hash_slow();
@@ -484,7 +520,7 @@ mod tests {
         let l1_cfg = Arc::new(L1Config::sepolia().into());
         let l2_number = 1;
         let mut fetcher = TestSystemConfigL2Fetcher::default();
-        fetcher.insert(l2_number, SystemConfig::default());
+        fetcher.insert(B256::ZERO, SystemConfig::default());
         let mut provider = TestChainProvider::default();
         let header = Header { timestamp, ..Default::default() };
         let hash = header.hash_slow();
@@ -516,7 +552,7 @@ mod tests {
         let l1_cfg = Arc::new(L1Config::sepolia().into());
         let l2_number = 1;
         let mut fetcher = TestSystemConfigL2Fetcher::default();
-        fetcher.insert(l2_number, SystemConfig::default());
+        fetcher.insert(B256::ZERO, SystemConfig::default());
         let mut provider = TestChainProvider::default();
         let header = Header { timestamp, ..Default::default() };
         let prev_randao = header.mix_hash;
@@ -544,6 +580,7 @@ mod tests {
                 parent_beacon_block_root: None,
                 withdrawals: None,
                 slot_number: None,
+                target_gas_limit: None,
             },
             transactions: payload.transactions.clone(),
             no_tx_pool: Some(true),
@@ -569,7 +606,7 @@ mod tests {
         let l1_cfg = Arc::new(L1Config::sepolia().into());
         let l2_number = 1;
         let mut fetcher = TestSystemConfigL2Fetcher::default();
-        fetcher.insert(l2_number, SystemConfig::default());
+        fetcher.insert(B256::ZERO, SystemConfig::default());
         let mut provider = TestChainProvider::default();
         let header = Header { timestamp, ..Default::default() };
         let prev_randao = header.mix_hash;
@@ -597,6 +634,7 @@ mod tests {
                 parent_beacon_block_root: None,
                 withdrawals: Some(Vec::default()),
                 slot_number: None,
+                target_gas_limit: None,
             },
             transactions: payload.transactions.clone(),
             no_tx_pool: Some(true),
@@ -622,7 +660,7 @@ mod tests {
         let l1_cfg = Arc::new(L1Config::sepolia().into());
         let l2_number = 1;
         let mut fetcher = TestSystemConfigL2Fetcher::default();
-        fetcher.insert(l2_number, SystemConfig::default());
+        fetcher.insert(B256::ZERO, SystemConfig::default());
         let mut provider = TestChainProvider::default();
         let header = Header { timestamp, ..Default::default() };
         let parent_beacon_block_root = Some(header.parent_beacon_block_root.unwrap_or_default());
@@ -651,6 +689,7 @@ mod tests {
                 parent_beacon_block_root,
                 withdrawals: Some(vec![]),
                 slot_number: None,
+                target_gas_limit: None,
             },
             transactions: payload.transactions.clone(),
             no_tx_pool: Some(true),
@@ -676,7 +715,7 @@ mod tests {
         let l1_cfg = Arc::new(L1Config::sepolia().into());
         let l2_number = 1;
         let mut fetcher = TestSystemConfigL2Fetcher::default();
-        fetcher.insert(l2_number, SystemConfig::default());
+        fetcher.insert(B256::ZERO, SystemConfig::default());
         let mut provider = TestChainProvider::default();
         let header = Header { timestamp, ..Default::default() };
         let prev_randao = header.mix_hash;
@@ -704,6 +743,7 @@ mod tests {
                 parent_beacon_block_root: Some(B256::ZERO),
                 withdrawals: Some(vec![]),
                 slot_number: None,
+                target_gas_limit: None,
             },
             transactions: payload.transactions.clone(),
             no_tx_pool: Some(true),
@@ -762,7 +802,7 @@ mod tests {
 
         let l2_number = 1u64;
         let mut fetcher = TestSystemConfigL2Fetcher::default();
-        fetcher.insert(l2_number, SystemConfig::default());
+        fetcher.insert(B256::ZERO, SystemConfig::default());
 
         let mut builder =
             StatefulAttributesBuilder::new(cfg.clone(), l1_cfg, fetcher, provider, None);
@@ -788,13 +828,32 @@ mod tests {
     }
 
     // ---------------------------------------------------------------------------
-    // Interop activation gating tests (issue #19311)
+    // Interop activation gating tests
     //
-    // These tests verify that kona's interop activation tx stream byte-matches
-    // op-node's output: 7 base txs always, + 2 CrossL2Inbox txs only when the
-    // dependency set has >1 chain. Go reference: op-node/rollup/derive/
-    // attributes.go:171-185.
+    // The Interop bundle executes for all chains. Multi-chain dependency sets
+    // additionally emit the setFeature and ETHLiquidity funding wrappers. Go reference:
+    // op-node/rollup/derive/attributes.go.
     // ---------------------------------------------------------------------------
+
+    /// Hardforks through Karst active at 50 and Lagoon at 102. Everything before Lagoon must
+    /// already be active at the parent block: a fork left unscheduled activates at the same block
+    /// as Lagoon and adds its own upgrade gas on top.
+    fn hardforks_lagoon_at_102() -> HardForkConfig {
+        HardForkConfig {
+            regolith_time: Some(50),
+            canyon_time: Some(50),
+            delta_time: Some(50),
+            ecotone_time: Some(50),
+            fjord_time: Some(50),
+            granite_time: Some(50),
+            holocene_time: Some(50),
+            isthmus_time: Some(50),
+            jovian_time: Some(50),
+            karst_time: Some(50),
+            lagoon_time: Some(102),
+            ..Default::default()
+        }
+    }
 
     fn build_interop_dep_set(chain_count: usize) -> Arc<DependencySet> {
         use alloc::collections::BTreeMap;
@@ -807,33 +866,20 @@ mod tests {
         Arc::new(DependencySet { dependencies, override_message_expiry_window: None })
     }
 
-    /// Interop-activated, single-chain `dep-set` → base 7 interop txs, no `CrossL2Inbox` pair.
+    /// Interop-activated, single-chain `dep-set` → bundle txs only.
     #[tokio::test]
     async fn test_prepare_payload_with_interop_single_chain() {
         let block_time = 2;
         let timestamp = 100;
         let cfg = Arc::new(RollupConfig {
             block_time,
-            hardforks: HardForkConfig {
-                regolith_time: Some(50),
-                canyon_time: Some(50),
-                delta_time: Some(50),
-                ecotone_time: Some(50),
-                fjord_time: Some(50),
-                granite_time: Some(50),
-                holocene_time: Some(50),
-                isthmus_time: Some(50),
-                jovian_time: Some(50),
-                karst_time: Some(50),
-                interop_time: Some(102),
-                ..Default::default()
-            },
+            hardforks: hardforks_lagoon_at_102(),
             ..Default::default()
         });
         let l1_cfg = Arc::new(L1Config::sepolia().into());
         let l2_number = 1;
         let mut fetcher = TestSystemConfigL2Fetcher::default();
-        fetcher.insert(l2_number, SystemConfig::default());
+        fetcher.insert(B256::ZERO, SystemConfig::default());
         let mut provider = TestChainProvider::default();
         let header = Header { timestamp, ..Default::default() };
         let hash = header.hash_slow();
@@ -853,37 +899,25 @@ mod tests {
             seq_num: 0,
         };
         let payload = builder.prepare_payload_attributes(l2_parent, epoch).await.unwrap();
-        // 1 L1InfoTx + 7 interop base txs + 0 CrossL2Inbox txs = 8.
-        assert_eq!(payload.transactions.unwrap().len(), 1 + 7);
+        // 1 L1InfoTx + 28 bundle txs. Single-chain superchains skip only the
+        // setFeature and ETHLiquidity funding wrappers.
+        assert_eq!(payload.transactions.unwrap().len(), 1 + 28);
     }
 
-    /// Interop-activated, multi-chain `dep-set` → base 7 + `CrossL2Inbox` 2 = 9 upgrade txs.
+    /// Interop-activated, multi-chain `dep-set` → full bundle wrapped with setFeature + funding.
     #[tokio::test]
     async fn test_prepare_payload_with_interop_multi_chain() {
         let block_time = 2;
         let timestamp = 100;
         let cfg = Arc::new(RollupConfig {
             block_time,
-            hardforks: HardForkConfig {
-                regolith_time: Some(50),
-                canyon_time: Some(50),
-                delta_time: Some(50),
-                ecotone_time: Some(50),
-                fjord_time: Some(50),
-                granite_time: Some(50),
-                holocene_time: Some(50),
-                isthmus_time: Some(50),
-                jovian_time: Some(50),
-                karst_time: Some(50),
-                interop_time: Some(102),
-                ..Default::default()
-            },
+            hardforks: hardforks_lagoon_at_102(),
             ..Default::default()
         });
         let l1_cfg = Arc::new(L1Config::sepolia().into());
         let l2_number = 1;
         let mut fetcher = TestSystemConfigL2Fetcher::default();
-        fetcher.insert(l2_number, SystemConfig::default());
+        fetcher.insert(B256::ZERO, SystemConfig::default());
         let mut provider = TestChainProvider::default();
         let header = Header { timestamp, ..Default::default() };
         let hash = header.hash_slow();
@@ -903,139 +937,244 @@ mod tests {
             seq_num: 0,
         };
         let payload = builder.prepare_payload_attributes(l2_parent, epoch).await.unwrap();
-        // 1 L1InfoTx + 7 interop base txs + 2 CrossL2Inbox txs = 10.
-        assert_eq!(payload.transactions.unwrap().len(), 1 + 7 + 2);
+        // 1 L1InfoTx + 30 interop txs (1 setFeature + 28 bundle + 1 ETHLiquidity funding).
+        assert_eq!(payload.transactions.unwrap().len(), 1 + 30);
     }
 
-    /// Single-chain interop: ordering matches Go — base txs [0..7] equal the
-    /// golden `interop_base_tx_*.hex` files.
+    /// The Lagoon activation block reserves the same upgrade gas for every dependency-set size.
+    ///
+    /// The system-config reconstruction subtracts [`Hardforks::LAGOON::upgrade_gas`] again at the
+    /// next block, and it cannot see the dependency set — so an amount that varied with the
+    /// dependency set would leave the reconstructed gas limit wrong for one of the two cases.
     #[tokio::test]
-    async fn test_prepare_payload_with_interop_base_tx_ordering_matches_go() {
-        use alloy_primitives::hex;
-        let block_time = 2;
-        let timestamp = 100;
-        let cfg = Arc::new(RollupConfig {
-            block_time,
-            hardforks: HardForkConfig {
-                regolith_time: Some(50),
-                canyon_time: Some(50),
-                delta_time: Some(50),
-                ecotone_time: Some(50),
-                fjord_time: Some(50),
-                granite_time: Some(50),
-                holocene_time: Some(50),
-                isthmus_time: Some(50),
-                jovian_time: Some(50),
-                karst_time: Some(50),
-                interop_time: Some(102),
+    async fn test_interop_activation_gas_is_independent_of_dependency_set() {
+        for chain_count in [1, 2] {
+            let block_time = 2;
+            let timestamp = 100;
+            let cfg = Arc::new(RollupConfig {
+                block_time,
+                hardforks: hardforks_lagoon_at_102(),
                 ..Default::default()
-            },
-            ..Default::default()
-        });
-        let l1_cfg = Arc::new(L1Config::sepolia().into());
-        let l2_number = 1;
-        let mut fetcher = TestSystemConfigL2Fetcher::default();
-        fetcher.insert(l2_number, SystemConfig::default());
-        let mut provider = TestChainProvider::default();
-        let header = Header { timestamp, ..Default::default() };
-        let hash = header.hash_slow();
-        provider.insert_header(hash, header);
-        let dep_set = build_interop_dep_set(1);
-        let mut builder =
-            StatefulAttributesBuilder::new(cfg, l1_cfg, fetcher, provider, Some(dep_set));
-        let epoch = BlockNumHash { hash, number: l2_number };
-        let l2_parent = L2BlockInfo {
-            block_info: BlockInfo {
-                hash: B256::ZERO,
-                number: l2_number,
-                timestamp,
-                parent_hash: hash,
-            },
-            l1_origin: BlockNumHash { hash, number: l2_number },
-            seq_num: 0,
-        };
-        let payload = builder.prepare_payload_attributes(l2_parent, epoch).await.unwrap();
-        let txs = payload.transactions.unwrap();
-        let expected: [&str; 7] = [
-            include_str!("../../../hardforks/src/bytecode/interop_base_tx_0.hex"),
-            include_str!("../../../hardforks/src/bytecode/interop_base_tx_1.hex"),
-            include_str!("../../../hardforks/src/bytecode/interop_base_tx_2.hex"),
-            include_str!("../../../hardforks/src/bytecode/interop_base_tx_3.hex"),
-            include_str!("../../../hardforks/src/bytecode/interop_base_tx_4.hex"),
-            include_str!("../../../hardforks/src/bytecode/interop_base_tx_5.hex"),
-            include_str!("../../../hardforks/src/bytecode/interop_base_tx_6.hex"),
-        ];
-        for (i, expected_hex) in expected.iter().enumerate() {
-            let expected_bytes: Bytes = hex::decode(expected_hex.replace('\n', "")).unwrap().into();
-            // txs[0] is the L1 info tx; interop base txs start at txs[1].
-            assert_eq!(txs[1 + i], expected_bytes, "interop base tx {i} diverges from Go");
+            });
+            let l1_cfg = Arc::new(L1Config::sepolia().into());
+            let l2_number = 1;
+            let sys_config = SystemConfig::default();
+            let mut fetcher = TestSystemConfigL2Fetcher::default();
+            fetcher.insert(B256::ZERO, sys_config);
+            let mut provider = TestChainProvider::default();
+            let header = Header { timestamp, ..Default::default() };
+            let hash = header.hash_slow();
+            provider.insert_header(hash, header);
+            let dep_set = build_interop_dep_set(chain_count);
+            let mut builder =
+                StatefulAttributesBuilder::new(cfg, l1_cfg, fetcher, provider, Some(dep_set));
+            let epoch = BlockNumHash { hash, number: l2_number };
+            let l2_parent = L2BlockInfo {
+                block_info: BlockInfo {
+                    hash: B256::ZERO,
+                    number: l2_number,
+                    timestamp,
+                    parent_hash: hash,
+                },
+                l1_origin: BlockNumHash { hash, number: l2_number },
+                seq_num: 0,
+            };
+            let payload = builder.prepare_payload_attributes(l2_parent, epoch).await.unwrap();
+            assert_eq!(
+                payload.gas_limit,
+                Some(sys_config.gas_limit + Hardforks::LAGOON.upgrade_gas()),
+                "dependency set of {chain_count} chain(s): activation-block gas limit must add the \
+                 canonical Lagoon upgrade gas"
+            );
         }
     }
 
-    /// Multi-chain interop: `CrossL2Inbox` pair appended at tail (positions 8..10),
-    /// matching op-node's ordering.
-    #[tokio::test]
-    async fn test_prepare_payload_with_interop_multi_chain_appends_cross_l2_inbox_at_tail() {
-        use alloy_primitives::hex;
-        let block_time = 2;
-        let timestamp = 100;
-        let cfg = Arc::new(RollupConfig {
-            block_time,
-            hardforks: HardForkConfig {
-                regolith_time: Some(50),
-                canyon_time: Some(50),
-                delta_time: Some(50),
-                ecotone_time: Some(50),
-                fjord_time: Some(50),
-                granite_time: Some(50),
-                holocene_time: Some(50),
-                isthmus_time: Some(50),
-                jovian_time: Some(50),
-                karst_time: Some(50),
-                interop_time: Some(102),
-                ..Default::default()
-            },
-            ..Default::default()
-        });
+    // ---------------------------------------------------------------------------
+    // [MANTLE] Skadi / Arsia upgrade-transaction emission.
+    //
+    // Go reference: op-node/rollup/derive/attributes.go, which tests
+    // `IsMantleSkadiActivationBlock` and `IsMantleArsiaActivationBlock` independently and
+    // appends both bundles after the deposits, Skadi first.
+    // ---------------------------------------------------------------------------
+
+    /// Drives one block on a Mantle chain and returns the resulting transaction count.
+    ///
+    /// `parent_timestamp` is the parent block's time; the built block is at
+    /// `parent_timestamp + block_time`, which is what the activation gates key off.
+    async fn mantle_payload_tx_count(
+        mantle_hardforks: MantleHardForkConfig,
+        parent_timestamp: u64,
+        block_time: u64,
+    ) -> (usize, Option<u64>, u64) {
+        let cfg = Arc::new(RollupConfig { block_time, mantle_hardforks, ..Default::default() });
         let l1_cfg = Arc::new(L1Config::sepolia().into());
         let l2_number = 1;
+        let sys_config = SystemConfig::default();
         let mut fetcher = TestSystemConfigL2Fetcher::default();
-        fetcher.insert(l2_number, SystemConfig::default());
+        fetcher.insert(B256::ZERO, sys_config);
         let mut provider = TestChainProvider::default();
-        let header = Header { timestamp, ..Default::default() };
+        let header = Header { timestamp: parent_timestamp, ..Default::default() };
         let hash = header.hash_slow();
         provider.insert_header(hash, header);
-        let dep_set = build_interop_dep_set(2);
-        let mut builder =
-            StatefulAttributesBuilder::new(cfg, l1_cfg, fetcher, provider, Some(dep_set));
+        let mut builder = StatefulAttributesBuilder::new(cfg, l1_cfg, fetcher, provider, None);
         let epoch = BlockNumHash { hash, number: l2_number };
         let l2_parent = L2BlockInfo {
             block_info: BlockInfo {
                 hash: B256::ZERO,
                 number: l2_number,
-                timestamp,
+                timestamp: parent_timestamp,
                 parent_hash: hash,
             },
             l1_origin: BlockNumHash { hash, number: l2_number },
             seq_num: 0,
         };
         let payload = builder.prepare_payload_attributes(l2_parent, epoch).await.unwrap();
-        let txs = payload.transactions.unwrap();
-        let expected_0: Bytes = hex::decode(
-            include_str!("../../../hardforks/src/bytecode/interop_cross_l2_inbox_tx_0.hex")
-                .replace('\n', ""),
-        )
-        .unwrap()
-        .into();
-        let expected_1: Bytes = hex::decode(
-            include_str!("../../../hardforks/src/bytecode/interop_cross_l2_inbox_tx_1.hex")
-                .replace('\n', ""),
-        )
-        .unwrap()
-        .into();
-        // txs[0]=L1Info, txs[1..=7]=base, txs[8..=9]=CrossL2Inbox.
-        assert_eq!(txs[8], expected_0);
-        assert_eq!(txs[9], expected_1);
+        (payload.transactions.unwrap().len(), payload.gas_limit, sys_config.gas_limit)
+    }
+
+    /// The Skadi activation block carries the two EIP-4788 / EIP-2935 deployments, and only
+    /// that block does. Before this was wired up kona emitted nothing at all, so a Mantle chain
+    /// crossing Skadi derived a block op-node would never produce.
+    #[tokio::test]
+    async fn test_mantle_skadi_activation_block_emits_upgrade_txs() {
+        let block_time = 2;
+        let hardforks =
+            MantleHardForkConfig { mantle_skadi_time: Some(102), ..MantleHardForkConfig::NONE };
+
+        // Parent at 100 -> block at 102 == activation.
+        let (count, _, _) = mantle_payload_tx_count(hardforks, 100, block_time).await;
+        assert_eq!(count, 1 + 2, "activation block: 1 L1InfoTx + 2 Skadi deployments");
+
+        // Parent at 102 -> block at 104: already active, nothing more to emit.
+        let (count, _, _) = mantle_payload_tx_count(hardforks, 102, block_time).await;
+        assert_eq!(count, 1, "post-activation block must carry the L1InfoTx only");
+
+        // Parent at 98 -> block at 100: not yet active.
+        let (count, _, _) = mantle_payload_tx_count(hardforks, 98, block_time).await;
+        assert_eq!(count, 1, "pre-activation block must carry the L1InfoTx only");
+    }
+
+    /// Skadi's deployments do not extend the block gas limit — op-node appends them without
+    /// touching `gasLimit`, and the system-config reconstruction at the next block would
+    /// otherwise subtract an amount that was never added.
+    #[tokio::test]
+    async fn test_mantle_skadi_activation_adds_no_upgrade_gas() {
+        let hardforks =
+            MantleHardForkConfig { mantle_skadi_time: Some(102), ..MantleHardForkConfig::NONE };
+        let (_, gas_limit, sys_gas_limit) = mantle_payload_tx_count(hardforks, 100, 2).await;
+        assert_eq!(gas_limit, Some(sys_gas_limit));
+    }
+
+    /// A chain that schedules Skadi and Arsia at the same timestamp emits both bundles, Skadi
+    /// first. op-node's two `if`s are independent, so this is reachable — an `else if` here
+    /// would silently drop seven Arsia deposits.
+    #[tokio::test]
+    async fn test_mantle_skadi_and_arsia_at_the_same_block_emit_both_bundles() {
+        let hardforks = MantleHardForkConfig {
+            mantle_skadi_time: Some(102),
+            mantle_arsia_time: Some(102),
+            ..MantleHardForkConfig::NONE
+        };
+        let (count, _, _) = mantle_payload_tx_count(hardforks, 100, 2).await;
+        assert_eq!(count, 1 + 2 + 7, "1 L1InfoTx + 2 Skadi + 7 Arsia");
+    }
+
+    /// In the `[Skadi, Arsia)` window op-node sets an empty withdrawals list and a parent
+    /// beacon block root even though every OP fork is still inactive (they are pinned to
+    /// `mantle_arsia_time`). kona gated these on Canyon/Ecotone alone and produced `None` for
+    /// both — a different block hash for every block in a months-long window.
+    #[tokio::test]
+    async fn test_mantle_skadi_sets_withdrawals_and_beacon_root_before_arsia() {
+        let block_time = 2;
+        let cfg = Arc::new(RollupConfig {
+            block_time,
+            mantle_hardforks: MantleHardForkConfig {
+                mantle_skadi_time: Some(100),
+                // Arsia far in the future: every OP fork stays inactive for this block.
+                mantle_arsia_time: Some(10_000),
+                ..MantleHardForkConfig::NONE
+            },
+            ..Default::default()
+        });
+        assert!(!cfg.is_canyon_active(102), "test premise: Canyon must still be inactive");
+        assert!(!cfg.is_ecotone_active(102), "test premise: Ecotone must still be inactive");
+
+        let l1_cfg = Arc::new(L1Config::sepolia().into());
+        let mut fetcher = TestSystemConfigL2Fetcher::default();
+        fetcher.insert(B256::ZERO, SystemConfig::default());
+        let mut provider = TestChainProvider::default();
+        let beacon_root = B256::repeat_byte(0x5a);
+        let header = Header {
+            timestamp: 100,
+            parent_beacon_block_root: Some(beacon_root),
+            ..Default::default()
+        };
+        let hash = header.hash_slow();
+        provider.insert_header(hash, header);
+        let mut builder = StatefulAttributesBuilder::new(cfg, l1_cfg, fetcher, provider, None);
+        let epoch = BlockNumHash { hash, number: 1 };
+        let l2_parent = L2BlockInfo {
+            block_info: BlockInfo {
+                hash: B256::ZERO,
+                number: 1,
+                timestamp: 100,
+                parent_hash: hash,
+            },
+            l1_origin: BlockNumHash { hash, number: 1 },
+            seq_num: 0,
+        };
+        let payload = builder.prepare_payload_attributes(l2_parent, epoch).await.unwrap();
+
+        assert_eq!(
+            payload.payload_attributes.withdrawals,
+            Some(Vec::default()),
+            "Skadi must produce an empty withdrawals list, not None",
+        );
+        assert_eq!(
+            payload.payload_attributes.parent_beacon_block_root,
+            Some(beacon_root),
+            "Skadi must carry the L1 parent beacon block root",
+        );
+    }
+
+    /// Before Skadi, both fields stay absent — the disjunct must not turn them on early.
+    #[tokio::test]
+    async fn test_mantle_pre_skadi_has_no_withdrawals_or_beacon_root() {
+        let cfg = Arc::new(RollupConfig {
+            block_time: 2,
+            mantle_hardforks: MantleHardForkConfig {
+                mantle_skadi_time: Some(1_000),
+                mantle_arsia_time: Some(10_000),
+                ..MantleHardForkConfig::NONE
+            },
+            ..Default::default()
+        });
+        let l1_cfg = Arc::new(L1Config::sepolia().into());
+        let mut fetcher = TestSystemConfigL2Fetcher::default();
+        fetcher.insert(B256::ZERO, SystemConfig::default());
+        let mut provider = TestChainProvider::default();
+        let header = Header {
+            timestamp: 100,
+            parent_beacon_block_root: Some(B256::repeat_byte(0x5a)),
+            ..Default::default()
+        };
+        let hash = header.hash_slow();
+        provider.insert_header(hash, header);
+        let mut builder = StatefulAttributesBuilder::new(cfg, l1_cfg, fetcher, provider, None);
+        let epoch = BlockNumHash { hash, number: 1 };
+        let l2_parent = L2BlockInfo {
+            block_info: BlockInfo {
+                hash: B256::ZERO,
+                number: 1,
+                timestamp: 100,
+                parent_hash: hash,
+            },
+            l1_origin: BlockNumHash { hash, number: 1 },
+            seq_num: 0,
+        };
+        let payload = builder.prepare_payload_attributes(l2_parent, epoch).await.unwrap();
+        assert_eq!(payload.payload_attributes.withdrawals, None);
+        assert_eq!(payload.payload_attributes.parent_beacon_block_root, None);
     }
 
     /// Constructor panics fast when interop is scheduled but no dependency set was provided.
@@ -1043,7 +1182,7 @@ mod tests {
     #[should_panic(expected = "no DependencySet was provided")]
     fn test_stateful_builder_new_panics_when_interop_scheduled_without_dependency_set() {
         let cfg = Arc::new(RollupConfig {
-            hardforks: HardForkConfig { interop_time: Some(100), ..Default::default() },
+            hardforks: HardForkConfig { lagoon_time: Some(100), ..Default::default() },
             ..Default::default()
         });
         let l1_cfg = Arc::new(L1Config::sepolia().into());

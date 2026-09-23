@@ -26,7 +26,7 @@ pub struct SystemConfig {
     pub scalar: U256,
     /// Gas limit value
     pub gas_limit: u64,
-    /// [MANTLE] Base fee value, updated via the BaseFee SystemConfig update.
+    /// `[MANTLE]` Base fee value, updated via the `BaseFee` `SystemConfig` update.
     pub base_fee: Option<U256>,
     /// Base fee scalar value
     pub base_fee_scalar: Option<u64>,
@@ -236,10 +236,14 @@ mod test {
         b256!("0000000000000000000000000000000000000000000000000000000000000001");
     const GAS_LIMIT_UPDATE_TYPE: B256 =
         b256!("0000000000000000000000000000000000000000000000000000000000000002");
+    // [MANTLE] Shifted by one against upstream: `SystemConfigUpdateKind::BaseFee` occupies 4
+    // (see system/kind.rs), so Eip1559 is 5 and OperatorFee is 6. Upstream's constants (4 and 5)
+    // would address BaseFee and Eip1559 here, which is how these two tests failed once kona
+    // started compiling again.
     const EIP1559_UPDATE_TYPE: B256 =
-        b256!("0000000000000000000000000000000000000000000000000000000000000004");
-    const OPERATOR_FEE_UPDATE_TYPE: B256 =
         b256!("0000000000000000000000000000000000000000000000000000000000000005");
+    const OPERATOR_FEE_UPDATE_TYPE: B256 =
+        b256!("0000000000000000000000000000000000000000000000000000000000000006");
 
     #[test]
     #[cfg(feature = "serde")]
