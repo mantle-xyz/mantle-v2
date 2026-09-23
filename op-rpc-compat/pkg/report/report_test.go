@@ -41,9 +41,9 @@ func TestAddCompatibleResultPreservesRPCErrorWithoutFailing(t *testing.T) {
 	}
 }
 
-// Test_matchesKnownDiff 覆盖收紧后的匹配语义:
-//   - geth 侧只比 type+code(参照端,措辞会随输入/版本变化)
-//   - reth 侧比 type+code+规范化 message(被测端,抓漂移;容忍记录截断)
+// Test_matchesKnownDiff checks the stricter matching rules:
+//   - Compare only type and code on the reference side, where wording may vary.
+//   - Compare type, code, and normalized message on the target side to detect drift while tolerating truncation.
 func Test_matchesKnownDiff(t *testing.T) {
 	r := &Reporter{}
 	raw := func(s string) json.RawMessage { return json.RawMessage(s) }
@@ -66,13 +66,13 @@ func Test_matchesKnownDiff(t *testing.T) {
 			name:   "reth message drift surfaces (insufficient funds -> OutOfFunds)",
 			gethEx: errObj(-32000, "insufficient funds for transfer"), gethAct: errObj(-32000, "failed with 60000000 gas: insufficient funds for transfer: address 0x1"),
 			rethEx: errObj(-32003, "insufficient funds for transfer"), rethAct: errObj(-32003, "EVM error: OutOfFunds"),
-			want: false, // reth 文案漂移 → 不再豁免
+			want: false, // changed target wording must not be waived
 		},
 		{
 			name:   "geth wording varies but reth stable -> still exempt",
 			gethEx: errObj(-32602, "invalid argument 1: unknown block number tag"), gethAct: errObj(-32602, "invalid argument 1: hex string without 0x prefix"),
 			rethEx: errObj(-32602, "Invalid params"), rethAct: errObj(-32602, "Invalid params"),
-			want: true, // geth 只比 code,reth message 一致
+			want: true, // reference code and target message still match
 		},
 		{
 			name:   "truncated reth record tolerated (contains)",
@@ -90,7 +90,7 @@ func Test_matchesKnownDiff(t *testing.T) {
 			name:   "geth code change surfaces",
 			gethEx: errObj(-32000, "out of gas"), gethAct: errObj(-32003, "out of gas"),
 			rethEx: errObj(-32003, "out of gas"), rethAct: errObj(-32003, "out of gas"),
-			want: false, // geth code 变了也应暴露(基线变化)
+			want: false, // a changed reference code must be visible
 		},
 		{
 			name:   "success responses exempt on type only (volatile results)",
@@ -102,7 +102,7 @@ func Test_matchesKnownDiff(t *testing.T) {
 			name:   "type mismatch surfaces (reth error->success)",
 			gethEx: errObj(-32000, "x"), gethAct: errObj(-32000, "x"),
 			rethEx: errObj(-32602, "unknown account"), rethAct: okObj("0xraw"),
-			want: false, // eth_fillTransaction: reth 由报错变成功
+			want: false, // eth_fillTransaction target changed from error to success
 		},
 	}
 	for _, c := range cases {

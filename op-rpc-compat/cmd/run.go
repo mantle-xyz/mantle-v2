@@ -25,23 +25,20 @@ import (
 var (
 	testFile     string
 	testcasesDir string
-	excludeFiles []string // 要排除的文件名（不含路径）
+	excludeFiles []string // filenames to exclude, without paths
 )
 
-// runTests 运行测试的主函数
+// runTests executes either the RPC corpus or transaction suite.
 func runTests() error {
 	if txStandardOnly && !txTest {
 		return fmt.Errorf("--tx-standard-only 需与 --tx 同时使用")
 	}
 
-	// 设置默认输出文件
-	// 如果用户没有指定 -o（即 outputFile 为默认值 "report.json"）
-	// 且开启了 --tx，则默认输出到 report.tx.json
+	// Keep transaction reports separate unless the caller selected an output path.
 	if outputFile == "report.json" && txTest {
 		outputFile = "report.tx.json"
 	}
 
-	// 如果只运行交易测试，跳过 RPC 查询测试
 	if txTest {
 		fmt.Println(color.CyanString("============================================================"))
 		fmt.Println(color.CyanString("交易测试"))
@@ -53,16 +50,12 @@ func runTests() error {
 		return nil
 	}
 
-	// 运行 RPC 查询测试
 	var allTests []report.TestCase
 	var testFiles []string
 
-	// 确定要运行的测试文件
 	if testFile != "" {
-		// -f 参数指定单个文件
 		testFiles = []string{testFile}
 	} else {
-		// 无参数，运行 testcases 目录下所有 json 文件（排除指定的文件）
 		files, err := findTestFiles(testcasesDir, excludeFiles)
 		if err != nil {
 			return fmt.Errorf("查找测试文件失败: %w", err)
@@ -73,7 +66,6 @@ func runTests() error {
 		testFiles = files
 	}
 
-	// 加载所有测试用例
 	for _, file := range testFiles {
 		tests, err := loadTestFile(file)
 		if err != nil {
@@ -86,7 +78,6 @@ func runTests() error {
 		return fmt.Errorf("没有测试用例")
 	}
 
-	// 检查是否需要模板变量替换
 	if hasTemplateVars(allTests) {
 		ctx := context.Background()
 		client := rpc.NewClient(gethURL, "geth", timeout)
@@ -105,7 +96,6 @@ func runTests() error {
 		}
 	}
 
-	// 打印测试信息
 	if testFile != "" {
 		fmt.Printf("运行测试文件: %s (%d 个测试)\n", testFile, len(allTests))
 	} else {
@@ -118,13 +108,11 @@ func runTests() error {
 		}
 	}
 
-	// 创建客户端对
 	clients := rpc.NewClientPair(gethURL, rethURL, timeout)
 
-	// 创建报告器
 	reporter := report.NewReporter(gethURL, rethURL, verbose)
 
-	// 加载已知差异配置（从 testcases 目录下的 known_diffs.json）
+	// Load known differences from the selected testcase directory.
 	knownDiffsPath := filepath.Join(testcasesDir, "known_diffs.json")
 	if _, err := os.Stat(knownDiffsPath); err == nil {
 		if err := reporter.LoadKnownDiffs(knownDiffsPath); err == nil {
@@ -136,16 +124,12 @@ func runTests() error {
 	fmt.Printf("reth: %s\n", rethURL)
 	fmt.Println()
 
-	// 执行测试
 	ctx := context.Background()
 	for _, tc := range allTests {
-		// 创建请求
 		req := rpc.NewRequest(tc.Method, tc.Params)
 
-		// 执行对比
 		compareResult := clients.CompareWithRetry(ctx, req, maxRetries, retryDelay)
 
-		// 对比结果
 		var diffResult *diff.CompareResult
 		var compareErr error
 
@@ -157,14 +141,11 @@ func runTests() error {
 			)
 		}
 
-		// 添加结果
 		reporter.AddResult(tc, compareResult, diffResult, compareErr)
 	}
 
-	// 打印摘要
 	reporter.PrintSummary()
 
-	// 保存报告
 	if outputFile != "" {
 		if err := reporter.SaveJSON(outputFile); err != nil {
 			fmt.Fprintf(os.Stderr, "保存报告失败: %v\n", err)
@@ -173,7 +154,7 @@ func runTests() error {
 		}
 	}
 
-	// 返回退出码
+	// Return a failing exit status when any result failed.
 	if reporter.HasFailures() {
 		os.Exit(1)
 	}
@@ -181,52 +162,44 @@ func runTests() error {
 	return nil
 }
 
-// runTransactionTests 运行交易测试
+// runTransactionTests executes the transaction and contract suites.
 func runTransactionTests() error {
 	ctx := context.Background()
 
-	// 创建 Reporter 用于记录所有 RPC 调用
 	reporter := report.NewReporter(gethURL, rethURL, verbose)
 
-	// 加载已知差异配置
 	knownDiffsPath := filepath.Join(testcasesDir, "known_diffs.json")
 	if err := reporter.LoadKnownDiffs(knownDiffsPath); err != nil {
 		fmt.Printf("警告: 加载已知差异配置失败: %v\n", err)
 	}
 
-	// 创建交易测试器
 	tester, err := tx.NewTester(gethURL, rethURL, txPrivateKey, reporter)
 	if err != nil {
 		return fmt.Errorf("创建交易测试器失败: %w", err)
 	}
 
-	// 确定接收地址（标准方式）
 	var recipient common.Address
 	if txRecipient != "" {
 		recipient = common.HexToAddress(txRecipient)
 	} else {
-		// 生成随机地址
 		randomBytes := make([]byte, 20)
 		rand.Read(randomBytes)
 		recipient = common.BytesToAddress(randomBytes)
 	}
 
-	// 确定预确认交易接收地址（必须在白名单中）
+	// Preconfirmation recipients must be allowlisted by the sequencer.
 	var recipientPreconf common.Address
 	if txRecipientPreconf != "" {
 		recipientPreconf = common.HexToAddress(txRecipientPreconf)
 	} else {
-		// 如果未指定，使用默认白名单地址
 		recipientPreconf = common.HexToAddress("0x71920E3cb420fbD8Ba9a495E6f801c50375ea127")
 	}
 
-	// 解析转账金额
 	amount, ok := new(big.Int).SetString(txAmount, 10)
 	if !ok {
 		return fmt.Errorf("无效的转账金额: %s", txAmount)
 	}
 
-	// 检查发送者余额
 	balance, err := tester.GetBalance(ctx, tester.GethClient(), tester.Builder().Address(), "latest")
 	if err != nil {
 		return fmt.Errorf("获取余额失败: %w", err)
@@ -241,26 +214,23 @@ func runTransactionTests() error {
 	fmt.Printf("转账金额: %s wei\n", amount.String())
 	fmt.Println()
 
-	// 检查余额是否足够（需要足够支付多次交易）
-	minRequired := new(big.Int).Mul(amount, big.NewInt(20)) // 预留 20 倍（EIP-7702 需要更多）
+	// The sender must fund several test transactions and their gas.
+	minRequired := new(big.Int).Mul(amount, big.NewInt(20)) // EIP-7702 scenarios need additional gas headroom
 	if balance.Cmp(minRequired) < 0 {
 		return fmt.Errorf("余额不足: 当前 %s wei, 需要至少 %s wei", balance.String(), minRequired.String())
 	}
 
 	var results []*tx.TxTestResult
 
-	// 测试交易类型：Legacy 和 EIP-1559
 	txTypes := []tx.TxType{tx.TxTypeLegacy, tx.TxTypeEIP1559}
 
 	for _, txType := range txTypes {
-		// 标准方式
 		fmt.Printf("📤 测试 %s 交易 (eth_sendRawTransaction)...\n", txType.String())
 		result := tester.TestNativeTransfer(ctx, recipient, amount, txType, false)
 		printTxTestResult(result)
 		results = append(results, result)
 
 		if includePreconfTransactions(txStandardOnly) {
-			// 预确认方式（使用白名单中的接收地址）
 			fmt.Printf("📤 测试 %s 交易 (eth_sendRawTransactionWithPreconf)...\n", txType.String())
 			preconfResult := tester.TestNativeTransfer(ctx, recipientPreconf, amount, txType, true)
 			printTxTestResult(preconfResult)
@@ -268,7 +238,6 @@ func runTransactionTests() error {
 		}
 	}
 
-	// EIP-7702 测试
 	fmt.Println()
 	fmt.Println(color.YellowString("📜 测试 EIP-7702 交易..."))
 	eip7702Results := testEIP7702Transfer(
@@ -282,7 +251,6 @@ func runTransactionTests() error {
 		results = append(results, result)
 	}
 
-	// 合约测试
 	fmt.Println()
 	fmt.Println(color.CyanString("============================================================"))
 	fmt.Println(color.CyanString("合约测试"))
@@ -292,7 +260,6 @@ func runTransactionTests() error {
 		results = append(results, result)
 	}
 
-	// Txpool 拒绝测试
 	fmt.Println()
 	fmt.Println(color.CyanString("============================================================"))
 	fmt.Println(color.CyanString("Txpool 拒绝测试（MetaTx + EIP-155）"))
@@ -303,7 +270,6 @@ func runTransactionTests() error {
 		results = append(results, result)
 	}
 
-	// 检查 eth_feeHistory
 	fmt.Println()
 	fmt.Println(color.CyanString("🔍 检查 eth_feeHistory..."))
 
@@ -334,13 +300,10 @@ func runTransactionTests() error {
 	}
 	reporter.AddResult(fhTC, fhCompareResult, fhDiffResult, fhCompareErr)
 
-	// 打印交易测试摘要
 	printTxTestSummary(results)
 
-	// 打印 RPC 测试摘要
 	reporter.PrintSummary()
 
-	// 保存报告
 	if outputFile != "" {
 		if err := reporter.SaveJSON(outputFile); err != nil {
 			fmt.Fprintf(os.Stderr, "保存报告失败: %v\n", err)
@@ -349,7 +312,7 @@ func runTransactionTests() error {
 		}
 	}
 
-	// 返回退出码
+	// Return a failing exit status when a transaction scenario failed.
 	if reporter.HasFailures() {
 		os.Exit(1)
 	}
@@ -357,8 +320,8 @@ func runTransactionTests() error {
 	return nil
 }
 
-// testEIP7702Transfer 测试 EIP-7702 授权转账
-// EIP-7702 允许 EOA 账户临时设置代码，实现账户抽象功能
+// testEIP7702Transfer checks standard and preconfirmed EIP-7702 transfers.
+// EIP-7702 lets an EOA temporarily set code for account abstraction.
 func testEIP7702Transfer(
 	ctx context.Context,
 	tester *tx.Tester,
@@ -367,12 +330,10 @@ func testEIP7702Transfer(
 ) []*tx.TxTestResult {
 	var results []*tx.TxTestResult
 
-	// 测试 1: 基本 EIP-7702 交易（带空授权列表）
 	result1 := testEIP7702BasicTransfer(ctx, tester, amount)
 	results = append(results, result1)
 
 	if includePreconf {
-		// 测试 2: EIP-7702 交易（带预确认）
 		result2 := testEIP7702BasicTransferPreconf(ctx, tester, amount)
 		results = append(results, result2)
 	}
@@ -380,39 +341,35 @@ func testEIP7702Transfer(
 	return results
 }
 
-// testEIP7702BasicTransfer 测试基本 EIP-7702 交易
+// testEIP7702BasicTransfer checks a transfer with an empty authorization list.
 func testEIP7702BasicTransfer(ctx context.Context, tester *tx.Tester, amount *big.Int) *tx.TxTestResult {
 	result := &tx.TxTestResult{
 		TestName: "EIP-7702 基本转账",
 		TxType:   "EIP-7702",
 	}
 
-	// 使用 Hardhat 第三个默认账户作为接收者
+	// Use Hardhat test account 2 as the recipient.
 	recipient := common.HexToAddress("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")
 
-	// 获取初始余额
 	initialBalance, err := tester.GetBalance(ctx, tester.GethClient(), recipient, "latest")
 	if err != nil {
 		result.Error = fmt.Sprintf("获取初始余额失败: %v", err)
 		return result
 	}
 
-	// 使用 EIP-7702 交易类型发送（带空授权列表）
 	gethResult := tester.TestNativeTransfer(ctx, recipient, amount, tx.TxTypeEIP7702, false)
 	if gethResult.Error != "" {
 		result.Error = fmt.Sprintf("Geth EIP-7702 交易失败: %s", gethResult.Error)
 		return result
 	}
 
-	// 获取交易后余额
 	finalBalance, err := tester.GetBalance(ctx, tester.GethClient(), recipient, "latest")
 	if err != nil {
 		result.Error = fmt.Sprintf("获取最终余额失败: %v", err)
 		return result
 	}
 
-	// 验证余额变化
-	expectedDelta := new(big.Int).Mul(amount, big.NewInt(2)) // Geth + Reth 两次转账
+	expectedDelta := new(big.Int).Mul(amount, big.NewInt(2)) // one transfer through each client
 	actualDelta := new(big.Int).Sub(finalBalance, initialBalance)
 
 	result.GethTxHash = gethResult.GethTxHash
@@ -430,39 +387,35 @@ func testEIP7702BasicTransfer(ctx context.Context, tester *tx.Tester, amount *bi
 	return result
 }
 
-// testEIP7702BasicTransferPreconf 测试 EIP-7702 预确认交易
+// testEIP7702BasicTransferPreconf checks an EIP-7702 transfer through preconfirmation.
 func testEIP7702BasicTransferPreconf(ctx context.Context, tester *tx.Tester, amount *big.Int) *tx.TxTestResult {
 	result := &tx.TxTestResult{
 		TestName: "EIP-7702 预确认转账",
 		TxType:   "EIP-7702",
 	}
 
-	// 使用预确认白名单地址作为接收者
+	// The recipient must be on the sequencer's preconfirmation allowlist.
 	recipient := common.HexToAddress("0x71920E3cb420fbD8Ba9a495E6f801c50375ea127")
 
-	// 获取初始余额
 	initialBalance, err := tester.GetBalance(ctx, tester.GethClient(), recipient, "latest")
 	if err != nil {
 		result.Error = fmt.Sprintf("获取初始余额失败: %v", err)
 		return result
 	}
 
-	// 使用 EIP-7702 交易类型发送（带空授权列表，预确认方式）
 	gethResult := tester.TestNativeTransfer(ctx, recipient, amount, tx.TxTypeEIP7702, true)
 	if gethResult.Error != "" {
 		result.Error = fmt.Sprintf("Geth EIP-7702 预确认交易失败: %s", gethResult.Error)
 		return result
 	}
 
-	// 获取交易后余额
 	finalBalance, err := tester.GetBalance(ctx, tester.GethClient(), recipient, "latest")
 	if err != nil {
 		result.Error = fmt.Sprintf("获取最终余额失败: %v", err)
 		return result
 	}
 
-	// 验证余额变化
-	expectedDelta := new(big.Int).Mul(amount, big.NewInt(2)) // Geth + Reth 两次转账
+	expectedDelta := new(big.Int).Mul(amount, big.NewInt(2)) // one transfer through each client
 	actualDelta := new(big.Int).Sub(finalBalance, initialBalance)
 
 	result.GethTxHash = gethResult.GethTxHash
@@ -482,7 +435,7 @@ func testEIP7702BasicTransferPreconf(ctx context.Context, tester *tx.Tester, amo
 	return result
 }
 
-// printTxTestResult 打印单个交易测试结果
+// printTxTestResult renders one transaction test result.
 func printTxTestResult(result *tx.TxTestResult) {
 	if result.Error != "" {
 		fmt.Printf("  %s %s: %s\n", color.RedString("✗ FAIL"), result.TestName, result.Error)
@@ -525,7 +478,7 @@ func printTxTestResult(result *tx.TxTestResult) {
 	fmt.Println()
 }
 
-// printTxTestSummary 打印交易测试摘要
+// printTxTestSummary renders the transaction suite summary.
 func printTxTestSummary(results []*tx.TxTestResult) {
 	fmt.Println(color.CyanString("============================================================"))
 	fmt.Println(color.CyanString("交易测试摘要"))
@@ -564,11 +517,10 @@ func printTxTestSummary(results []*tx.TxTestResult) {
 	}
 }
 
-// runContractTests 运行合约测试
+// runContractTests compares contract deployment, reads, and writes.
 func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult {
 	var results []*tx.TxTestResult
 
-	// 1. 测试 SimpleStorage 合约部署
 	fmt.Println(color.CyanString("📦 测试 SimpleStorage 合约部署..."))
 	deployResult, err := tester.DeployContract(ctx, tx.SimpleStorageBytecode, "SimpleStorage部署")
 	if err != nil {
@@ -583,7 +535,6 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 		return results
 	}
 
-	// 转换为 TxTestResult
 	deployTxResult := &tx.TxTestResult{
 		TestName:    deployResult.TestName,
 		TxType:      "Contract Deploy",
@@ -620,13 +571,13 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 		return results
 	}
 
-	// 使用各自的合约地址进行后续测试
+	// Each client uses the address created in its own chain state.
 	contractAddrGeth := common.HexToAddress(deployResult.GethContractAddress)
 	contractAddrReth := common.HexToAddress(deployResult.RethContractAddress)
 
-	// 2. 测试 get() 方法（初始值应该是 0）
+	// The initial stored value should be zero.
 	fmt.Println(color.CyanString("\n📞 测试 SimpleStorage.get() 方法（初始值）..."))
-	// get() 方法的 function selector: 0x6d4ce63c
+	// get() selector: 0x6d4ce63c.
 	getCallData := common.FromHex("0x6d4ce63c")
 	getResult1, err := tester.CallContract(ctx, contractAddrGeth, contractAddrReth, getCallData, "SimpleStorage.get()_初始值")
 	if err != nil {
@@ -658,10 +609,8 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 		results = append(results, result)
 	}
 
-	// 3. 测试 set(42) 方法
 	fmt.Println(color.CyanString("\n📝 测试 SimpleStorage.set(42) 方法..."))
-	// set(uint256) 方法的 function selector: 0x60fe47b1
-	// 参数: 42 (0x2a) 编码为 32 字节: 0x000000000000000000000000000000000000000000000000000000000000002a
+	// set(uint256) selector: 0x60fe47b1; 42 is encoded as a 32-byte argument.
 	setCallData := common.FromHex("0x60fe47b1000000000000000000000000000000000000000000000000000000000000002a")
 	setResult, err := tester.SendContractTransaction(ctx, contractAddrGeth, contractAddrReth, setCallData, "SimpleStorage.set(42)")
 	if err != nil {
@@ -704,7 +653,7 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 		results = append(results, result)
 	}
 
-	// 4. 再次调用 get() 方法（应该返回 42）
+	// The value should now be 42.
 	fmt.Println(color.CyanString("\n📞 测试 SimpleStorage.get() 方法（设置后）..."))
 	getResult2, err := tester.CallContract(ctx, contractAddrGeth, contractAddrReth, getCallData, "SimpleStorage.get()_设置后")
 	if err != nil {
@@ -724,7 +673,6 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 			Error:    getResult2.Error,
 		}
 
-		// 验证返回值是否为 42 (0x2a)
 		expectedValue := "0x000000000000000000000000000000000000000000000000000000000000002a"
 		if getResult2.Success && getResult2.ResultMatch {
 			if getResult2.GethResult == expectedValue {
@@ -749,19 +697,17 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 	return results
 }
 
-// 配置文件名（不是测试用例，会被自动跳过）
+// Configuration files are excluded from the testcase corpus.
 const knownDiffsFileName = "known_diffs.json"
 
-// findTestFiles 查找目录下所有 json 测试文件（排除配置文件和指定的文件）
+// findTestFiles returns JSON cases from a directory, excluding configuration and named files.
 func findTestFiles(dir string, excludes []string) ([]string, error) {
 	var files []string
 
-	// 构建排除文件的 set
 	excludeSet := make(map[string]bool)
 	for _, e := range excludes {
 		excludeSet[e] = true
 	}
-	// 配置文件不是测试用例，自动排除
 	excludeSet[knownDiffsFileName] = true
 
 	entries, err := os.ReadDir(dir)
@@ -773,23 +719,21 @@ func findTestFiles(dir string, excludes []string) ([]string, error) {
 		if entry.IsDir() {
 			continue
 		}
-		// 检查是否为 json 文件
 		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		// 检查是否被排除
 		if excludeSet[entry.Name()] {
 			continue
 		}
 		files = append(files, filepath.Join(dir, entry.Name()))
 	}
 
-	// 按文件名排序
+	// Sort filenames for stable execution order.
 	sort.Strings(files)
 	return files, nil
 }
 
-// loadTestFile 加载单个测试文件
+// loadTestFile decodes one JSON testcase file.
 func loadTestFile(file string) ([]report.TestCase, error) {
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -804,22 +748,21 @@ func loadTestFile(file string) ([]report.TestCase, error) {
 	return tests, nil
 }
 
-// TemplateVars 存储模板变量的值
+// TemplateVars contains runtime values substituted into testcases.
 type TemplateVars struct {
 	LatestBlockHash   string `json:"latest_block_hash"`
 	LatestBlockNumber string `json:"latest_block_number"`
 	LatestTxHash      string `json:"latest_tx_hash"`
 	BlockOneRLP       string `json:"block_one_rlp"`
-	// LatestDepositTxHash 是 latest block 中第一个 deposit 交易(type 0x7e)的 hash。
-	// OP 每个区块第一笔即 L1 attributes deposit,用于对比 geth/reth 的 deposit 收据。
+	// LatestDepositTxHash is the first type-0x7e deposit hash in the latest block.
+	// It is used to compare deposit receipts between clients.
 	LatestDepositTxHash string `json:"latest_deposit_tx_hash"`
 }
 
-// fetchTemplateVars 从 RPC 获取模板变量值
+// fetchTemplateVars obtains testcase substitutions from the reference RPC endpoint.
 func fetchTemplateVars(ctx context.Context, client *rpc.Client) (*TemplateVars, error) {
 	vars := &TemplateVars{}
 
-	// 获取 latest block
 	req := rpc.NewRequest("eth_getBlockByNumber", []interface{}{"latest", false})
 	resp := client.Call(ctx, req)
 	if resp.Error != nil {
@@ -838,7 +781,6 @@ func fetchTemplateVars(ctx context.Context, client *rpc.Client) (*TemplateVars, 
 		if number, ok := result["number"].(string); ok {
 			vars.LatestBlockNumber = number
 		}
-		// 获取区块中的第一个交易 hash（如果有）
 		if txs, ok := result["transactions"].([]interface{}); ok && len(txs) > 0 {
 			if txHash, ok := txs[0].(string); ok {
 				vars.LatestTxHash = txHash
@@ -846,9 +788,8 @@ func fetchTemplateVars(ctx context.Context, client *rpc.Client) (*TemplateVars, 
 		}
 	}
 
-	// 如果 latest block 没有交易，尝试从更早的区块获取
+	// Fall back to block one when the latest block has no transactions.
 	if vars.LatestTxHash == "" {
-		// 尝试从区块 1 获取交易
 		req := rpc.NewRequest("eth_getBlockByNumber", []interface{}{"0x1", false})
 		resp := client.Call(ctx, req)
 		if resp.Error == nil {
@@ -865,9 +806,7 @@ func fetchTemplateVars(ctx context.Context, client *rpc.Client) (*TemplateVars, 
 		}
 	}
 
-	// 获取 latest block 中第一个 deposit 交易(type 0x7e)的 hash,用于对比 deposit 收据。
-	// OP 每个区块第一笔即 L1 attributes deposit,故 latest block 必有 deposit 交易;
-	// 极端情况下回退到区块 1。
+	// Find a type-0x7e deposit for receipt comparison, falling back to block one.
 	if h := fetchFirstDepositTxHash(ctx, client, "latest"); h != "" {
 		vars.LatestDepositTxHash = h
 	} else if h := fetchFirstDepositTxHash(ctx, client, "0x1"); h != "" {
@@ -897,7 +836,7 @@ func fetchRawBlock(ctx context.Context, client *rpc.Client, blockTag string) str
 	return result.Result
 }
 
-// fetchFirstDepositTxHash 返回指定区块中第一个 deposit 交易(type 0x7e)的 hash,没有则返回 ""。
+// fetchFirstDepositTxHash returns the first type-0x7e deposit hash in a block, or an empty string.
 func fetchFirstDepositTxHash(ctx context.Context, client *rpc.Client, blockTag string) string {
 	req := rpc.NewRequest("eth_getBlockByNumber", []interface{}{blockTag, true})
 	resp := client.Call(ctx, req)
@@ -930,13 +869,13 @@ func fetchFirstDepositTxHash(ctx context.Context, client *rpc.Client, blockTag s
 	return ""
 }
 
-// replaceTemplateVars 替换测试用例中的模板变量
+// replaceTemplateVars substitutes runtime values into testcase parameters.
 func replaceTemplateVars(tests []report.TestCase, vars *TemplateVars) []report.TestCase {
 	if vars == nil {
 		return tests
 	}
 
-	// 将测试用例转换为 JSON，替换模板变量，再转回
+	// Round-trip through JSON so substitutions also reach nested parameters.
 	data, err := json.Marshal(tests)
 	if err != nil {
 		return tests
@@ -944,7 +883,6 @@ func replaceTemplateVars(tests []report.TestCase, vars *TemplateVars) []report.T
 
 	jsonStr := string(data)
 
-	// 替换模板变量
 	replacements := map[string]string{
 		"{{latest_block_hash}}":      vars.LatestBlockHash,
 		"{{latest_block_number}}":    vars.LatestBlockNumber,
@@ -959,7 +897,6 @@ func replaceTemplateVars(tests []report.TestCase, vars *TemplateVars) []report.T
 		}
 	}
 
-	// 转回测试用例
 	var result []report.TestCase
 	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
 		return tests
@@ -968,7 +905,7 @@ func replaceTemplateVars(tests []report.TestCase, vars *TemplateVars) []report.T
 	return result
 }
 
-// hasTemplateVars 检查测试用例是否包含模板变量
+// hasTemplateVars reports whether any testcase needs runtime substitution.
 func hasTemplateVars(tests []report.TestCase) bool {
 	data, err := json.Marshal(tests)
 	if err != nil {
@@ -982,8 +919,8 @@ func includePreconfTransactions(standardOnly bool) bool {
 	return !standardOnly
 }
 
-// MantleMetaTxPrefix 是 Mantle MetaTx 的 32 字节前缀常量。
-// 14 个零字节 + "MantleMetaTxPrefix" ASCII (18 字节) = 32 字节。
+// MantleMetaTxPrefix is the 32-byte prefix used by Mantle MetaTx.
+// It contains 14 zero bytes followed by the 18 ASCII bytes of "MantleMetaTxPrefix".
 var mantleMetaTxPrefix = [32]byte{
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -992,16 +929,13 @@ var mantleMetaTxPrefix = [32]byte{
 	'P', 'r', 'e', 'f', 'i', 'x',
 }
 
-// runRejectionTests 运行 txpool 拒绝测试。
+// runRejectionTests checks txpool rejection parity between the two clients.
 //
-// 验证 op-geth 和 op-reth 对以下交易的拒绝行为一致：
-// 1. 非 EIP-155（unprotected）legacy 交易 — 两边都应拒绝
-// 2. MetaTx prefix 交易 — 两边都应拒绝
-// 3. EIP-155 legacy 交易（正向） — 应被接受（不被误拒）
+// Both should reject unprotected legacy and MetaTx-prefixed transactions,
+// while accepting a valid EIP-155 legacy transaction.
 func runRejectionTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult {
 	var results []*tx.TxTestResult
 
-	// 测试 1: 非 EIP-155 legacy 交易应被拒绝
 	result := tester.TestTxpoolRejection(
 		ctx,
 		"txpool_rejects_unprotected_legacy_tx",
@@ -1024,7 +958,6 @@ func runRejectionTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResul
 	)
 	results = append(results, result)
 
-	// 测试 2: MetaTx prefix 交易应被拒绝
 	result = tester.TestTxpoolRejection(
 		ctx,
 		"txpool_rejects_metatx",
@@ -1050,7 +983,6 @@ func runRejectionTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResul
 	)
 	results = append(results, result)
 
-	// 测试 3: 正常 EIP-155 legacy 交易不应被误拒
 	result = tester.TestTxpoolAcceptance(
 		ctx,
 		"txpool_accepts_eip155_legacy_tx",
@@ -1069,8 +1001,8 @@ func runRejectionTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResul
 	)
 	results = append(results, result)
 
-	// 测试 4: 转发型节点对"已转发交易"的本地 txpool 准入行为一致（geth vs reth）。
-	// 前提：本套件打的 geth/reth 端点为转发型节点（配了 sequencer）；对 sequencer 本身此测试无意义。
+	// Forwarding nodes should agree on local txpool admission after forwarding a transaction.
+	// This scenario requires follower endpoints configured with a sequencer; it does not apply to the sequencer itself.
 	result = tester.TestTxpoolForwardedRetention(
 		ctx,
 		"txpool_forwarded_tx_retention_parity",

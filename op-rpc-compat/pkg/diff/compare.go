@@ -1,4 +1,4 @@
-// Package diff 提供深度 JSON 对比功能
+// Package diff compares nested JSON values and classifies differences.
 package diff
 
 import (
@@ -9,70 +9,68 @@ import (
 	"strings"
 )
 
-// DiffType 差异类型
+// DiffType identifies the kind of difference.
 type DiffType string
 
 const (
-	DiffTypeValue    DiffType = "value"     // 值不同
-	DiffTypeType     DiffType = "type"      // 类型不同
-	DiffTypeMissing  DiffType = "missing"   // 字段缺失（reth 缺少）
-	DiffTypeExtra    DiffType = "extra"     // 多余字段（reth 多出）
-	DiffTypeError    DiffType = "error"     // 错误差异
-	DiffTypeOrder    DiffType = "order"     // 顺序不同（数组）
+	DiffTypeValue    DiffType = "value"     // value mismatch
+	DiffTypeType     DiffType = "type"      // type mismatch
+	DiffTypeMissing  DiffType = "missing"   // field missing on the target
+	DiffTypeExtra    DiffType = "extra"     // field added by the target
+	DiffTypeError    DiffType = "error"     // error mismatch
+	DiffTypeOrder    DiffType = "order"     // array order mismatch
 )
 
-// DiffSeverity 差异严重性
+// DiffSeverity classifies the impact of a difference.
 type DiffSeverity string
 
 const (
-	SeverityFail    DiffSeverity = "fail"    // 严重差异，需要修复
-	SeverityWarning DiffSeverity = "warning" // 警告，额外字段等
-	SeverityInfo    DiffSeverity = "info"    // 信息，可忽略
+	SeverityFail    DiffSeverity = "fail"    // failing difference
+	SeverityWarning DiffSeverity = "warning" // nonfatal difference such as an extra field
+	SeverityInfo    DiffSeverity = "info"    // informational difference
 )
 
-// Difference 单个差异
+// Difference describes one mismatch between responses.
 type Difference struct {
-	Path       string       `json:"path"`                  // JSON 路径，如 ".result.blockNumber"
-	Type       DiffType     `json:"type"`                  // 差异类型
-	Severity   DiffSeverity `json:"severity"`              // 严重性
-	Expected   interface{}  `json:"expected,omitempty"`    // Primary (geth) 的值
-	Actual     interface{}  `json:"actual,omitempty"`      // Secondary (reth) 的值
-	Message    string       `json:"message,omitempty"`     // 详细说明
+	Path       string       `json:"path"`                  // JSON path, such as ".result.blockNumber"
+	Type       DiffType     `json:"type"`                  // difference type
+	Severity   DiffSeverity `json:"severity"`              // difference severity
+	Expected   interface{}  `json:"expected,omitempty"`    // reference (geth) value
+	Actual     interface{}  `json:"actual,omitempty"`      // target (reth) value
+	Message    string       `json:"message,omitempty"`     // details
 }
 
-// CompareResult 对比结果
+// CompareResult collects the differences from a comparison.
 type CompareResult struct {
 	IsEqual     bool          `json:"is_equal"`
 	Differences []Difference  `json:"differences,omitempty"`
-	// 统计信息
 	TotalFields    int `json:"total_fields"`
 	MatchedFields  int `json:"matched_fields"`
 	DiffFields     int `json:"diff_fields"`
-	// 按严重性分类
 	FailCount    int `json:"fail_count"`
 	WarningCount int `json:"warning_count"`
 	InfoCount    int `json:"info_count"`
 }
 
-// HasFails 是否有严重差异
+// HasFails reports whether any difference has failure severity.
 func (r *CompareResult) HasFails() bool {
 	return r.FailCount > 0
 }
 
-// HasWarnings 是否有警告
+// HasWarnings reports whether any difference has warning severity.
 func (r *CompareResult) HasWarnings() bool {
 	return r.WarningCount > 0
 }
 
-// Options 对比选项
+// Options controls response comparison.
 type Options struct {
-	IgnorePaths      []string // 忽略的路径
-	IgnoreOrder      bool     // 是否忽略数组顺序
-	NormalizeHex     bool     // 规范化十六进制格式
-	IgnoreErrorData  bool     // 是否忽略 error.data 差异
+	IgnorePaths      []string // JSON paths excluded from comparison
+	IgnoreOrder      bool     // ignore array ordering
+	NormalizeHex     bool     // normalize hexadecimal values
+	IgnoreErrorData  bool     // ignore error.data differences
 }
 
-// DefaultOptions 默认选项
+// DefaultOptions returns the default comparison settings.
 func DefaultOptions() *Options {
 	return &Options{
 		IgnorePaths:     []string{},
@@ -82,7 +80,7 @@ func DefaultOptions() *Options {
 	}
 }
 
-// Compare 深度对比两个 JSON 数据
+// Compare recursively compares two JSON values.
 func Compare(expected, actual []byte, opts *Options) (*CompareResult, error) {
 	if opts == nil {
 		opts = DefaultOptions()
@@ -105,7 +103,6 @@ func Compare(expected, actual []byte, opts *Options) (*CompareResult, error) {
 
 	compareValues("", expectedVal, actualVal, result, opts)
 	
-	// 为每个差异分配严重性并统计
 	for i := range result.Differences {
 		result.Differences[i].Severity = classifyDiffSeverity(&result.Differences[i])
 		switch result.Differences[i].Severity {
@@ -120,26 +117,24 @@ func Compare(expected, actual []byte, opts *Options) (*CompareResult, error) {
 	
 	result.DiffFields = len(result.Differences)
 	result.MatchedFields = result.TotalFields - result.DiffFields
-	// 只有当没有 FAIL 级别差异时才算相等
+	// Warnings do not make the responses unequal.
 	result.IsEqual = result.FailCount == 0
 
 	return result, nil
 }
 
-// classifyDiffSeverity 根据差异类型分类严重性
+// classifyDiffSeverity classifies a difference by type.
 func classifyDiffSeverity(d *Difference) DiffSeverity {
-	// 额外字段（reth 多出或 geth 多出）视为警告
+	// Extra fields on either side are warnings.
 	if d.Type == DiffTypeExtra || d.Type == DiffTypeMissing {
 		return SeverityWarning
 	}
 	
-	// 其他差异默认为失败
 	return SeverityFail
 }
 
-// compareValues 递归对比值
+// compareValues recursively compares values at a JSON path.
 func compareValues(path string, expected, actual interface{}, result *CompareResult, opts *Options) {
-	// 检查是否应忽略此路径
 	for _, ignorePath := range opts.IgnorePaths {
 		if strings.HasPrefix(path, ignorePath) || path == ignorePath {
 			return
@@ -148,7 +143,6 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 
 	result.TotalFields++
 
-	// 处理 nil 情况
 	if expected == nil && actual == nil {
 		return
 	}
@@ -174,9 +168,8 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 	expectedType := reflect.TypeOf(expected)
 	actualType := reflect.TypeOf(actual)
 
-	// 类型检查
 	if expectedType != actualType {
-		// 特殊处理：数字类型可能不同（json.Number vs float64）
+		// JSON decoders may represent the same number as json.Number or float64.
 		if isNumericType(expected) && isNumericType(actual) {
 			if !compareNumeric(expected, actual, opts) {
 				result.Differences = append(result.Differences, Difference{
@@ -262,9 +255,8 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 	}
 }
 
-// compareObjects 对比对象
+// compareObjects compares JSON objects.
 func compareObjects(path string, expected, actual map[string]interface{}, result *CompareResult, opts *Options) {
-	// 收集所有键
 	allKeys := make(map[string]bool)
 	for k := range expected {
 		allKeys[k] = true
@@ -273,7 +265,7 @@ func compareObjects(path string, expected, actual map[string]interface{}, result
 		allKeys[k] = true
 	}
 
-	// 排序键以保证一致的输出顺序
+	// Sort keys for stable difference ordering.
 	keys := make([]string, 0, len(allKeys))
 	for k := range allKeys {
 		keys = append(keys, k)
@@ -315,7 +307,7 @@ func compareObjects(path string, expected, actual map[string]interface{}, result
 	}
 }
 
-// compareArrays 对比数组
+// compareArrays compares JSON arrays.
 func compareArrays(path string, expected, actual []interface{}, result *CompareResult, opts *Options) {
 	if len(expected) != len(actual) {
 		result.Differences = append(result.Differences, Difference{
@@ -325,7 +317,6 @@ func compareArrays(path string, expected, actual []interface{}, result *CompareR
 			Actual:   len(actual),
 			Message:  fmt.Sprintf("数组长度不同: %d vs %d", len(expected), len(actual)),
 		})
-		// 继续比较共同元素
 	}
 
 	maxLen := len(expected)
@@ -362,16 +353,15 @@ func compareArrays(path string, expected, actual []interface{}, result *CompareR
 	}
 }
 
-// normalizeHex 规范化十六进制字符串
+// normalizeHex normalizes a hexadecimal string.
 func normalizeHex(s string) string {
 	if !strings.HasPrefix(s, "0x") && !strings.HasPrefix(s, "0X") {
 		return s
 	}
 
-	// 转小写
 	s = strings.ToLower(s)
 
-	// 对于十六进制数字，去除前导零（但保留至少一位）
+	// Remove leading zeroes from numeric hex while retaining one digit.
 	if len(s) > 2 {
 		trimmed := strings.TrimLeft(s[2:], "0")
 		if trimmed == "" {
@@ -382,7 +372,7 @@ func normalizeHex(s string) string {
 	return s
 }
 
-// isNumericType 检查是否为数字类型
+// isNumericType reports whether a value can be compared numerically.
 func isNumericType(v interface{}) bool {
 	switch v.(type) {
 	case float64, float32, int, int64, int32, int16, int8,
@@ -392,14 +382,14 @@ func isNumericType(v interface{}) bool {
 	return false
 }
 
-// compareNumeric 比较数字值
+// compareNumeric compares two numeric representations.
 func compareNumeric(expected, actual interface{}, opts *Options) bool {
 	expFloat := toFloat64(expected)
 	actFloat := toFloat64(actual)
 	return expFloat == actFloat
 }
 
-// toFloat64 转换为 float64
+// toFloat64 converts a numeric value to float64.
 func toFloat64(v interface{}) float64 {
 	switch n := v.(type) {
 	case float64:
@@ -433,7 +423,7 @@ func toFloat64(v interface{}) float64 {
 	return 0
 }
 
-// FormatDifferences 格式化差异列表为可读字符串
+// FormatDifferences formats differences for human-readable output.
 func FormatDifferences(diffs []Difference) string {
 	if len(diffs) == 0 {
 		return "无差异"
@@ -455,7 +445,7 @@ func FormatDifferences(diffs []Difference) string {
 	return sb.String()
 }
 
-// formatValue 格式化值用于显示
+// formatValue formats a response value for display.
 func formatValue(v interface{}) string {
 	switch val := v.(type) {
 	case string:
@@ -482,16 +472,16 @@ func formatValue(v interface{}) string {
 	}
 }
 
-// ErrorCompatibility 错误兼容性类型
+// ErrorCompatibility classifies compatibility between JSON-RPC errors.
 type ErrorCompatibility string
 
 const (
-	ErrorCompatNone        ErrorCompatibility = "none"        // 不兼容
-	ErrorCompatMethodNotFound ErrorCompatibility = "method_not_found" // 方法不存在/未实现
-	ErrorCompatIdentical   ErrorCompatibility = "identical"   // 完全相同
+	ErrorCompatNone        ErrorCompatibility = "none"        // incompatible errors
+	ErrorCompatMethodNotFound ErrorCompatibility = "method_not_found" // unsupported method on both sides
+	ErrorCompatIdentical   ErrorCompatibility = "identical"   // identical errors
 )
 
-// methodNotFoundKeywords 方法不存在的关键词
+// methodNotFoundKeywords identifies method-not-found errors from message text.
 var methodNotFoundKeywords = []string{
 	"not exist",
 	"not available",
@@ -500,8 +490,7 @@ var methodNotFoundKeywords = []string{
 	"does not exist",
 }
 
-// CheckErrorCompatibility 检查两个错误是否兼容
-// 返回兼容性类型
+// CheckErrorCompatibility classifies whether two JSON-RPC errors are compatible.
 func CheckErrorCompatibility(gethError, rethError map[string]interface{}) ErrorCompatibility {
 	if gethError == nil || rethError == nil {
 		return ErrorCompatNone
@@ -510,12 +499,11 @@ func CheckErrorCompatibility(gethError, rethError map[string]interface{}) ErrorC
 	gethMsg := getErrorMessage(gethError)
 	rethMsg := getErrorMessage(rethError)
 
-	// 完全相同
 	if gethMsg == rethMsg {
 		return ErrorCompatIdentical
 	}
 
-	// 检查是否都是"方法不存在/未实现"类型的错误
+	// Both clients may report an unsupported method with different wording.
 	gethIsMethodNotFound := isMethodNotFoundError(gethMsg)
 	rethIsMethodNotFound := isMethodNotFoundError(rethMsg)
 
@@ -526,7 +514,7 @@ func CheckErrorCompatibility(gethError, rethError map[string]interface{}) ErrorC
 	return ErrorCompatNone
 }
 
-// getErrorMessage 从错误对象中提取消息
+// getErrorMessage extracts the message from an error object.
 func getErrorMessage(errObj map[string]interface{}) string {
 	if msg, ok := errObj["message"]; ok {
 		if s, ok := msg.(string); ok {
@@ -536,7 +524,7 @@ func getErrorMessage(errObj map[string]interface{}) string {
 	return ""
 }
 
-// isMethodNotFoundError 检查错误消息是否表示方法不存在
+// isMethodNotFoundError detects unsupported-method wording.
 func isMethodNotFoundError(msg string) bool {
 	msg = strings.ToLower(msg)
 	for _, keyword := range methodNotFoundKeywords {
@@ -546,4 +534,3 @@ func isMethodNotFoundError(msg string) bool {
 	}
 	return false
 }
-

@@ -11,16 +11,15 @@ import (
 	"github.com/holiman/uint256"
 )
 
-// Builder 交易构建器
+// Builder constructs and signs transactions for a chain.
 type Builder struct {
 	chainID    *big.Int
 	privateKey *ecdsa.PrivateKey
 	address    common.Address
 }
 
-// NewBuilder 创建交易构建器
+// NewBuilder creates a builder from a hex-encoded private key.
 func NewBuilder(chainID *big.Int, privateKeyHex string) (*Builder, error) {
-	// 解析私钥
 	if len(privateKeyHex) > 2 && privateKeyHex[:2] == "0x" {
 		privateKeyHex = privateKeyHex[2:]
 	}
@@ -30,7 +29,6 @@ func NewBuilder(chainID *big.Int, privateKeyHex string) (*Builder, error) {
 		return nil, fmt.Errorf("解析私钥失败: %w", err)
 	}
 
-	// 获取地址
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
@@ -45,17 +43,17 @@ func NewBuilder(chainID *big.Int, privateKeyHex string) (*Builder, error) {
 	}, nil
 }
 
-// Address 返回发送者地址
+// Address returns the sender address.
 func (b *Builder) Address() common.Address {
 	return b.address
 }
 
-// PrivateKey 返回私钥
+// PrivateKey returns the signing key.
 func (b *Builder) PrivateKey() *ecdsa.PrivateKey {
 	return b.privateKey
 }
 
-// BuildLegacyTx 构建 Legacy 交易
+// BuildLegacyTx constructs a legacy transaction.
 func (b *Builder) BuildLegacyTx(params *TxParams) (*types.Transaction, error) {
 	tx := types.NewTx(&types.LegacyTx{
 		Nonce:    params.Nonce,
@@ -68,7 +66,7 @@ func (b *Builder) BuildLegacyTx(params *TxParams) (*types.Transaction, error) {
 	return tx, nil
 }
 
-// BuildEIP1559Tx 构建 EIP-1559 交易
+// BuildEIP1559Tx constructs an EIP-1559 transaction.
 func (b *Builder) BuildEIP1559Tx(params *TxParams) (*types.Transaction, error) {
 	tx := types.NewTx(&types.DynamicFeeTx{
 		ChainID:   b.chainID,
@@ -83,7 +81,7 @@ func (b *Builder) BuildEIP1559Tx(params *TxParams) (*types.Transaction, error) {
 	return tx, nil
 }
 
-// BuildEIP7702Tx 构建 EIP-7702 交易
+// BuildEIP7702Tx constructs an EIP-7702 transaction.
 func (b *Builder) BuildEIP7702Tx(params *TxParams) (*types.Transaction, error) {
 	if params.To == nil {
 		return nil, fmt.Errorf("EIP-7702 交易需要指定接收地址")
@@ -103,26 +101,26 @@ func (b *Builder) BuildEIP7702Tx(params *TxParams) (*types.Transaction, error) {
 	return tx, nil
 }
 
-// SignSetCodeAuth 签名 EIP-7702 授权
+// SignSetCodeAuth signs an EIP-7702 authorization.
 func (b *Builder) SignSetCodeAuth(auth types.SetCodeAuthorization) (types.SetCodeAuthorization, error) {
 	return types.SignSetCode(b.privateKey, auth)
 }
 
-// SignTx 签名交易
+// SignTx signs a transaction for the configured chain.
 func (b *Builder) SignTx(tx *types.Transaction) (*types.Transaction, error) {
 	signer := types.LatestSignerForChainID(b.chainID)
 	return types.SignTx(tx, signer, b.privateKey)
 }
 
-// SignTxUnprotected 使用 HomesteadSigner 签名交易（v=27/28，无 chain_id 编码）。
+// SignTxUnprotected signs with HomesteadSigner (v=27/28, without a chain ID).
 //
-// 生成的交易没有 EIP-155 重放保护，可在任意链上重放。
-// 用于测试 txpool 是否正确拒绝非 EIP-155 legacy 交易。
+// The result has no EIP-155 replay protection and can be replayed on any chain.
+// It is used to test rejection of unprotected legacy transactions by the txpool.
 func (b *Builder) SignTxUnprotected(tx *types.Transaction) (*types.Transaction, error) {
 	return types.SignTx(tx, types.HomesteadSigner{}, b.privateKey)
 }
 
-// BuildAndSign 构建并签名交易
+// BuildAndSign constructs a transaction of the requested type and signs it.
 func (b *Builder) BuildAndSign(txType TxType, params *TxParams) (*types.Transaction, error) {
 	var tx *types.Transaction
 	var err error
@@ -144,4 +142,3 @@ func (b *Builder) BuildAndSign(txType TxType, params *TxParams) (*types.Transact
 
 	return b.SignTx(tx)
 }
-

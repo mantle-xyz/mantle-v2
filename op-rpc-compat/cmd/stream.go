@@ -189,7 +189,7 @@ type sendConfig struct {
 	amount *big.Int
 }
 
-// sendNonceTracker 在发送循环中维护本地 nonce，避免 pending nonce 滞后导致重复发送同一笔交易。
+// sendNonceTracker keeps a local nonce so a stale pending nonce cannot cause duplicate sends.
 type sendNonceTracker struct {
 	initialized bool
 	nextNonce   uint64
@@ -350,7 +350,7 @@ func runSendLoop(ctx context.Context, cfg *sendConfig) error {
 	}
 }
 
-// sendOneEIP1559TxNoPriorityFee 发送 EIP-1559 交易，不设 priority fee（maxPriorityFeePerGas=0），仅用 baseFee 作为 maxFeePerGas 以降低 gas 成本。
+// sendOneEIP1559TxNoPriorityFee sends an EIP-1559 transaction with no priority fee and caps the fee at the base fee.
 func sendOneEIP1559TxNoPriorityFee(ctx context.Context, cfg *sendConfig, nonce uint64, baseFee *big.Int) (common.Hash, *big.Int, error) {
 	zeroTip := big.NewInt(0)
 	params := &tx.TxParams{
@@ -488,7 +488,7 @@ type blockHeader struct {
 	Number        uint64
 	Hash          string
 	Timestamp     uint64
-	BaseFeePerGas *big.Int // EIP-1559 区块才有，用于发 tx 时不设 priority fee
+	BaseFeePerGas *big.Int // available on EIP-1559 blocks; used to send without a priority fee
 }
 
 type blockTx struct {

@@ -1,4 +1,4 @@
-// Package tx 提供交易构建、签名和测试功能
+// Package tx provides transaction construction, signing, and comparison tests.
 package tx
 
 import (
@@ -9,7 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-// TxType 交易类型
+// TxType identifies a transaction envelope type.
 type TxType int
 
 const (
@@ -31,27 +31,27 @@ func (t TxType) String() string {
 	}
 }
 
-// TxParams 交易参数
+// TxParams contains inputs for constructing a transaction.
 type TxParams struct {
 	From     common.Address
-	To       *common.Address // nil 表示合约创建
+	To       *common.Address // nil creates a contract
 	Value    *big.Int
 	Data     []byte
 	Gas      uint64
 	GasPrice *big.Int // Legacy TX
 
-	// EIP-1559 参数
+	// EIP-1559 fee fields.
 	MaxFeePerGas         *big.Int
 	MaxPriorityFeePerGas *big.Int
 
-	// EIP-7702 参数
+	// EIP-7702 authorization list.
 	AuthList []types.SetCodeAuthorization
 
 	Nonce   uint64
 	ChainID *big.Int
 }
 
-// PreconfResponse eth_sendRawTransactionWithPreconf 的响应
+// PreconfResponse is the response from eth_sendRawTransactionWithPreconf.
 type PreconfResponse struct {
 	TxHash      string          `json:"txHash"`
 	Status      string          `json:"status"`
@@ -60,7 +60,7 @@ type PreconfResponse struct {
 	Receipt     json.RawMessage `json:"receipt,omitempty"`
 }
 
-// StateSnapshot 链上状态快照
+// StateSnapshot captures on-chain state at a block.
 type StateSnapshot struct {
 	BlockNumber uint64                 `json:"block_number"`
 	Balance     *big.Int               `json:"balance"`
@@ -70,7 +70,7 @@ type StateSnapshot struct {
 	Proof       map[string]interface{} `json:"proof,omitempty"`
 }
 
-// TxTestResult 交易测试结果
+// TxTestResult records a transaction comparison result.
 type TxTestResult struct {
 	TestName    string `json:"test_name"`
 	TxType      string `json:"tx_type"`
@@ -81,15 +81,15 @@ type TxTestResult struct {
 	GethReceipt *TxReceipt `json:"geth_receipt,omitempty"`
 	RethReceipt *TxReceipt `json:"reth_receipt,omitempty"`
 
-	// 状态对比
+	// State comparison.
 	StateComparison *StateComparison `json:"state_comparison,omitempty"`
 
-	// Preconf 响应（如果使用 preconf 方式）
+	// Preconfirmation responses, when applicable.
 	GethPreconf *PreconfResponse `json:"geth_preconf,omitempty"`
 	RethPreconf *PreconfResponse `json:"reth_preconf,omitempty"`
 }
 
-// TxReceipt 简化的交易收据
+// TxReceipt contains the receipt fields needed for comparison.
 type TxReceipt struct {
 	Status            uint64 `json:"status"`
 	GasUsed           uint64 `json:"gasUsed"`
@@ -99,28 +99,28 @@ type TxReceipt struct {
 	CumulativeGasUsed uint64 `json:"cumulativeGasUsed"`
 }
 
-// StateComparison 状态对比结果
+// StateComparison records differences between client state snapshots.
 type StateComparison struct {
-	// 余额变化
+	// Balance changes.
 	GethBalanceDelta *big.Int `json:"geth_balance_delta"`
 	RethBalanceDelta *big.Int `json:"reth_balance_delta"`
 	BalanceMatch     bool     `json:"balance_match"`
 
-	// Gas 使用
+	// Gas usage.
 	GethGasUsed uint64 `json:"geth_gas_used"`
 	RethGasUsed uint64 `json:"reth_gas_used"`
 	GasMatch    bool   `json:"gas_match"`
 
-	// Receipt 状态
+	// Receipt status.
 	GethStatus uint64 `json:"geth_status"`
 	RethStatus uint64 `json:"reth_status"`
 	StatusMatch bool  `json:"status_match"`
 
-	// 详细差异
+	// Detailed differences.
 	Differences []string `json:"differences,omitempty"`
 }
 
-// ContractDeployResult 合约部署测试结果
+// ContractDeployResult records a contract deployment comparison.
 type ContractDeployResult struct {
 	TestName             string                    `json:"test_name"`
 	Success              bool                      `json:"success"`
@@ -133,7 +133,7 @@ type ContractDeployResult struct {
 	Error                string                    `json:"error,omitempty"`
 }
 
-// ContractCallResult 合约调用（eth_call）结果
+// ContractCallResult records an eth_call comparison.
 type ContractCallResult struct {
 	TestName        string `json:"test_name"`
 	Success         bool   `json:"success"`
@@ -144,7 +144,7 @@ type ContractCallResult struct {
 	Error           string `json:"error,omitempty"`
 }
 
-// ContractTxResult 合约交易（状态修改）结果
+// ContractTxResult records a state-changing contract transaction comparison.
 type ContractTxResult struct {
 	TestName        string               `json:"test_name"`
 	Success         bool                 `json:"success"`

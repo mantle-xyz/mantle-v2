@@ -1,4 +1,4 @@
-// Package report 提供测试报告生成功能
+// Package report records and renders RPC comparison results.
 package report
 
 import (
@@ -16,30 +16,30 @@ import (
 	"github.com/fatih/color"
 )
 
-// TestStatus 测试状态
+// TestStatus classifies a test result.
 type TestStatus string
 
 const (
-	StatusPass       TestStatus = "PASS"       // 完全一致
-	StatusCompatible TestStatus = "COMPATIBLE" // 兼容（已知差异验证通过，或双方都报错方法不存在）
-	StatusWarning    TestStatus = "WARNING"    // 有差异但不严重（如额外字段）
-	StatusFail       TestStatus = "FAIL"       // 真正的失败
+	StatusPass       TestStatus = "PASS"       // identical responses
+	StatusCompatible TestStatus = "COMPATIBLE" // verified known difference or unsupported method on both sides
+	StatusWarning    TestStatus = "WARNING"    // nonfatal difference such as an extra field
+	StatusFail       TestStatus = "FAIL"       // failing difference
 )
 
-// KnownDiff 已知差异配置
+// KnownDiff describes an expected response difference.
 type KnownDiff struct {
-	TestName    string          `json:"test_name"`              // 测试用例名称
-	Reason      string          `json:"reason,omitempty"`       // 差异原因说明
-	GethExample json.RawMessage `json:"geth_example,omitempty"` // geth 预期响应示例
-	RethExample json.RawMessage `json:"reth_example,omitempty"` // reth 预期响应示例
+	TestName    string          `json:"test_name"`              // test case name
+	Reason      string          `json:"reason,omitempty"`       // explanation of the difference
+	GethExample json.RawMessage `json:"geth_example,omitempty"` // expected geth response example
+	RethExample json.RawMessage `json:"reth_example,omitempty"` // expected reth response example
 }
 
-// KnownDiffsConfig 已知差异配置文件
+// KnownDiffsConfig is the known-difference file format.
 type KnownDiffsConfig struct {
 	KnownDiffs []KnownDiff `json:"known_diffs"`
 }
 
-// TestCase 测试用例
+// TestCase is a JSON-RPC comparison case.
 type TestCase struct {
 	Name        string      `json:"name"`
 	Method      string      `json:"method"`
@@ -47,11 +47,11 @@ type TestCase struct {
 	Description string      `json:"description,omitempty"`
 }
 
-// TestResult 单个测试结果
+// TestResult records the outcome of one case.
 type TestResult struct {
 	TestCase     TestCase          `json:"test_case"`
 	Status       TestStatus        `json:"status"`
-	Passed       bool              `json:"passed"` // 兼容旧代码，Status != FAIL 时为 true
+	Passed       bool              `json:"passed"` // true unless Status is FAIL, for existing consumers
 	GethResponse json.RawMessage   `json:"geth_response,omitempty"`
 	RethResponse json.RawMessage   `json:"reth_response,omitempty"`
 	GethError    string            `json:"geth_error,omitempty"`
@@ -60,10 +60,10 @@ type TestResult struct {
 	RethDuration time.Duration     `json:"reth_duration"`
 	Differences  []diff.Difference `json:"differences,omitempty"`
 	CompareError string            `json:"compare_error,omitempty"`
-	SkipReason   string            `json:"skip_reason,omitempty"` // 跳过原因
+	SkipReason   string            `json:"skip_reason,omitempty"` // reason for a skipped or compatible result
 }
 
-// Report 完整测试报告
+// Report contains the complete comparison run.
 type Report struct {
 	Timestamp       time.Time    `json:"timestamp"`
 	GethURL         string       `json:"geth_url"`
@@ -77,7 +77,7 @@ type Report struct {
 	Summary         string       `json:"summary"`
 }
 
-// Reporter 报告生成器
+// Reporter collects results and renders reports.
 type Reporter struct {
 	results    []TestResult
 	gethURL    string
@@ -87,7 +87,7 @@ type Reporter struct {
 	knownDiffs map[string]KnownDiff // key: test_name
 }
 
-// NewReporter 创建报告生成器
+// NewReporter creates a result collector.
 func NewReporter(gethURL, rethURL string, verbose bool) *Reporter {
 	return &Reporter{
 		results:    []TestResult{},
@@ -99,7 +99,7 @@ func NewReporter(gethURL, rethURL string, verbose bool) *Reporter {
 	}
 }
 
-// LoadKnownDiffs 加载已知差异配置
+// LoadKnownDiffs loads known-difference rules from a file.
 func (r *Reporter) LoadKnownDiffs(filename string) error {
 	data, err := os.ReadFile(filename)
 	if err != nil {
@@ -118,7 +118,7 @@ func (r *Reporter) LoadKnownDiffs(filename string) error {
 	return nil
 }
 
-// GetKnownDiff 获取已知差异配置
+// GetKnownDiff returns the rule for a test case, if one exists.
 func (r *Reporter) GetKnownDiff(testName string) *KnownDiff {
 	if kd, ok := r.knownDiffs[testName]; ok {
 		return &kd
@@ -135,10 +135,9 @@ func newTestResult(tc TestCase, compareResult *rpc.CompareResult) TestResult {
 		return result
 	}
 
-	// 处理 geth 响应
+	// Preserve the reference response, including transport failures.
 	if compareResult.PrimaryResponse != nil {
 		result.GethDuration = compareResult.PrimaryResponse.Duration
-		// HTTP/网络错误
 		if compareResult.PrimaryResponse.Error != nil {
 			result.GethError = compareResult.PrimaryResponse.Error.Error()
 		}
@@ -147,10 +146,9 @@ func newTestResult(tc TestCase, compareResult *rpc.CompareResult) TestResult {
 		}
 	}
 
-	// 处理 reth 响应
+	// Preserve the target response, including transport failures.
 	if compareResult.SecondaryResponse != nil {
 		result.RethDuration = compareResult.SecondaryResponse.Duration
-		// HTTP/网络错误
 		if compareResult.SecondaryResponse.Error != nil {
 			result.RethError = compareResult.SecondaryResponse.Error.Error()
 		}
@@ -172,16 +170,15 @@ func (r *Reporter) AddCompatibleResult(tc TestCase, compareResult *rpc.CompareRe
 	r.printResult(result)
 }
 
-// AddResult 添加测试结果
+// AddResult records the comparison result of one test case.
 func (r *Reporter) AddResult(tc TestCase, compareResult *rpc.CompareResult, diffResult *diff.CompareResult, compareErr error) {
 	result := newTestResult(tc, compareResult)
 
-	// 检查是否为已知差异
 	if knownDiff := r.GetKnownDiff(tc.Name); knownDiff != nil {
-		// 验证实际响应是否与预期的已知差异匹配
+		// Waive only a response that still matches the recorded known difference.
 		if r.matchesKnownDiff(&result, knownDiff) {
 			result.Status = StatusCompatible
-			result.SkipReason = knownDiff.Reason // 复用 SkipReason 字段存储原因
+			result.SkipReason = knownDiff.Reason // preserve the known-difference reason in the existing field
 			result.Passed = true
 		} else {
 			result.Status = StatusFail
@@ -193,27 +190,24 @@ func (r *Reporter) AddResult(tc TestCase, compareResult *rpc.CompareResult, diff
 		return
 	}
 
-	// 判断状态
 	result.Status = r.determineStatus(&result, compareResult, diffResult, compareErr)
 
-	// 设置 Passed 标志（非 FAIL 状态都算通过）
+	// Warnings, skips, and compatible differences do not fail the run.
 	result.Passed = result.Status != StatusFail
 
 	r.results = append(r.results, result)
 
-	// 实时输出
 	r.printResult(result)
 }
 
-// matchesKnownDiff 检查实际响应是否与已知差异的预期匹配。
+// matchesKnownDiff checks actual responses against a recorded difference.
 //
-// 收紧策略（原先只比 error/success 类型，会永久掩盖后续 code/message 漂移）：
-//   - geth 侧（参照端）：仅比 type + code。geth 的错误措辞随输入/版本变化，且记录里的
-//     example 多为范例/截断，不能当精确 key。
-//   - reth 侧（被测端）：比 type + code + 规范化 message（一方包含另一方，容忍截断）。
-//     reth 才是我们要认证"已知不同"的对象——它一旦漂移（如
-//     "insufficient funds for transfer" → "EVM error: OutOfFunds"）就不再匹配，
-//     该差异重新在报告里暴露，提示更新 known_diffs。
+// Comparing only error versus success would hide later code or message drift.
+// The geth reference side compares type and code because its wording varies
+// with input and version, and recorded examples may be truncated. The reth
+// target side also compares normalized messages, allowing either message to
+// contain the other when an example was truncated. A changed target message
+// stops matching so the difference becomes visible again in the report.
 func (r *Reporter) matchesKnownDiff(result *TestResult, knownDiff *KnownDiff) bool {
 	return shapeMatch(parseShape(knownDiff.GethExample), parseShape(result.GethResponse), false) &&
 		shapeMatch(parseShape(knownDiff.RethExample), parseShape(result.RethResponse), true)
@@ -224,18 +218,18 @@ var (
 	numRe = regexp.MustCompile(`\d+`)
 )
 
-// normMsg 规范化错误消息：抹掉易变的 hex/数字（地址、gas、区块号等），便于跨调用比较。
+// normMsg removes variable hex and numeric values such as addresses, gas, and block numbers.
 func normMsg(s string) string {
 	s = hexRe.ReplaceAllString(s, "0xX")
 	s = numRe.ReplaceAllString(s, "N")
 	return strings.ToLower(strings.TrimSpace(s))
 }
 
-// respShape 响应的可比形态。
+// respShape extracts the comparable shape of a response.
 type respShape struct {
 	typ  responseType
 	code int
-	msg  string // 规范化后的错误 message（仅 error 有意义）
+	msg  string // normalized error message, meaningful only for errors
 }
 
 func parseShape(raw json.RawMessage) respShape {
@@ -260,8 +254,8 @@ func parseShape(raw json.RawMessage) respShape {
 	return respShape{typ: responseTypeUnknown}
 }
 
-// shapeMatch 判定 actual 是否落在 expected 记录的形态内。
-// matchMsg=true 时对错误响应额外比对规范化 message（用于 reth 被测端）。
+// shapeMatch checks an actual response against a recorded shape.
+// When matchMsg is true, it also compares normalized error messages.
 func shapeMatch(expected, actual respShape, matchMsg bool) bool {
 	if expected.typ != actual.typ {
 		return false
@@ -273,36 +267,34 @@ func shapeMatch(expected, actual respShape, matchMsg bool) bool {
 		if !matchMsg {
 			return true
 		}
-		// 容忍记录截断：任一方规范化 message 包含另一方即认为一致。
+		// Recorded examples may be truncated on either side.
 		return strings.Contains(actual.msg, expected.msg) || strings.Contains(expected.msg, actual.msg)
 	}
-	// 成功/未知：result 常含易变量（版本、filter ID），只比类型。
+	// Successful results may contain variable values such as versions or filter IDs.
 	return true
 }
 
-// responseType 响应类型
+// responseType classifies a response as success, error, or unknown.
 type responseType int
 
 const (
 	responseTypeUnknown responseType = iota
-	responseTypeSuccess              // 有 result 字段
-	responseTypeError                // 有 error 字段
+	responseTypeSuccess              // result field present
+	responseTypeError                // error field present
 )
 
-// determineStatus 确定测试状态
+// determineStatus classifies a comparison result.
 func (r *Reporter) determineStatus(result *TestResult, compareResult *rpc.CompareResult, diffResult *diff.CompareResult, compareErr error) TestStatus {
-	// 如果有 HTTP/网络错误，视为失败
+	// Transport failures are always test failures.
 	if result.GethError != "" || result.RethError != "" {
 		return StatusFail
 	}
 
-	// 如果有比较错误，视为失败
 	if compareErr != nil {
 		result.CompareError = compareErr.Error()
 		return StatusFail
 	}
 
-	// 检查 RPC 响应中的错误
 	gethHasRPCError := compareResult.PrimaryResponse != nil &&
 		compareResult.PrimaryResponse.Response != nil &&
 		compareResult.PrimaryResponse.Response.Error != nil
@@ -310,7 +302,6 @@ func (r *Reporter) determineStatus(result *TestResult, compareResult *rpc.Compar
 		compareResult.SecondaryResponse.Response != nil &&
 		compareResult.SecondaryResponse.Response.Error != nil
 
-	// 如果有一方有 RPC 错误
 	if gethHasRPCError || rethHasRPCError {
 		status, diffs, reason := r.checkRPCErrorCompatibility(compareResult, gethHasRPCError, rethHasRPCError)
 		if len(diffs) > 0 {
@@ -322,18 +313,16 @@ func (r *Reporter) determineStatus(result *TestResult, compareResult *rpc.Compar
 		return status
 	}
 
-	// 检查 diff 结果
 	if diffResult != nil {
 		result.Differences = diffResult.Differences
 
-		// 没有任何差异
 		if len(diffResult.Differences) == 0 {
 			return StatusPass
 		}
 
-		// 只有警告级别差异（额外字段等）
+		// Extra fields and other warning-level differences do not fail the test.
 		if diffResult.FailCount == 0 && diffResult.WarningCount > 0 {
-			// 统计 reth 额外字段和 geth 额外字段（reth 缺少）的数量
+			// Count extra and missing fields separately for the target.
 			rethExtraCount := 0
 			gethExtraCount := 0
 			for _, d := range diffResult.Differences {
@@ -346,7 +335,6 @@ func (r *Reporter) determineStatus(result *TestResult, compareResult *rpc.Compar
 				}
 			}
 
-			// 生成详细的原因说明
 			var reasonParts []string
 			if rethExtraCount > 0 {
 				reasonParts = append(reasonParts, fmt.Sprintf("reth 有 %d 处额外字段", rethExtraCount))
@@ -362,7 +350,6 @@ func (r *Reporter) determineStatus(result *TestResult, compareResult *rpc.Compar
 			return StatusWarning
 		}
 
-		// 有失败级别差异
 		if diffResult.FailCount > 0 {
 			return StatusFail
 		}
@@ -371,11 +358,11 @@ func (r *Reporter) determineStatus(result *TestResult, compareResult *rpc.Compar
 	return StatusPass
 }
 
-// checkRPCErrorCompatibility 检查 RPC 错误兼容性，返回状态、差异列表和兼容原因
+// checkRPCErrorCompatibility returns status, differences, and a reason for two RPC errors.
 func (r *Reporter) checkRPCErrorCompatibility(compareResult *rpc.CompareResult, gethHasError, rethHasError bool) (TestStatus, []diff.Difference, string) {
 	var diffs []diff.Difference
 
-	// 一方有 RPC 错误，一方没有 -> 失败
+	// An error on only one side is a failure.
 	if gethHasError != rethHasError {
 		if gethHasError {
 			gethErr := compareResult.PrimaryResponse.Response.Error
@@ -399,12 +386,10 @@ func (r *Reporter) checkRPCErrorCompatibility(compareResult *rpc.CompareResult, 
 		return StatusFail, diffs, ""
 	}
 
-	// 双方都有 RPC 错误，检查兼容性
 	if gethHasError && rethHasError {
 		gethErr := compareResult.PrimaryResponse.Response.Error
 		rethErr := compareResult.SecondaryResponse.Response.Error
 
-		// 构造 map 用于兼容性检查
 		gethErrObj := map[string]interface{}{
 			"code":    gethErr.Code,
 			"message": gethErr.Message,
@@ -423,7 +408,6 @@ func (r *Reporter) checkRPCErrorCompatibility(compareResult *rpc.CompareResult, 
 			return StatusCompatible, nil, reason
 		}
 
-		// 错误不兼容，记录差异
 		if gethErr.Code != rethErr.Code {
 			diffs = append(diffs, diff.Difference{
 				Path:     "error.code",
@@ -448,7 +432,7 @@ func (r *Reporter) checkRPCErrorCompatibility(compareResult *rpc.CompareResult, 
 	return StatusFail, diffs, ""
 }
 
-// printResult 打印单个测试结果
+// printResult renders one result.
 func (r *Reporter) printResult(result TestResult) {
 	green := color.New(color.FgGreen).SprintFunc()
 	red := color.New(color.FgRed).SprintFunc()
@@ -476,18 +460,15 @@ func (r *Reporter) printResult(result TestResult) {
 		fmt.Printf("  geth: %v, reth: %v\n", result.GethDuration, result.RethDuration)
 	}
 
-	// 显示兼容信息（已知差异或自动检测的兼容）
 	if result.Status == StatusCompatible {
 		if result.SkipReason != "" {
-			// 已知差异验证通过
 			fmt.Printf("  %s 已知差异: %s\n", blue("→"), result.SkipReason)
 		} else {
-			// 自动检测的兼容（双方都返回方法不存在错误）
+			// Both clients reported an unsupported method.
 			fmt.Printf("  %s 双方都返回错误（方法不存在/未实现），视为兼容\n", blue("→"))
 		}
 	}
 
-	// 显示警告信息
 	if result.Status == StatusWarning {
 		if result.SkipReason != "" {
 			fmt.Printf("  %s %s\n", yellow("→"), result.SkipReason)
@@ -499,7 +480,6 @@ func (r *Reporter) printResult(result TestResult) {
 		}
 	}
 
-	// 显示失败信息
 	if result.Status == StatusFail {
 		if result.GethError != "" && result.RethError == "" {
 			fmt.Printf("  %s geth 错误: %s\n", yellow("→"), result.GethError)
@@ -522,7 +502,7 @@ func (r *Reporter) printResult(result TestResult) {
 	}
 }
 
-// printDifferences 打印差异列表
+// printDifferences renders a list of differences.
 func (r *Reporter) printDifferences(diffs []diff.Difference, limit int) {
 	if len(diffs) < limit {
 		limit = len(diffs)
@@ -546,7 +526,7 @@ func (r *Reporter) printDifferences(diffs []diff.Difference, limit int) {
 	}
 }
 
-// Generate 生成最终报告
+// Generate builds the final report.
 func (r *Reporter) Generate() *Report {
 	report := &Report{
 		Timestamp:  time.Now(),
@@ -576,7 +556,7 @@ func (r *Reporter) Generate() *Report {
 	return report
 }
 
-// PrintSummary 打印摘要
+// PrintSummary renders the run summary.
 func (r *Reporter) PrintSummary() {
 	report := r.Generate()
 
@@ -596,7 +576,6 @@ func (r *Reporter) PrintSummary() {
 	fmt.Printf("耗时: %v\n", time.Since(r.startTime))
 	fmt.Println()
 
-	// 统计方法覆盖情况
 	methodCounts := make(map[string]int)
 	for _, result := range report.Results {
 		methodCounts[result.TestCase.Method]++
@@ -605,7 +584,6 @@ func (r *Reporter) PrintSummary() {
 
 	fmt.Printf("方法覆盖: %s 个方法\n", cyan(uniqueMethods))
 
-	// 找出有多个测试案例的方法
 	var multiCaseMethods []string
 	for method, count := range methodCounts {
 		if count > 1 {
@@ -613,7 +591,7 @@ func (r *Reporter) PrintSummary() {
 		}
 	}
 	if len(multiCaseMethods) > 0 {
-		// 排序以保持输出稳定
+		// Sort methods for stable output.
 		sort.Strings(multiCaseMethods)
 		fmt.Println("多案例方法:")
 		for _, m := range multiCaseMethods {
@@ -629,7 +607,6 @@ func (r *Reporter) PrintSummary() {
 		yellow(report.WarningTests),
 		red(report.FailedTests))
 
-	// 打印各类别详情
 	if report.CompatibleTests > 0 {
 		fmt.Println()
 		fmt.Println(blue("兼容的测试:"))
@@ -669,7 +646,7 @@ func (r *Reporter) PrintSummary() {
 	}
 }
 
-// SaveJSON 保存 JSON 报告
+// SaveJSON writes the report as JSON.
 func (r *Reporter) SaveJSON(filename string) error {
 	report := r.Generate()
 	data, err := json.MarshalIndent(report, "", "  ")
@@ -679,7 +656,7 @@ func (r *Reporter) SaveJSON(filename string) error {
 	return os.WriteFile(filename, data, 0644)
 }
 
-// HasFailures 检查是否有真正失败的测试（不包括 WARNING/SKIP/COMPATIBLE）
+// HasFailures reports whether any result failed, excluding warnings, skips, and compatible differences.
 func (r *Reporter) HasFailures() bool {
 	for _, result := range r.results {
 		if result.Status == StatusFail {
@@ -689,7 +666,7 @@ func (r *Reporter) HasFailures() bool {
 	return false
 }
 
-// truncateValue 截断值用于显示
+// truncateValue limits a value's display length.
 func truncateValue(v interface{}, maxLen int) string {
 	data, err := json.Marshal(v)
 	if err != nil {

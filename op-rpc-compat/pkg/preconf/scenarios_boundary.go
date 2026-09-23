@@ -268,7 +268,7 @@ func (r *Runner) scenarioSuccessReceiptFullParity(ctx context.Context) {
 }
 
 // A8 scenarioTightTimeoutEviction: preconfs that return Timeout must be evicted — NOT on-chain and
-// NOT left in the mempool (the "超时必清池" HARD contract). Needs a preconftimeout below the slow
+// NOT left in the mempool (the timeout cleanup invariant). Needs a preconftimeout below the slow
 // tx's exec time. Native/sstore txs are too fast; we use a WorstCase (bn256-ECMUL) preconf whose
 // ~190ms exec reliably exceeds a mid-range timeout (e.g. 100ms). If none time out at the current
 // timeout, records INCONCLUSIVE (not a false pass). One tx at a time (distinct gas → distinct hash,
@@ -339,7 +339,7 @@ func (r *Runner) scenarioTightTimeoutEviction(ctx context.Context) {
 }
 
 // A11 scenarioWorstCaseExecWithinTimeout: the worst gas-per-walltime single tx (bn256 ECMUL loop at
-// ~block-gas-limit) must execute within the preconf timeout — else "执行久→超时→清池不收费" is a
+// ~block-gas-limit) must execute within the preconf timeout; otherwise cleanup without charging is a
 // free-resource DoS. Measured via eth_call latency (≈ sequencer exec time; no whitelist needed).
 func (r *Runner) scenarioWorstCaseExecWithinTimeout(ctx context.Context) {
 	const name = "worst_case_exec_within_timeout"
@@ -353,7 +353,7 @@ func (r *Runner) scenarioWorstCaseExecWithinTimeout(ctx context.Context) {
 		r.record(name, false, "block gaslimit: %v", err)
 		return
 	}
-	gas := lim * 95 / 100 // geth 单笔可用 gas ≈ 块上限
+	gas := lim * 95 / 100 // geth permits nearly the full block gas limit per transaction
 	el, ok := r.ethCallElapsed(ctx, addr, nil, gas)
 	if !ok {
 		r.record(name, false, "eth_call 失败（gas=%d）", gas)

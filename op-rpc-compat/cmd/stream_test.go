@@ -132,14 +132,14 @@ func TestResolveSendRecipient_InvalidAddress(t *testing.T) {
 func TestSendNonceTracker_PreferLocalMonotonicNonceOnLaggedPending(t *testing.T) {
 	var tracker sendNonceTracker
 
-	// 初次从链上取到 10
+	// The first on-chain pending nonce is 10.
 	first := tracker.Next(10)
 	if first != 10 {
 		t.Fatalf("expected first nonce 10, got %d", first)
 	}
 	tracker.MarkAccepted(first)
 
-	// 链上 pending 仍旧滞后返回 10，本地应继续使用 11，避免重复交易
+	// A stale pending nonce of 10 must not override the local nonce of 11.
 	second := tracker.Next(10)
 	if second != 11 {
 		t.Fatalf("expected second nonce 11 with lagged chain nonce, got %d", second)
@@ -152,7 +152,7 @@ func TestSendNonceTracker_AdvanceToHigherChainNonce(t *testing.T) {
 	n := tracker.Next(20)
 	tracker.MarkAccepted(n)
 
-	// 链上出现更高 pending nonce 时，应追上链上状态
+	// Follow the chain when its pending nonce moves ahead.
 	next := tracker.Next(25)
 	if next != 25 {
 		t.Fatalf("expected nonce 25 after chain advanced, got %d", next)

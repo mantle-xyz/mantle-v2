@@ -1,4 +1,4 @@
-// Package cmd 提供 CLI 命令
+// Package cmd provides the RPC compatibility CLI commands.
 package cmd
 
 import (
@@ -9,7 +9,6 @@ import (
 )
 
 var (
-	// 全局配置
 	gethURL    string
 	rethURL    string
 	timeout    time.Duration
@@ -18,13 +17,12 @@ var (
 	maxRetries int
 	retryDelay time.Duration
 
-	// 交易测试配置
-	txTest             bool   // 是否运行交易测试
-	txStandardOnly     bool   // 是否只运行标准交易，跳过 preconf 场景
-	txPrivateKey       string // 交易测试私钥
-	txRecipient        string // 交易接收地址（标准方式）
-	txRecipientPreconf string // 预确认交易接收地址（白名单地址）
-	txAmount           string // 转账金额（wei）
+	txTest             bool   // run transaction tests
+	txStandardOnly     bool   // skip preconfirmation scenarios
+	txPrivateKey       string // transaction test signing key
+	txRecipient        string // standard transaction recipient
+	txRecipientPreconf string // allowlisted preconfirmation recipient
+	txAmount           string // transfer amount in wei
 )
 
 var rootCmd = &cobra.Command{
@@ -64,16 +62,12 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-// Execute 执行根命令
+// Execute runs the root command.
 func Execute() error {
 	return rootCmd.Execute()
 }
 
 func init() {
-	// 注册子命令
-	// (scan 子命令已移除:reth 源码布局重构后静态扫描失效,由运行时探测 tools/rpc_probe.py 取代)
-
-	// 从环境变量获取默认值
 	defaultGethURL := os.Getenv("GETH_RPC_URL")
 	if defaultGethURL == "" {
 		defaultGethURL = "http://127.0.0.1:19545"
@@ -83,13 +77,12 @@ func init() {
 		defaultRethURL = "http://127.0.0.1:29545"
 	}
 
-	// 默认私钥（Hardhat 测试账户 #0）
+	// Default to Hardhat test account 0.
 	defaultPrivateKey := os.Getenv("TX_PRIVATE_KEY")
 	if defaultPrivateKey == "" {
 		defaultPrivateKey = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 	}
 
-	// 全局标志
 	rootCmd.Flags().StringVar(&gethURL, "geth", defaultGethURL, "geth RPC 端点 URL")
 	rootCmd.Flags().StringVar(&rethURL, "reth", defaultRethURL, "reth RPC 端点 URL")
 	rootCmd.Flags().DurationVar(&timeout, "timeout", 30*time.Second, "请求超时时间")
@@ -98,18 +91,16 @@ func init() {
 	rootCmd.Flags().IntVar(&maxRetries, "retries", 3, "请求失败重试次数")
 	rootCmd.Flags().DurationVar(&retryDelay, "retry-delay", 1*time.Second, "重试间隔")
 
-	// 测试文件相关标志
 	rootCmd.Flags().StringVarP(&testFile, "file", "f", "", "指定测试文件路径 (不指定则运行所有)")
 	rootCmd.Flags().StringVar(&testcasesDir, "testcases-dir", "testcases", "测试用例目录")
 	rootCmd.Flags().StringSliceVar(&excludeFiles, "exclude", nil, "排除的文件名 (可多次指定，如 --exclude errors_full.json)")
 
-	// 交易测试相关标志
 	rootCmd.Flags().BoolVar(&txTest, "tx", false, "运行交易测试（Legacy/EIP-1559/EIP-7702，包含标准和预确认方式）")
 	rootCmd.Flags().BoolVar(&txStandardOnly, "tx-standard-only", false, "仅运行标准交易测试，跳过预确认场景（需与 --tx 同时使用）")
 	rootCmd.Flags().StringVar(&txPrivateKey, "tx-private-key", defaultPrivateKey, "交易测试私钥")
-	// 默认接收地址：Hardhat 第二个默认账户（与 Python 测试一致）
+	// Hardhat test account 1 is also the recipient in the Python suite.
 	rootCmd.Flags().StringVar(&txRecipient, "tx-recipient", "0x70997970c51812dc3a010c7d01b50e0d17dc79c8", "交易接收地址（标准方式）")
-	// 预确认交易接收地址：必须在 txpool.topreconfs 白名单中
+	// The preconfirmation recipient must be in txpool.topreconfs.
 	rootCmd.Flags().StringVar(&txRecipientPreconf, "tx-recipient-preconf", "0x71920E3cb420fbD8Ba9a495E6f801c50375ea127", "预确认交易接收地址（白名单地址）")
 	rootCmd.Flags().StringVar(&txAmount, "tx-amount", "1000000000000000", "转账金额（wei，默认 0.001 ETH）")
 }

@@ -14,7 +14,7 @@ import (
 )
 
 // promise records a preconf that returned status=success, for later on-chain reconciliation.
-// This is the "承诺账本" that turns the HARD invariant (Success ⟹ on-chain + receipt match) into a
+// This promise ledger turns the invariant (success implies on-chain inclusion and receipt parity) into a
 // post-hoc check across any batch of preconf txs.
 type promise struct {
 	hash       common.Hash
@@ -66,8 +66,8 @@ func (r *Runner) onChainReceiptRaw(ctx context.Context, client *rpc.Client, hash
 
 // verifyOnChain asserts every promised (status==success) preconf landed on-chain with a matching
 // receipt. Records a FAIL on the first violation. Returns the per-hash landing block and ok=true if
-// all promises were honored. Assertion set: 已上链 / status==1 / logs 一致 /（若响应带则）gasUsed 一致.
-// "块==预测" is deliberately NOT asserted here (see doc §4 基建).
+// all promises were honored. Check inclusion, status==1, logs parity, and gasUsed when present.
+// Predicted block equality is deliberately not asserted here.
 func (r *Runner) verifyOnChain(ctx context.Context, name string, ps []promise) (map[common.Hash]uint64, bool) {
 	blocks := map[common.Hash]uint64{}
 	for _, p := range ps {
