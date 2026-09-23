@@ -109,7 +109,7 @@ func (r *Runner) ensureContracts(ctx context.Context) error {
 		return err
 	}
 	if n != 0 {
-		return fmt.Errorf("contracts missing and funder nonce is %d (need 0 for deterministic addresses); redeploy on a fresh chain (task up-all) before running", n)
+		return fmt.Errorf("contracts missing and funder nonce is %d (need 0 for deterministic addresses); recreate a clean chain before running", n)
 	}
 
 	if err := r.deployAt(ctx, TestERC20Bytecode(), TestERC20Addr, "TestERC20"); err != nil {

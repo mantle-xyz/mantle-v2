@@ -13,12 +13,12 @@ import (
 type DiffType string
 
 const (
-	DiffTypeValue    DiffType = "value"     // value mismatch
-	DiffTypeType     DiffType = "type"      // type mismatch
-	DiffTypeMissing  DiffType = "missing"   // field missing on the target
-	DiffTypeExtra    DiffType = "extra"     // field added by the target
-	DiffTypeError    DiffType = "error"     // error mismatch
-	DiffTypeOrder    DiffType = "order"     // array order mismatch
+	DiffTypeValue   DiffType = "value"   // value mismatch
+	DiffTypeType    DiffType = "type"    // type mismatch
+	DiffTypeMissing DiffType = "missing" // field missing on the target
+	DiffTypeExtra   DiffType = "extra"   // field added by the target
+	DiffTypeError   DiffType = "error"   // error mismatch
+	DiffTypeOrder   DiffType = "order"   // array order mismatch
 )
 
 // DiffSeverity classifies the impact of a difference.
@@ -32,24 +32,24 @@ const (
 
 // Difference describes one mismatch between responses.
 type Difference struct {
-	Path       string       `json:"path"`                  // JSON path, such as ".result.blockNumber"
-	Type       DiffType     `json:"type"`                  // difference type
-	Severity   DiffSeverity `json:"severity"`              // difference severity
-	Expected   interface{}  `json:"expected,omitempty"`    // reference (geth) value
-	Actual     interface{}  `json:"actual,omitempty"`      // target (reth) value
-	Message    string       `json:"message,omitempty"`     // details
+	Path     string       `json:"path"`               // JSON path, such as ".result.blockNumber"
+	Type     DiffType     `json:"type"`               // difference type
+	Severity DiffSeverity `json:"severity"`           // difference severity
+	Expected interface{}  `json:"expected,omitempty"` // baseline value
+	Actual   interface{}  `json:"actual,omitempty"`   // target value
+	Message  string       `json:"message,omitempty"`  // details
 }
 
 // CompareResult collects the differences from a comparison.
 type CompareResult struct {
-	IsEqual     bool          `json:"is_equal"`
-	Differences []Difference  `json:"differences,omitempty"`
-	TotalFields    int `json:"total_fields"`
-	MatchedFields  int `json:"matched_fields"`
-	DiffFields     int `json:"diff_fields"`
-	FailCount    int `json:"fail_count"`
-	WarningCount int `json:"warning_count"`
-	InfoCount    int `json:"info_count"`
+	IsEqual       bool         `json:"is_equal"`
+	Differences   []Difference `json:"differences,omitempty"`
+	TotalFields   int          `json:"total_fields"`
+	MatchedFields int          `json:"matched_fields"`
+	DiffFields    int          `json:"diff_fields"`
+	FailCount     int          `json:"fail_count"`
+	WarningCount  int          `json:"warning_count"`
+	InfoCount     int          `json:"info_count"`
 }
 
 // HasFails reports whether any difference has failure severity.
@@ -64,10 +64,10 @@ func (r *CompareResult) HasWarnings() bool {
 
 // Options controls response comparison.
 type Options struct {
-	IgnorePaths      []string // JSON paths excluded from comparison
-	IgnoreOrder      bool     // ignore array ordering
-	NormalizeHex     bool     // normalize hexadecimal values
-	IgnoreErrorData  bool     // ignore error.data differences
+	IgnorePaths     []string // JSON paths excluded from comparison
+	IgnoreOrder     bool     // ignore array ordering
+	NormalizeHex    bool     // normalize hexadecimal values
+	IgnoreErrorData bool     // ignore error.data differences
 }
 
 // DefaultOptions returns the default comparison settings.
@@ -87,11 +87,11 @@ func Compare(expected, actual []byte, opts *Options) (*CompareResult, error) {
 	}
 
 	var expectedVal, actualVal interface{}
-	
+
 	if err := json.Unmarshal(expected, &expectedVal); err != nil {
 		return nil, fmt.Errorf("解析 expected JSON 失败: %w", err)
 	}
-	
+
 	if err := json.Unmarshal(actual, &actualVal); err != nil {
 		return nil, fmt.Errorf("解析 actual JSON 失败: %w", err)
 	}
@@ -102,7 +102,7 @@ func Compare(expected, actual []byte, opts *Options) (*CompareResult, error) {
 	}
 
 	compareValues("", expectedVal, actualVal, result, opts)
-	
+
 	for i := range result.Differences {
 		result.Differences[i].Severity = classifyDiffSeverity(&result.Differences[i])
 		switch result.Differences[i].Severity {
@@ -114,7 +114,7 @@ func Compare(expected, actual []byte, opts *Options) (*CompareResult, error) {
 			result.InfoCount++
 		}
 	}
-	
+
 	result.DiffFields = len(result.Differences)
 	result.MatchedFields = result.TotalFields - result.DiffFields
 	// Warnings do not make the responses unequal.
@@ -129,7 +129,7 @@ func classifyDiffSeverity(d *Difference) DiffSeverity {
 	if d.Type == DiffTypeExtra || d.Type == DiffTypeMissing {
 		return SeverityWarning
 	}
-	
+
 	return SeverityFail
 }
 
@@ -151,7 +151,7 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 			Path:    path,
 			Type:    DiffTypeExtra,
 			Actual:  actual,
-			Message: "geth 返回 null，reth 返回非 null",
+			Message: "baseline returned null; target returned a value",
 		})
 		return
 	}
@@ -160,7 +160,7 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 			Path:     path,
 			Type:     DiffTypeMissing,
 			Expected: expected,
-			Message:  "geth 返回非 null，reth 返回 null",
+			Message:  "baseline returned a value; target returned null",
 		})
 		return
 	}
@@ -287,7 +287,7 @@ func compareObjects(path string, expected, actual map[string]interface{}, result
 				Path:     childPath,
 				Type:     DiffTypeMissing,
 				Expected: expVal,
-				Message:  "reth 响应中缺少此字段",
+				Message:  "target response is missing this field",
 			})
 			continue
 		}
@@ -298,7 +298,7 @@ func compareObjects(path string, expected, actual map[string]interface{}, result
 				Path:    childPath,
 				Type:    DiffTypeExtra,
 				Actual:  actVal,
-				Message: "reth 响应中有多余字段",
+				Message: "target response has an extra field",
 			})
 			continue
 		}
@@ -333,7 +333,7 @@ func compareArrays(path string, expected, actual []interface{}, result *CompareR
 				Path:    childPath,
 				Type:    DiffTypeExtra,
 				Actual:  actual[i],
-				Message: "reth 响应中有多余的数组元素",
+				Message: "target response has extra array elements",
 			})
 			continue
 		}
@@ -344,7 +344,7 @@ func compareArrays(path string, expected, actual []interface{}, result *CompareR
 				Path:     childPath,
 				Type:     DiffTypeMissing,
 				Expected: expected[i],
-				Message:  "reth 响应中缺少数组元素",
+				Message:  "target response is missing array elements",
 			})
 			continue
 		}
@@ -433,10 +433,10 @@ func FormatDifferences(diffs []Difference) string {
 	for i, d := range diffs {
 		sb.WriteString(fmt.Sprintf("%d. [%s] %s\n", i+1, d.Type, d.Path))
 		if d.Expected != nil {
-			sb.WriteString(fmt.Sprintf("   geth: %v\n", formatValue(d.Expected)))
+			sb.WriteString(fmt.Sprintf("   baseline: %v\n", formatValue(d.Expected)))
 		}
 		if d.Actual != nil {
-			sb.WriteString(fmt.Sprintf("   reth: %v\n", formatValue(d.Actual)))
+			sb.WriteString(fmt.Sprintf("   target: %v\n", formatValue(d.Actual)))
 		}
 		if d.Message != "" {
 			sb.WriteString(fmt.Sprintf("   说明: %s\n", d.Message))
@@ -476,9 +476,9 @@ func formatValue(v interface{}) string {
 type ErrorCompatibility string
 
 const (
-	ErrorCompatNone        ErrorCompatibility = "none"        // incompatible errors
+	ErrorCompatNone           ErrorCompatibility = "none"             // incompatible errors
 	ErrorCompatMethodNotFound ErrorCompatibility = "method_not_found" // unsupported method on both sides
-	ErrorCompatIdentical   ErrorCompatibility = "identical"   // identical errors
+	ErrorCompatIdentical      ErrorCompatibility = "identical"        // identical errors
 )
 
 // methodNotFoundKeywords identifies method-not-found errors from message text.
@@ -491,23 +491,23 @@ var methodNotFoundKeywords = []string{
 }
 
 // CheckErrorCompatibility classifies whether two JSON-RPC errors are compatible.
-func CheckErrorCompatibility(gethError, rethError map[string]interface{}) ErrorCompatibility {
-	if gethError == nil || rethError == nil {
+func CheckErrorCompatibility(baselineError, targetError map[string]interface{}) ErrorCompatibility {
+	if baselineError == nil || targetError == nil {
 		return ErrorCompatNone
 	}
 
-	gethMsg := getErrorMessage(gethError)
-	rethMsg := getErrorMessage(rethError)
+	baselineMsg := getErrorMessage(baselineError)
+	targetMsg := getErrorMessage(targetError)
 
-	if gethMsg == rethMsg {
+	if baselineMsg == targetMsg {
 		return ErrorCompatIdentical
 	}
 
 	// Both clients may report an unsupported method with different wording.
-	gethIsMethodNotFound := isMethodNotFoundError(gethMsg)
-	rethIsMethodNotFound := isMethodNotFoundError(rethMsg)
+	baselineIsMethodNotFound := isMethodNotFoundError(baselineMsg)
+	targetIsMethodNotFound := isMethodNotFoundError(targetMsg)
 
-	if gethIsMethodNotFound && rethIsMethodNotFound {
+	if baselineIsMethodNotFound && targetIsMethodNotFound {
 		return ErrorCompatMethodNotFound
 	}
 

@@ -2,10 +2,69 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/spf13/cobra"
 )
+
+func streamEndpointCommandForTest() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Flags().String("rpc", "", "")
+	cmd.Flags().String("watch-rpc", "", "")
+	return cmd
+}
+
+func TestStreamEndpointFlagsHaveNoLocalDefaults(t *testing.T) {
+	for _, name := range []string{"rpc", "watch-rpc"} {
+		flag := streamCmd.Flags().Lookup(name)
+		if flag == nil || flag.DefValue != "" {
+			t.Fatalf("--%s must be registered without a local endpoint default: %v", name, flag)
+		}
+	}
+}
+
+func TestStreamEndpointResolution(t *testing.T) {
+	t.Setenv("STREAM_RPC_URL", "http://send.example")
+	t.Setenv("STREAM_WATCH_RPC_URL", "http://watch.example")
+	send, watch, err := resolveStreamEndpoints(streamEndpointCommandForTest(), true, true)
+	if err != nil || send != "http://send.example" || watch != "http://watch.example" {
+		t.Fatalf("environment endpoints = %q, %q, %v", send, watch, err)
+	}
+	cmd := streamEndpointCommandForTest()
+	if err := cmd.Flags().Set("rpc", "http://flag-send.example"); err != nil {
+		t.Fatal(err)
+	}
+	send, watch, err = resolveStreamEndpoints(cmd, true, true)
+	if err != nil || send != "http://flag-send.example" || watch != "http://watch.example" {
+		t.Fatalf("flag override endpoints = %q, %q, %v", send, watch, err)
+	}
+	t.Setenv("STREAM_WATCH_RPC_URL", "")
+	send, watch, err = resolveStreamEndpoints(cmd, true, true)
+	if err != nil || watch != send {
+		t.Fatalf("watch fallback endpoints = %q, %q, %v", send, watch, err)
+	}
+}
+
+func TestStreamRequiresOnlyActiveModeEndpoints(t *testing.T) {
+	t.Setenv("STREAM_RPC_URL", "")
+	t.Setenv("STREAM_WATCH_RPC_URL", "")
+	t.Setenv("GETH_RPC_URL", "http://legacy-geth.example")
+	t.Setenv("RETH_RPC_URL", "http://legacy-reth.example")
+	_, _, err := resolveStreamEndpoints(streamEndpointCommandForTest(), true, true)
+	if err == nil || !strings.Contains(err.Error(), "--rpc") {
+		t.Fatalf("missing send endpoint error = %v", err)
+	}
+	cmd := streamEndpointCommandForTest()
+	if err := cmd.Flags().Set("watch-rpc", "http://watch.example"); err != nil {
+		t.Fatal(err)
+	}
+	_, watch, err := resolveStreamEndpoints(cmd, false, true)
+	if err != nil || watch != "http://watch.example" {
+		t.Fatalf("watch-only endpoint = %q, %v", watch, err)
+	}
+}
 
 func TestAnalyzeGPOTxOrder_NoGPO(t *testing.T) {
 	gpo := common.HexToAddress("0x420000000000000000000000000000000000000F")

@@ -193,7 +193,7 @@ func (r *Runner) scenarioGethRethParity(ctx context.Context) {
 	}
 	// wait for nonce n to land before submitting n+1 via reth (avoid a nonce gap)
 	_, _ = r.tester.WaitForReceipt(ctx, r.seq, common.HexToHash(gethResp.TxHash), 30*time.Second)
-	rethResp, err := r.tester.SendRawTransactionWithPreconf(ctx, r.reth, rethTx, name+"/reth")
+	rethResp, err := r.tester.SendRawTransactionWithPreconf(ctx, r.targetVerifier, rethTx, name+"/reth")
 	if err != nil {
 		r.record(name, false, "reth send error (regression? pre-fix this was -32000): %v", err)
 		return

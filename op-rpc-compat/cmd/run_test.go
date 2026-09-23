@@ -65,7 +65,7 @@ func TestEmbeddedTestcaseLoadsOutsideRepository(t *testing.T) {
 
 func TestDefaultKnownDiffsLoadOutsideRepository(t *testing.T) {
 	t.Chdir(t.TempDir())
-	r := report.NewReporter("baseline", "target", false)
+	r := report.NewReporter(report.EndpointMetadata{Name: "op-geth", URL: "baseline"}, report.EndpointMetadata{Name: "op-reth", URL: "target"}, false)
 	if err := loadKnownDiffsFS(r, testcaseFS("")); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestCustomKnownDiffsUseSelectedDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, knownDiffsFileName), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r := report.NewReporter("baseline", "target", false)
+	r := report.NewReporter(report.EndpointMetadata{Name: "baseline", URL: "baseline"}, report.EndpointMetadata{Name: "target", URL: "target"}, false)
 	if err := loadKnownDiffsFS(r, testcaseFS(dir)); err != nil {
 		t.Fatal(err)
 	}

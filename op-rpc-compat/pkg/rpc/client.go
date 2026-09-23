@@ -45,15 +45,15 @@ type Client struct {
 
 // ClientPair holds the two clients being compared.
 type ClientPair struct {
-	Primary   *Client // typically geth in the source suite
-	Secondary *Client // typically reth in the source suite
+	Baseline *Client
+	Target   *Client
 }
 
 // CompareResult contains both responses to a comparison request.
 type CompareResult struct {
 	Request          *Request
-	PrimaryResponse  *ResponseWithMeta
-	SecondaryResponse *ResponseWithMeta
+	BaselineResponse *ResponseWithMeta
+	TargetResponse   *ResponseWithMeta
 }
 
 // ResponseWithMeta pairs a response with request metadata.
@@ -78,10 +78,10 @@ func NewClient(url, name string, timeout time.Duration) *Client {
 }
 
 // NewClientPair creates a pair of RPC clients.
-func NewClientPair(primaryURL, secondaryURL string, timeout time.Duration) *ClientPair {
+func NewClientPair(baselineURL, baselineName, targetURL, targetName string, timeout time.Duration) *ClientPair {
 	return &ClientPair{
-		Primary:   NewClient(primaryURL, "geth", timeout),
-		Secondary: NewClient(secondaryURL, "reth", timeout),
+		Baseline: NewClient(baselineURL, baselineName, timeout),
+		Target:   NewClient(targetURL, targetName, timeout),
 	}
 }
 
@@ -168,12 +168,12 @@ func (cp *ClientPair) Compare(ctx context.Context, req *Request) *CompareResult 
 
 	go func() {
 		defer wg.Done()
-		result.PrimaryResponse = cp.Primary.Call(ctx, req)
+		result.BaselineResponse = cp.Baseline.Call(ctx, req)
 	}()
 
 	go func() {
 		defer wg.Done()
-		result.SecondaryResponse = cp.Secondary.Call(ctx, req)
+		result.TargetResponse = cp.Target.Call(ctx, req)
 	}()
 
 	wg.Wait()
@@ -191,12 +191,12 @@ func (cp *ClientPair) CompareWithRetry(ctx context.Context, req *Request, maxRet
 
 	go func() {
 		defer wg.Done()
-		result.PrimaryResponse = cp.Primary.CallWithRetry(ctx, req, maxRetries, retryDelay)
+		result.BaselineResponse = cp.Baseline.CallWithRetry(ctx, req, maxRetries, retryDelay)
 	}()
 
 	go func() {
 		defer wg.Done()
-		result.SecondaryResponse = cp.Secondary.CallWithRetry(ctx, req, maxRetries, retryDelay)
+		result.TargetResponse = cp.Target.CallWithRetry(ctx, req, maxRetries, retryDelay)
 	}()
 
 	wg.Wait()

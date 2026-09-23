@@ -15,29 +15,29 @@ import (
 
 // Config configures a preconf test run.
 type Config struct {
-	SequencerURL string // op-geth sequencer preconf endpoint (geth side), e.g. http://127.0.0.1:9545
-	RethURL      string // op-reth forwarding node preconf endpoint, e.g. http://127.0.0.1:29545
-	GethVerURL   string // op-geth verifier (forwarding) endpoint, e.g. http://127.0.0.1:19545
-	OpNodeURL    string // sequencer op-node admin RPC, e.g. http://127.0.0.1:9745 (A17 stall test)
-	L1URL        string // L1 RPC (for deposit ordering test), e.g. http://127.0.0.1:38545
-	FunderKey    string // funded account (also a preconf-whitelisted sender): 0xf39F...2266
-	Addr1Key     string // preconf-whitelisted sender used for TestPay calls: 0x6F18...BDc5
-	Addr3Key     string // ERC20 token owner (approves TestPay, holds minted balance): 0x918a...EC29
-	Heavy        bool   // run heavier throughput suites (currently: stress)
-	StressCount  int    // number of preconf txs for the stress scenario (0 → default 200)
-	Only         string // if non-empty, run only the scenario with this name (setup still runs)
+	SequencerURL        string // sequencer preconfirmation endpoint
+	TargetVerifierURL   string // target forwarding verifier endpoint
+	BaselineVerifierURL string // baseline forwarding verifier endpoint
+	OpNodeURL           string // sequencer op-node admin RPC for opt-in scenarios
+	L1URL               string // L1 RPC for deposit ordering scenarios
+	FunderKey           string // funded account (also a preconf-whitelisted sender): 0xf39F...2266
+	Addr1Key            string // preconf-whitelisted sender used for TestPay calls: 0x6F18...BDc5
+	Addr3Key            string // ERC20 token owner (approves TestPay, holds minted balance): 0x918a...EC29
+	Heavy               bool   // run heavier throughput suites (currently: stress)
+	StressCount         int    // number of preconf txs for the stress scenario (0 → default 200)
+	Only                string // if non-empty, run only the scenario with this name (setup still runs)
 }
 
 // Runner holds the shared harness for the scenarios.
 type Runner struct {
-	cfg    Config
-	tester *tx.Tester
-	funder *tx.Builder
-	addr1  *tx.Builder
-	addr3  *tx.Builder
-	seq    *rpc.Client // geth-side (sequencer)
-	reth   *rpc.Client
-	gethV  *rpc.Client // op-geth verifier (19545), for verifier-layer parity
+	cfg              Config
+	tester           *tx.Tester
+	funder           *tx.Builder
+	addr1            *tx.Builder
+	addr3            *tx.Builder
+	seq              *rpc.Client
+	targetVerifier   *rpc.Client
+	baselineVerifier *rpc.Client
 
 	burnerAddr common.Address // GasBurner, deployed lazily by the block-full scenario
 
@@ -50,11 +50,11 @@ type result struct {
 	detail string
 }
 
-// NewRunner wires the Tester (sequencer as the "geth" client, reth as the "reth" client) and the
-// per-account signers. A nil reporter is passed to the Tester — this suite does its own pass/fail
-// accounting rather than the two-client-same-op diff model.
+// NewRunner wires the sequencer, verifiers, and per-account signers.
+// This suite tracks its own pass/fail outcomes, so the transaction tester has no reporter.
 func NewRunner(cfg Config) (*Runner, error) {
-	tester, err := tx.NewTester(cfg.SequencerURL, cfg.RethURL, cfg.FunderKey, nil)
+	pair := rpc.NewClientPair(cfg.SequencerURL, "sequencer", cfg.TargetVerifierURL, "target-verifier", 30*time.Second)
+	tester, err := tx.NewTester(pair, cfg.FunderKey, nil)
 	if err != nil {
 		return nil, fmt.Errorf("new tester: %w", err)
 	}
@@ -66,22 +66,15 @@ func NewRunner(cfg Config) (*Runner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("new addr3 builder: %w", err)
 	}
-	gethVerURL := cfg.GethVerURL
-	if gethVerURL == "" {
-		gethVerURL = "http://127.0.0.1:19545"
-	}
-	if cfg.OpNodeURL == "" {
-		cfg.OpNodeURL = "http://127.0.0.1:9745"
-	}
 	return &Runner{
-		cfg:    cfg,
-		tester: tester,
-		funder: tester.Builder(),
-		addr1:  addr1,
-		addr3:  addr3,
-		seq:    tester.GethClient(),
-		reth:   tester.RethClient(),
-		gethV:  rpc.NewClient(gethVerURL, "gethV", 30*time.Second),
+		cfg:              cfg,
+		tester:           tester,
+		funder:           tester.Builder(),
+		addr1:            addr1,
+		addr3:            addr3,
+		seq:              tester.BaselineClient(),
+		targetVerifier:   tester.TargetClient(),
+		baselineVerifier: rpc.NewClient(cfg.BaselineVerifierURL, "baseline-verifier", 30*time.Second),
 	}, nil
 }
 

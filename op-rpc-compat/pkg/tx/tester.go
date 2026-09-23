@@ -20,29 +20,40 @@ import (
 
 // Tester runs transaction scenarios against two RPC clients.
 type Tester struct {
-	gethClient *rpc.Client
-	rethClient *rpc.Client
-	builder    *Builder
-	chainID    *big.Int
-	reporter   *report.Reporter // records RPC outcomes
+	baselineClient *rpc.Client
+	targetClient   *rpc.Client
+	builder        *Builder
+	chainID        *big.Int
+	reporter       *report.Reporter // records RPC outcomes
 }
 
 // NewTester creates a transaction tester.
-func NewTester(gethURL, rethURL, privateKeyHex string, reporter *report.Reporter) (*Tester, error) {
-	gethClient := rpc.NewClient(gethURL, "geth", 30*time.Second)
-	rethClient := rpc.NewClient(rethURL, "reth", 30*time.Second)
+func NewTester(pair *rpc.ClientPair, privateKeyHex string, reporter *report.Reporter) (*Tester, error) {
+	if pair == nil || pair.Baseline == nil || pair.Target == nil {
+		return nil, fmt.Errorf("transaction tester requires baseline and target clients")
+	}
+	baselineClient, targetClient := pair.Baseline, pair.Target
 
 	ctx := context.Background()
-	chainIDResp := gethClient.Call(ctx, rpc.NewRequest("eth_chainId", nil))
+	chainIDResp := baselineClient.Call(ctx, rpc.NewRequest("eth_chainId", nil))
 	if chainIDResp.Error != nil {
-		return nil, fmt.Errorf("获取 chainID 失败: %w", chainIDResp.Error)
+		return nil, fmt.Errorf("%s eth_chainId: %w", baselineClient.Name(), chainIDResp.Error)
+	}
+	if chainIDResp.Response == nil {
+		return nil, fmt.Errorf("%s eth_chainId returned no response", baselineClient.Name())
+	}
+	if chainIDResp.Response.Error != nil {
+		return nil, fmt.Errorf("%s eth_chainId RPC error %d: %s", baselineClient.Name(), chainIDResp.Response.Error.Code, chainIDResp.Response.Error.Message)
 	}
 
 	var chainIDHex string
 	if err := json.Unmarshal(chainIDResp.Response.Result, &chainIDHex); err != nil {
 		return nil, fmt.Errorf("解析 chainID 失败: %w", err)
 	}
-	chainID, _ := hexutil.DecodeBig(chainIDHex)
+	chainID, err := hexutil.DecodeBig(chainIDHex)
+	if err != nil {
+		return nil, fmt.Errorf("%s eth_chainId invalid result %q: %w", baselineClient.Name(), chainIDHex, err)
+	}
 
 	builder, err := NewBuilder(chainID, privateKeyHex)
 	if err != nil {
@@ -50,11 +61,11 @@ func NewTester(gethURL, rethURL, privateKeyHex string, reporter *report.Reporter
 	}
 
 	return &Tester{
-		gethClient: gethClient,
-		rethClient: rethClient,
-		builder:    builder,
-		chainID:    chainID,
-		reporter:   reporter,
+		baselineClient: baselineClient,
+		targetClient:   targetClient,
+		builder:        builder,
+		chainID:        chainID,
+		reporter:       reporter,
 	}, nil
 }
 
@@ -106,24 +117,24 @@ func (t *Tester) GetBalance(ctx context.Context, client *rpc.Client, address com
 func (t *Tester) GetBalanceAndCompare(ctx context.Context, address common.Address, block string, testName string) (*big.Int, error) {
 	req := rpc.NewRequest("eth_getBalance", []interface{}{address.Hex(), block})
 
-	gethResp := t.gethClient.Call(ctx, req)
-	rethResp := t.rethClient.Call(ctx, req)
+	baselineResp := t.baselineClient.Call(ctx, req)
+	targetResp := t.targetClient.Call(ctx, req)
 
 	if t.reporter != nil {
 		compareResult := &rpc.CompareResult{
-			Request:           req,
-			PrimaryResponse:   gethResp,
-			SecondaryResponse: rethResp,
+			Request:          req,
+			BaselineResponse: baselineResp,
+			TargetResponse:   targetResp,
 		}
 
 		var diffResult *diff.CompareResult
 		var compareErr error
-		if gethResp.Response.Error == nil && rethResp.Response.Error == nil {
-			gethRaw := normalizeRawResponse(gethResp.RawBody, false)
-			rethRaw := normalizeRawResponse(rethResp.RawBody, false)
+		if baselineResp.Response.Error == nil && targetResp.Response.Error == nil {
+			baselineRaw := normalizeRawResponse(baselineResp.RawBody, false)
+			targetRaw := normalizeRawResponse(targetResp.RawBody, false)
 			diffResult, compareErr = diff.Compare(
-				gethRaw,
-				rethRaw,
+				baselineRaw,
+				targetRaw,
 				diff.DefaultOptions(),
 			)
 		}
@@ -137,15 +148,15 @@ func (t *Tester) GetBalanceAndCompare(ctx context.Context, address common.Addres
 	}
 
 	// Subsequent transaction construction uses the reference client's value.
-	if gethResp.Error != nil {
-		return nil, gethResp.Error
+	if baselineResp.Error != nil {
+		return nil, baselineResp.Error
 	}
-	if gethResp.Response.Error != nil {
-		return nil, fmt.Errorf("RPC error: %s", gethResp.Response.Error.Message)
+	if baselineResp.Response.Error != nil {
+		return nil, fmt.Errorf("RPC error: %s", baselineResp.Response.Error.Message)
 	}
 
 	var balanceHex string
-	if err := json.Unmarshal(gethResp.Response.Result, &balanceHex); err != nil {
+	if err := json.Unmarshal(baselineResp.Response.Result, &balanceHex); err != nil {
 		return nil, err
 	}
 
@@ -241,17 +252,17 @@ func (t *Tester) sendRawTransaction(
 	if t.reporter != nil {
 		// A one-sided CompareResult retains the actual response for the report.
 		var compareResult *rpc.CompareResult
-		if client == t.gethClient {
+		if client == t.baselineClient {
 			compareResult = &rpc.CompareResult{
-				Request:           req,
-				PrimaryResponse:   resp,
-				SecondaryResponse: nil, // the target receives a different transaction
+				Request:          req,
+				BaselineResponse: resp,
+				TargetResponse:   nil, // the target receives a different transaction
 			}
 		} else {
 			compareResult = &rpc.CompareResult{
-				Request:           req,
-				PrimaryResponse:   nil, // the reference receives a different transaction
-				SecondaryResponse: resp,
+				Request:          req,
+				BaselineResponse: nil, // the reference receives a different transaction
+				TargetResponse:   resp,
 			}
 		}
 
@@ -301,17 +312,17 @@ func (t *Tester) SendRawTransactionWithPreconf(ctx context.Context, client *rpc.
 	if t.reporter != nil {
 		// A one-sided CompareResult retains the actual response for the report.
 		var compareResult *rpc.CompareResult
-		if client == t.gethClient {
+		if client == t.baselineClient {
 			compareResult = &rpc.CompareResult{
-				Request:           req,
-				PrimaryResponse:   resp,
-				SecondaryResponse: nil, // the target receives a different transaction
+				Request:          req,
+				BaselineResponse: resp,
+				TargetResponse:   nil, // the target receives a different transaction
 			}
 		} else {
 			compareResult = &rpc.CompareResult{
-				Request:           req,
-				PrimaryResponse:   nil, // the reference receives a different transaction
-				SecondaryResponse: resp,
+				Request:          req,
+				BaselineResponse: nil, // the reference receives a different transaction
+				TargetResponse:   resp,
 			}
 		}
 
@@ -427,34 +438,34 @@ func normalizeRawResponse(data []byte, isReceipt bool) []byte {
 }
 
 // CompareReceipts compares receipts for distinct transactions sent through each client.
-func (t *Tester) CompareReceipts(ctx context.Context, testName string, gethTxHash, rethTxHash common.Hash) (bool, error) {
+func (t *Tester) CompareReceipts(ctx context.Context, testName string, baselineTxHash, targetTxHash common.Hash) (bool, error) {
 	if t.reporter == nil {
 		return true, nil
 	}
 
-	gethReq := rpc.NewRequest("eth_getTransactionReceipt", []interface{}{gethTxHash.Hex()})
-	gethResp := t.gethClient.Call(ctx, gethReq)
+	baselineReq := rpc.NewRequest("eth_getTransactionReceipt", []interface{}{baselineTxHash.Hex()})
+	baselineResp := t.baselineClient.Call(ctx, baselineReq)
 
-	rethReq := rpc.NewRequest("eth_getTransactionReceipt", []interface{}{rethTxHash.Hex()})
-	rethResp := t.rethClient.Call(ctx, rethReq)
+	targetReq := rpc.NewRequest("eth_getTransactionReceipt", []interface{}{targetTxHash.Hex()})
+	targetResp := t.targetClient.Call(ctx, targetReq)
 
 	// Pair the two receipt responses even though their transaction hashes differ.
 	compareResult := &rpc.CompareResult{
-		Request:           gethReq, // retain the reference request in the report
-		PrimaryResponse:   gethResp,
-		SecondaryResponse: rethResp,
+		Request:          baselineReq, // retain the reference request in the report
+		BaselineResponse: baselineResp,
+		TargetResponse:   targetResp,
 	}
 
 	var diffResult *diff.CompareResult
 	var compareErr error
 
-	if gethResp.Response.Error == nil && rethResp.Response.Error == nil {
-		gethRaw := normalizeRawResponse(gethResp.RawBody, true)
-		rethRaw := normalizeRawResponse(rethResp.RawBody, true)
+	if baselineResp.Response.Error == nil && targetResp.Response.Error == nil {
+		baselineRaw := normalizeRawResponse(baselineResp.RawBody, true)
+		targetRaw := normalizeRawResponse(targetResp.RawBody, true)
 
 		diffResult, compareErr = diff.Compare(
-			gethRaw,
-			rethRaw,
+			baselineRaw,
+			targetRaw,
 			diff.DefaultOptions(),
 		)
 
@@ -463,12 +474,12 @@ func (t *Tester) CompareReceipts(ctx context.Context, testName string, gethTxHas
 			diffResult = &diff.CompareResult{}
 		}
 
-		var gethMap, rethMap map[string]interface{}
-		if err := json.Unmarshal(gethResp.RawBody, &gethMap); err == nil {
-			if err := json.Unmarshal(rethResp.RawBody, &rethMap); err == nil {
-				if gethRes, ok := gethMap["result"].(map[string]interface{}); ok && gethRes != nil {
-					if rethRes, ok := rethMap["result"].(map[string]interface{}); ok && rethRes != nil {
-						if gethRes["gasUsed"] != rethRes["gasUsed"] {
+		var baselineMap, targetMap map[string]interface{}
+		if err := json.Unmarshal(baselineResp.RawBody, &baselineMap); err == nil {
+			if err := json.Unmarshal(targetResp.RawBody, &targetMap); err == nil {
+				if baselineRes, ok := baselineMap["result"].(map[string]interface{}); ok && baselineRes != nil {
+					if targetRes, ok := targetMap["result"].(map[string]interface{}); ok && targetRes != nil {
+						if baselineRes["gasUsed"] != targetRes["gasUsed"] {
 							exists := false
 							for _, d := range diffResult.Differences {
 								if strings.Contains(d.Path, "gasUsed") {
@@ -480,8 +491,8 @@ func (t *Tester) CompareReceipts(ctx context.Context, testName string, gethTxHas
 								diffResult.Differences = append(diffResult.Differences, diff.Difference{
 									Type:     diff.DiffTypeValue,
 									Path:     "result.gasUsed",
-									Expected: gethRes["gasUsed"],
-									Actual:   rethRes["gasUsed"],
+									Expected: baselineRes["gasUsed"],
+									Actual:   targetRes["gasUsed"],
 									Message:  "Gas 使用不一致 (强制检查)",
 									Severity: diff.SeverityFail,
 								})
@@ -489,7 +500,7 @@ func (t *Tester) CompareReceipts(ctx context.Context, testName string, gethTxHas
 							}
 						}
 
-						if gethRes["status"] != rethRes["status"] {
+						if baselineRes["status"] != targetRes["status"] {
 							exists := false
 							for _, d := range diffResult.Differences {
 								if strings.Contains(d.Path, "status") {
@@ -501,8 +512,8 @@ func (t *Tester) CompareReceipts(ctx context.Context, testName string, gethTxHas
 								diffResult.Differences = append(diffResult.Differences, diff.Difference{
 									Type:     diff.DiffTypeValue,
 									Path:     "result.status",
-									Expected: gethRes["status"],
-									Actual:   rethRes["status"],
+									Expected: baselineRes["status"],
+									Actual:   targetRes["status"],
 									Message:  "交易状态不一致 (强制检查)",
 									Severity: diff.SeverityFail,
 								})
@@ -518,7 +529,7 @@ func (t *Tester) CompareReceipts(ctx context.Context, testName string, gethTxHas
 	tc := report.TestCase{
 		Name:   fmt.Sprintf("%s_receipt", testName),
 		Method: "eth_getTransactionReceipt",
-		Params: []interface{}{gethTxHash.Hex(), rethTxHash.Hex()}, // retain both transaction hashes
+		Params: []interface{}{baselineTxHash.Hex(), targetTxHash.Hex()}, // retain both transaction hashes
 	}
 	t.reporter.AddResult(tc, compareResult, diffResult, compareErr)
 
@@ -529,7 +540,7 @@ func (t *Tester) CompareReceipts(ctx context.Context, testName string, gethTxHas
 		var diffMsgs []string
 		for _, d := range diffResult.Differences {
 			if d.Severity == diff.SeverityFail {
-				diffMsgs = append(diffMsgs, fmt.Sprintf("%s: %s (Geth: %v, Reth: %v)", d.Path, d.Message, d.Expected, d.Actual))
+				diffMsgs = append(diffMsgs, fmt.Sprintf("%s: %s (Baseline: %v, Target: %v)", d.Path, d.Message, d.Expected, d.Actual))
 			}
 		}
 		return false, fmt.Errorf("receipt comparison failed: %s", strings.Join(diffMsgs, "; "))
@@ -545,24 +556,24 @@ func (t *Tester) WaitForReceiptAndCompare(ctx context.Context, txHash common.Has
 	recorded := false // record a successful result only once
 
 	for time.Now().Before(deadline) {
-		gethResp := t.gethClient.Call(ctx, req)
-		rethResp := t.rethClient.Call(ctx, req)
+		baselineResp := t.baselineClient.Call(ctx, req)
+		targetResp := t.targetClient.Call(ctx, req)
 
-		if gethResp.Error != nil {
+		if baselineResp.Error != nil {
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
-		if gethResp.Response.Error != nil {
+		if baselineResp.Response.Error != nil {
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
-		if string(gethResp.Response.Result) == "null" {
+		if string(baselineResp.Response.Result) == "null" {
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
 
 		var rawReceipt map[string]interface{}
-		if err := json.Unmarshal(gethResp.Response.Result, &rawReceipt); err != nil {
+		if err := json.Unmarshal(baselineResp.Response.Result, &rawReceipt); err != nil {
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
@@ -590,7 +601,7 @@ func (t *Tester) WaitForReceiptAndCompare(ctx context.Context, txHash common.Has
 		// Record the comparison once the reference receipt is available.
 		if t.reporter != nil && !recorded {
 			// Allow the target a short period to catch up with the reference.
-			if string(rethResp.Response.Result) == "null" {
+			if string(targetResp.Response.Result) == "null" {
 				if time.Until(deadline) > 2*time.Second {
 					time.Sleep(200 * time.Millisecond)
 					continue
@@ -598,17 +609,17 @@ func (t *Tester) WaitForReceiptAndCompare(ctx context.Context, txHash common.Has
 			}
 
 			compareResult := &rpc.CompareResult{
-				Request:           req,
-				PrimaryResponse:   gethResp,
-				SecondaryResponse: rethResp,
+				Request:          req,
+				BaselineResponse: baselineResp,
+				TargetResponse:   targetResp,
 			}
 
 			var diffResult *diff.CompareResult
 			var compareErr error
-			if rethResp.Response != nil && rethResp.Response.Error == nil && string(rethResp.Response.Result) != "null" {
+			if targetResp.Response != nil && targetResp.Response.Error == nil && string(targetResp.Response.Result) != "null" {
 				diffResult, compareErr = diff.Compare(
-					gethResp.RawBody,
-					rethResp.RawBody,
+					baselineResp.RawBody,
+					targetResp.RawBody,
 					diff.DefaultOptions(),
 				)
 			} else {
@@ -618,7 +629,7 @@ func (t *Tester) WaitForReceiptAndCompare(ctx context.Context, txHash common.Has
 						{
 							Type:    diff.DiffTypeMissing,
 							Path:    "receipt",
-							Message: "reth 缺失收据 (geth 已确认)",
+							Message: fmt.Sprintf("%s is missing a receipt (%s confirmed)", t.targetClient.Name(), t.baselineClient.Name()),
 						},
 					},
 				}
@@ -674,19 +685,19 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 		return result
 	}
 
-	gethNonce, err := t.GetNonce(ctx, t.gethClient, t.builder.Address())
+	baselineNonce, err := t.GetNonce(ctx, t.baselineClient, t.builder.Address())
 	if err != nil {
-		result.Error = fmt.Sprintf("获取 Geth nonce 失败: %v", err)
+		result.Error = fmt.Sprintf("获取 Baseline nonce 失败: %v", err)
 		return result
 	}
 
-	gasPrice, err := t.GetGasPrice(ctx, t.gethClient)
+	gasPrice, err := t.GetGasPrice(ctx, t.baselineClient)
 	if err != nil {
 		result.Error = fmt.Sprintf("获取 gas 价格失败: %v", err)
 		return result
 	}
 
-	estimatedGas, _ := t.EstimateGas(ctx, t.gethClient, map[string]interface{}{
+	estimatedGas, _ := t.EstimateGas(ctx, t.baselineClient, map[string]interface{}{
 		"from":  t.builder.Address().Hex(),
 		"to":    recipient.Hex(),
 		"value": hexutil.EncodeBig(amount),
@@ -708,7 +719,7 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 		GasPrice:             gasPrice,
 		MaxFeePerGas:         maxFeePerGas,
 		MaxPriorityFeePerGas: maxPriorityFee,
-		Nonce:                gethNonce,
+		Nonce:                baselineNonce,
 		ChainID:              t.chainID,
 	}
 
@@ -718,7 +729,7 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 		auth := types.SetCodeAuthorization{
 			ChainID: *uint256.MustFromBig(t.chainID),
 			Address: t.builder.Address(), // authorized code address
-			Nonce:   gethNonce,           // current nonce
+			Nonce:   baselineNonce,       // current nonce
 		}
 		signedAuth, err := t.builder.SignSetCodeAuth(auth)
 		if err != nil {
@@ -728,125 +739,125 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 		params.AuthList = []types.SetCodeAuthorization{signedAuth}
 	}
 
-	gethTx, err := t.builder.BuildAndSign(txType, params)
+	baselineTx, err := t.builder.BuildAndSign(txType, params)
 	if err != nil {
-		result.Error = fmt.Sprintf("构建 Geth 交易失败: %v", err)
+		result.Error = fmt.Sprintf("构建 Baseline 交易失败: %v", err)
 		return result
 	}
 
-	var gethTxHash common.Hash
+	var baselineTxHash common.Hash
 	if usePreconf {
-		preconfResp, err := t.SendRawTransactionWithPreconf(ctx, t.gethClient, gethTx, fmt.Sprintf("%s_send_geth_preconf", testName))
+		preconfResp, err := t.SendRawTransactionWithPreconf(ctx, t.baselineClient, baselineTx, fmt.Sprintf("%s_send_baseline_preconf", testName))
 		if err != nil {
-			result.Error = fmt.Sprintf("发送 Geth preconf 交易失败: %v", err)
+			result.Error = fmt.Sprintf("发送 Baseline preconf 交易失败: %v", err)
 			return result
 		}
-		result.GethPreconf = preconfResp
-		gethTxHash = common.HexToHash(preconfResp.TxHash)
+		result.BaselinePreconf = preconfResp
+		baselineTxHash = common.HexToHash(preconfResp.TxHash)
 	} else {
-		gethTxHash, err = t.SendRawTransaction(ctx, t.gethClient, gethTx, fmt.Sprintf("%s_send_geth", testName))
+		baselineTxHash, err = t.SendRawTransaction(ctx, t.baselineClient, baselineTx, fmt.Sprintf("%s_send_baseline", testName))
 		if err != nil {
-			result.Error = fmt.Sprintf("发送 Geth 交易失败: %v", err)
+			result.Error = fmt.Sprintf("发送 Baseline 交易失败: %v", err)
 			return result
 		}
 	}
-	result.GethTxHash = gethTxHash.Hex()
+	result.BaselineTxHash = baselineTxHash.Hex()
 
-	gethReceipt, err := t.WaitForReceipt(ctx, t.gethClient, gethTxHash, 60*time.Second)
+	baselineReceipt, err := t.WaitForReceipt(ctx, t.baselineClient, baselineTxHash, 60*time.Second)
 	if err != nil {
-		result.Error = fmt.Sprintf("等待 Geth 交易确认失败: %v", err)
+		result.Error = fmt.Sprintf("等待 Baseline 交易确认失败: %v", err)
 		return result
 	}
-	result.GethReceipt = gethReceipt
+	result.BaselineReceipt = baselineReceipt
 
-	balanceAfterGeth, err := t.GetBalanceAndCompare(ctx, recipient, "latest", fmt.Sprintf("%s_after_geth_balance", testName))
+	balanceAfterBaseline, err := t.GetBalanceAndCompare(ctx, recipient, "latest", fmt.Sprintf("%s_after_baseline_balance", testName))
 	if err != nil {
-		result.Error = fmt.Sprintf("获取 Geth 交易后余额失败: %v", err)
+		result.Error = fmt.Sprintf("获取 Baseline 交易后余额失败: %v", err)
 		return result
 	}
-	gethBalanceDelta := new(big.Int).Sub(balanceAfterGeth, initialBalance)
+	baselineBalanceDelta := new(big.Int).Sub(balanceAfterBaseline, initialBalance)
 
 	// Use the next nonce for the target transaction.
-	params.Nonce = gethNonce + 1
+	params.Nonce = baselineNonce + 1
 
 	// The target EIP-7702 authorization needs its own nonce.
 	if txType == TxTypeEIP7702 {
 		auth := types.SetCodeAuthorization{
 			ChainID: *uint256.MustFromBig(t.chainID),
 			Address: t.builder.Address(),
-			Nonce:   gethNonce + 1, // next nonce
+			Nonce:   baselineNonce + 1, // next nonce
 		}
 		signedAuth, err := t.builder.SignSetCodeAuth(auth)
 		if err != nil {
-			result.Error = fmt.Sprintf("签名 Reth 授权失败: %v", err)
+			result.Error = fmt.Sprintf("签名 Target 授权失败: %v", err)
 			return result
 		}
 		params.AuthList = []types.SetCodeAuthorization{signedAuth}
 	}
 
-	rethTx, err := t.builder.BuildAndSign(txType, params)
+	targetTx, err := t.builder.BuildAndSign(txType, params)
 	if err != nil {
-		result.Error = fmt.Sprintf("构建 Reth 交易失败: %v", err)
+		result.Error = fmt.Sprintf("构建 Target 交易失败: %v", err)
 		return result
 	}
 
-	var rethTxHash common.Hash
+	var targetTxHash common.Hash
 	if usePreconf {
-		preconfResp, err := t.SendRawTransactionWithPreconf(ctx, t.rethClient, rethTx, fmt.Sprintf("%s_send_reth_preconf", testName))
+		preconfResp, err := t.SendRawTransactionWithPreconf(ctx, t.targetClient, targetTx, fmt.Sprintf("%s_send_target_preconf", testName))
 		if err != nil {
-			result.Error = fmt.Sprintf("发送 Reth preconf 交易失败: %v", err)
+			result.Error = fmt.Sprintf("发送 Target preconf 交易失败: %v", err)
 			return result
 		}
-		result.RethPreconf = preconfResp
-		rethTxHash = common.HexToHash(preconfResp.TxHash)
+		result.TargetPreconf = preconfResp
+		targetTxHash = common.HexToHash(preconfResp.TxHash)
 	} else {
-		rethTxHash, err = t.SendRawTransaction(ctx, t.rethClient, rethTx, fmt.Sprintf("%s_send_reth", testName))
+		targetTxHash, err = t.SendRawTransaction(ctx, t.targetClient, targetTx, fmt.Sprintf("%s_send_target", testName))
 		if err != nil {
-			result.Error = fmt.Sprintf("发送 Reth 交易失败: %v", err)
+			result.Error = fmt.Sprintf("发送 Target 交易失败: %v", err)
 			return result
 		}
 	}
-	result.RethTxHash = rethTxHash.Hex()
+	result.TargetTxHash = targetTxHash.Hex()
 
-	rethReceipt, err := t.WaitForReceipt(ctx, t.rethClient, rethTxHash, 60*time.Second)
+	targetReceipt, err := t.WaitForReceipt(ctx, t.targetClient, targetTxHash, 60*time.Second)
 	if err != nil {
-		result.Error = fmt.Sprintf("等待 Reth 交易确认失败: %v", err)
+		result.Error = fmt.Sprintf("等待 Target 交易确认失败: %v", err)
 		return result
 	}
-	result.RethReceipt = rethReceipt
+	result.TargetReceipt = targetReceipt
 
-	match, diffErr := t.CompareReceipts(ctx, testName, gethTxHash, rethTxHash)
+	match, diffErr := t.CompareReceipts(ctx, testName, baselineTxHash, targetTxHash)
 
-	balanceAfterReth, err := t.GetBalanceAndCompare(ctx, recipient, "latest", fmt.Sprintf("%s_after_reth_balance", testName))
+	balanceAfterTarget, err := t.GetBalanceAndCompare(ctx, recipient, "latest", fmt.Sprintf("%s_after_target_balance", testName))
 	if err != nil {
-		result.Error = fmt.Sprintf("获取 Reth 交易后余额失败: %v", err)
+		result.Error = fmt.Sprintf("获取 Target 交易后余额失败: %v", err)
 		return result
 	}
-	rethBalanceDelta := new(big.Int).Sub(balanceAfterReth, balanceAfterGeth)
+	targetBalanceDelta := new(big.Int).Sub(balanceAfterTarget, balanceAfterBaseline)
 
 	comparison := &StateComparison{
-		GethBalanceDelta: gethBalanceDelta,
-		RethBalanceDelta: rethBalanceDelta,
-		BalanceMatch:     gethBalanceDelta.Cmp(rethBalanceDelta) == 0,
-		GethGasUsed:      gethReceipt.GasUsed,
-		RethGasUsed:      rethReceipt.GasUsed,
-		GasMatch:         gethReceipt.GasUsed == rethReceipt.GasUsed,
-		GethStatus:       gethReceipt.Status,
-		RethStatus:       rethReceipt.Status,
-		StatusMatch:      gethReceipt.Status == rethReceipt.Status,
+		BaselineBalanceDelta: baselineBalanceDelta,
+		TargetBalanceDelta:   targetBalanceDelta,
+		BalanceMatch:         baselineBalanceDelta.Cmp(targetBalanceDelta) == 0,
+		BaselineGasUsed:      baselineReceipt.GasUsed,
+		TargetGasUsed:        targetReceipt.GasUsed,
+		GasMatch:             baselineReceipt.GasUsed == targetReceipt.GasUsed,
+		BaselineStatus:       baselineReceipt.Status,
+		TargetStatus:         targetReceipt.Status,
+		StatusMatch:          baselineReceipt.Status == targetReceipt.Status,
 	}
 
 	if !comparison.BalanceMatch {
 		comparison.Differences = append(comparison.Differences,
-			fmt.Sprintf("余额变化不一致: Geth=%s, Reth=%s", gethBalanceDelta.String(), rethBalanceDelta.String()))
+			fmt.Sprintf("余额变化不一致: Baseline=%s, Target=%s", baselineBalanceDelta.String(), targetBalanceDelta.String()))
 	}
 	if !comparison.GasMatch {
 		comparison.Differences = append(comparison.Differences,
-			fmt.Sprintf("Gas 使用不一致: Geth=%d, Reth=%d", gethReceipt.GasUsed, rethReceipt.GasUsed))
+			fmt.Sprintf("Gas 使用不一致: Baseline=%d, Target=%d", baselineReceipt.GasUsed, targetReceipt.GasUsed))
 	}
 	if !comparison.StatusMatch {
 		comparison.Differences = append(comparison.Differences,
-			fmt.Sprintf("交易状态不一致: Geth=%d, Reth=%d", gethReceipt.Status, rethReceipt.Status))
+			fmt.Sprintf("交易状态不一致: Baseline=%d, Target=%d", baselineReceipt.Status, targetReceipt.Status))
 	}
 
 	result.StateComparison = comparison
@@ -881,14 +892,14 @@ func (t *Tester) Builder() *Builder {
 	return t.builder
 }
 
-// GethClient returns the reference client.
-func (t *Tester) GethClient() *rpc.Client {
-	return t.gethClient
+// BaselineClient returns the reference client.
+func (t *Tester) BaselineClient() *rpc.Client {
+	return t.baselineClient
 }
 
-// RethClient returns the target client.
-func (t *Tester) RethClient() *rpc.Client {
-	return t.rethClient
+// TargetClient returns the target client.
+func (t *Tester) TargetClient() *rpc.Client {
+	return t.targetClient
 }
 
 // ChainID returns the configured chain ID.
@@ -912,7 +923,7 @@ func (t *Tester) TestTxpoolRejection(
 	}
 
 	// Use the reference nonce, as in the other transaction tests.
-	nonce, err := t.GetNonce(ctx, t.gethClient, t.builder.Address())
+	nonce, err := t.GetNonce(ctx, t.baselineClient, t.builder.Address())
 	if err != nil {
 		result.Error = fmt.Sprintf("获取 nonce 失败: %v", err)
 		return result
@@ -932,30 +943,30 @@ func (t *Tester) TestTxpoolRejection(
 
 	// Send identical signed bytes to both clients.
 	req := rpc.NewRequest("eth_sendRawTransaction", []interface{}{hexutil.Encode(rawTx)})
-	gethResp := t.gethClient.Call(ctx, req)
-	rethResp := t.rethClient.Call(ctx, req)
+	baselineResp := t.baselineClient.Call(ctx, req)
+	targetResp := t.targetClient.Call(ctx, req)
 
 	// A forwarding replica may wrap the sequencer error while another client
 	// returns it directly. Comparing full messages would create a false failure,
 	// so this scenario checks the expected substring without recording a diff.
 
-	gethErrMsg := extractRPCError(gethResp)
-	rethErrMsg := extractRPCError(rethResp)
+	baselineErrMsg := extractRPCError(baselineResp)
+	targetErrMsg := extractRPCError(targetResp)
 
 	var failures []string
 
-	if gethErrMsg == "" {
-		failures = append(failures, "geth 应该拒绝但接受了交易")
-	} else if !strings.Contains(gethErrMsg, expectedErrSubstring) {
+	if baselineErrMsg == "" {
+		failures = append(failures, fmt.Sprintf("%s accepted a transaction that should be rejected", t.baselineClient.Name()))
+	} else if !strings.Contains(baselineErrMsg, expectedErrSubstring) {
 		failures = append(failures, fmt.Sprintf(
-			"geth 错误信息不匹配: 期望包含 %q, 实际: %q", expectedErrSubstring, gethErrMsg))
+			"%s rejection error: expected substring %q, got %q", t.baselineClient.Name(), expectedErrSubstring, baselineErrMsg))
 	}
 
-	if rethErrMsg == "" {
-		failures = append(failures, "reth 应该拒绝但接受了交易")
-	} else if !strings.Contains(rethErrMsg, expectedErrSubstring) {
+	if targetErrMsg == "" {
+		failures = append(failures, fmt.Sprintf("%s accepted a transaction that should be rejected", t.targetClient.Name()))
+	} else if !strings.Contains(targetErrMsg, expectedErrSubstring) {
 		failures = append(failures, fmt.Sprintf(
-			"reth 错误信息不匹配: 期望包含 %q, 实际: %q", expectedErrSubstring, rethErrMsg))
+			"%s rejection error: expected substring %q, got %q", t.targetClient.Name(), expectedErrSubstring, targetErrMsg))
 	}
 
 	if len(failures) == 0 {
@@ -991,7 +1002,7 @@ func (t *Tester) TestTxpoolAcceptance(
 		TxType:   "acceptance",
 	}
 
-	nonce, err := t.GetNonce(ctx, t.gethClient, t.builder.Address())
+	nonce, err := t.GetNonce(ctx, t.baselineClient, t.builder.Address())
 	if err != nil {
 		result.Error = fmt.Sprintf("获取 nonce 失败: %v", err)
 		return result
@@ -999,29 +1010,29 @@ func (t *Tester) TestTxpoolAcceptance(
 
 	var failures []string
 
-	gethTx, err := buildTx(nonce)
+	baselineTx, err := buildTx(nonce)
 	if err != nil {
-		result.Error = fmt.Sprintf("构造 geth 交易失败: %v", err)
+		result.Error = fmt.Sprintf("build %s transaction: %v", t.baselineClient.Name(), err)
 		return result
 	}
-	gethHash, gethErr := t.SendRawTransaction(ctx, t.gethClient, gethTx, testName+"_geth")
-	if gethErr != nil {
-		failures = append(failures, fmt.Sprintf("geth 应该接受但拒绝了: %v", gethErr))
+	baselineHash, baselineErr := t.SendRawTransaction(ctx, t.baselineClient, baselineTx, testName+"_baseline")
+	if baselineErr != nil {
+		failures = append(failures, fmt.Sprintf("%s rejected a valid transaction: %v", t.baselineClient.Name(), baselineErr))
 	} else {
-		result.GethTxHash = gethHash.Hex()
+		result.BaselineTxHash = baselineHash.Hex()
 	}
 
 	// Use the next nonce to avoid conflicting with the reference transaction.
-	rethTx, err := buildTx(nonce + 1)
+	targetTx, err := buildTx(nonce + 1)
 	if err != nil {
-		result.Error = fmt.Sprintf("构造 reth 交易失败: %v", err)
+		result.Error = fmt.Sprintf("build %s transaction: %v", t.targetClient.Name(), err)
 		return result
 	}
-	rethHash, rethErr := t.SendRawTransaction(ctx, t.rethClient, rethTx, testName+"_reth")
-	if rethErr != nil {
-		failures = append(failures, fmt.Sprintf("reth 应该接受但拒绝了: %v", rethErr))
+	targetHash, targetErr := t.SendRawTransaction(ctx, t.targetClient, targetTx, testName+"_target")
+	if targetErr != nil {
+		failures = append(failures, fmt.Sprintf("%s rejected a valid transaction: %v", t.targetClient.Name(), targetErr))
 	} else {
-		result.RethTxHash = rethHash.Hex()
+		result.TargetTxHash = targetHash.Hex()
 	}
 
 	if len(failures) == 0 {
@@ -1058,56 +1069,55 @@ func (t *Tester) TestTxpoolForwardedRetention(
 	sender := t.builder.Address()
 
 	// Leave a nonce gap on each client so the transaction remains queued.
-	gethNonce, err := t.GetNonce(ctx, t.gethClient, sender)
+	baselineNonce, err := t.GetNonce(ctx, t.baselineClient, sender)
 	if err != nil {
-		result.Error = fmt.Sprintf("获取 geth nonce 失败: %v", err)
+		result.Error = fmt.Sprintf("get %s nonce: %v", t.baselineClient.Name(), err)
 		return result
 	}
-	rethNonce, err := t.GetNonce(ctx, t.rethClient, sender)
+	targetNonce, err := t.GetNonce(ctx, t.targetClient, sender)
 	if err != nil {
-		result.Error = fmt.Sprintf("获取 reth nonce 失败: %v", err)
+		result.Error = fmt.Sprintf("get %s nonce: %v", t.targetClient.Name(), err)
 		return result
 	}
 
 	var failures []string
 
-	gethTx, err := buildTx(gethNonce + 10)
+	baselineTx, err := buildTx(baselineNonce + 10)
 	if err != nil {
-		result.Error = fmt.Sprintf("构造 geth 交易失败: %v", err)
+		result.Error = fmt.Sprintf("build %s transaction: %v", t.baselineClient.Name(), err)
 		return result
 	}
-	if gethHash, gethErr := t.sendRawTransactionAllowAlreadyKnown(ctx, t.gethClient, gethTx, testName+"_geth"); gethErr != nil {
-		failures = append(failures, fmt.Sprintf("geth 提交 future-nonce tx 失败: %v", gethErr))
+	if baselineHash, baselineErr := t.sendRawTransactionAllowAlreadyKnown(ctx, t.baselineClient, baselineTx, testName+"_baseline"); baselineErr != nil {
+		failures = append(failures, fmt.Sprintf("%s future-nonce submission failed: %v", t.baselineClient.Name(), baselineErr))
 	} else {
-		result.GethTxHash = gethHash.Hex()
+		result.BaselineTxHash = baselineHash.Hex()
 	}
 
-	rethTx, err := buildTx(rethNonce + 10)
+	targetTx, err := buildTx(targetNonce + 10)
 	if err != nil {
-		result.Error = fmt.Sprintf("构造 reth 交易失败: %v", err)
+		result.Error = fmt.Sprintf("build %s transaction: %v", t.targetClient.Name(), err)
 		return result
 	}
-	if rethHash, rethErr := t.sendRawTransactionAllowAlreadyKnown(ctx, t.rethClient, rethTx, testName+"_reth"); rethErr != nil {
-		failures = append(failures, fmt.Sprintf("reth 提交 future-nonce tx 失败: %v", rethErr))
+	if targetHash, targetErr := t.sendRawTransactionAllowAlreadyKnown(ctx, t.targetClient, targetTx, testName+"_target"); targetErr != nil {
+		failures = append(failures, fmt.Sprintf("%s future-nonce submission failed: %v", t.targetClient.Name(), targetErr))
 	} else {
-		result.RethTxHash = rethHash.Hex()
+		result.TargetTxHash = targetHash.Hex()
 	}
 
-	gethPresent, gethErr := t.senderInTxpoolContent(ctx, t.gethClient, sender)
-	if gethErr != nil {
-		failures = append(failures, fmt.Sprintf("查询 geth txpool_content 失败: %v", gethErr))
+	baselinePresent, baselineErr := t.senderInTxpoolContent(ctx, t.baselineClient, sender)
+	if baselineErr != nil {
+		failures = append(failures, fmt.Sprintf("query %s txpool_content: %v", t.baselineClient.Name(), baselineErr))
 	}
-	rethPresent, rethErr := t.senderInTxpoolContent(ctx, t.rethClient, sender)
-	if rethErr != nil {
-		failures = append(failures, fmt.Sprintf("查询 reth txpool_content 失败: %v", rethErr))
+	targetPresent, targetErr := t.senderInTxpoolContent(ctx, t.targetClient, sender)
+	if targetErr != nil {
+		failures = append(failures, fmt.Sprintf("query %s txpool_content: %v", t.targetClient.Name(), targetErr))
 	}
 
 	// Both followers must present the same local pool state for this sender.
-	if gethErr == nil && rethErr == nil && gethPresent != rethPresent {
+	if baselineErr == nil && targetErr == nil && baselinePresent != targetPresent {
 		failures = append(failures, fmt.Sprintf(
-			"转发节点本地 txpool 视图不一致: geth present=%v, reth present=%v "+
-				"(期望一致；reth 需启用 --rollup.enabletxpooladmission 等价开关并默认关，以对齐 geth)",
-			gethPresent, rethPresent,
+			"forwarding followers disagree on local txpool retention: %s present=%v, %s present=%v",
+			t.baselineClient.Name(), baselinePresent, t.targetClient.Name(), targetPresent,
 		))
 	}
 

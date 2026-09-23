@@ -245,12 +245,13 @@ func (r *Runner) scenarioPreconfCreateRejected(ctx context.Context) {
 	r.record(name, true, "CREATE(to=nil) preconf 被拒（nil-to guard）: %v", err)
 }
 
-// B verifier_forward_parity: geth verifier (19545) vs reth verifier (29545) — both forward to the
-// SAME 9545 sequencer, so any difference is pure verifier-layer (deserialization). Extends B1's
+// B verifier_forward_parity compares two verifiers forwarding to the same sequencer,
+// so any difference is at the verifier layer. Extends B1's
 // null-logs check to full-shape parity over a revert AND a success. Anchors the revert to `null` so
 // two verifiers normalizing identically wouldn't false-pass.
 func (r *Runner) scenarioVerifierForwardParity(ctx context.Context) {
 	const name = "verifier_forward_parity"
+	baselineLabel, targetLabel := r.baselineVerifier.Name(), r.targetVerifier.Name()
 	gp, err := r.gasPrice(ctx)
 	if err != nil {
 		r.record(name, false, "gas price: %v", err)
@@ -269,46 +270,46 @@ func (r *Runner) scenarioVerifierForwardParity(ctx context.Context) {
 		{"revert", revData, "failed"},
 		{"success", okData, "success"},
 	} {
-		n1, e1 := r.tester.GetNonce(ctx, r.gethV, r.addr1.Address())
+		n1, e1 := r.tester.GetNonce(ctx, r.baselineVerifier, r.addr1.Address())
 		if e1 != nil {
 			r.record(name, false, "%s: addr1 nonce: %v", tc.label, e1)
 			return
 		}
 		gTx, _ := r.signedLegacy(r.addr1, &TestPayAddr, nil, tc.data, 500_000, n1, gp)
-		gResp, err := r.tester.SendRawTransactionWithPreconf(ctx, r.gethV, gTx, name+"/19545")
+		gResp, err := r.tester.SendRawTransactionWithPreconf(ctx, r.baselineVerifier, gTx, name+"/"+baselineLabel)
 		if err != nil {
-			r.record(name, false, "%s: 19545 send: %v", tc.label, err)
+			r.record(name, false, "%s: %s send: %v", tc.label, baselineLabel, err)
 			return
 		}
-		// wait n1 to land before the reth-verifier send at n1+1 (avoid a nonce gap on the shared account)
+		// Wait for n1 before the target-verifier send at n1+1 to avoid a nonce gap.
 		_, _ = r.tester.WaitForReceipt(ctx, r.seq, common.HexToHash(gResp.TxHash), 30*time.Second)
 		rTx, _ := r.signedLegacy(r.addr1, &TestPayAddr, nil, tc.data, 500_000, n1+1, gp)
-		rResp, err := r.tester.SendRawTransactionWithPreconf(ctx, r.reth, rTx, name+"/29545")
+		rResp, err := r.tester.SendRawTransactionWithPreconf(ctx, r.targetVerifier, rTx, name+"/"+targetLabel)
 		if err != nil {
-			r.record(name, false, "%s: 29545 send: %v", tc.label, err)
+			r.record(name, false, "%s: %s send: %v", tc.label, targetLabel, err)
 			return
 		}
 		_, _ = r.tester.WaitForReceipt(ctx, r.seq, common.HexToHash(rResp.TxHash), 30*time.Second)
 
 		if gResp.Status != tc.wantStatus || rResp.Status != tc.wantStatus {
-			r.record(name, false, "%s: status 19545=%s 29545=%s (want %s)", tc.label, gResp.Status, rResp.Status, tc.wantStatus)
+			r.record(name, false, "%s: status %s=%s %s=%s (want %s)", tc.label, baselineLabel, gResp.Status, targetLabel, rResp.Status, tc.wantStatus)
 			return
 		}
 		if derefReason(gResp) != derefReason(rResp) {
-			r.record(name, false, "%s: reason 差异 19545=%q 29545=%q", tc.label, derefReason(gResp), derefReason(rResp))
+			r.record(name, false, "%s: reason differs %s=%q %s=%q", tc.label, baselineLabel, derefReason(gResp), targetLabel, derefReason(rResp))
 			return
 		}
 		if normalizeLogs(receiptLogsRaw(gResp)) != normalizeLogs(receiptLogsRaw(rResp)) {
-			r.record(name, false, "%s: logs 内容差异 19545=%s 29545=%s", tc.label, receiptLogsRaw(gResp), receiptLogsRaw(rResp))
+			r.record(name, false, "%s: logs differ %s=%s %s=%s", tc.label, baselineLabel, receiptLogsRaw(gResp), targetLabel, receiptLogsRaw(rResp))
 			return
 		}
 		// anchor: revert receipt.logs must be the expected `null` shape (not both normalized to []).
 		if tc.label == "revert" && receiptLogsRaw(gResp) != "null" {
-			r.record(name, false, "revert: 19545 receipt.logs=%q（预期 null 锚点）", receiptLogsRaw(gResp))
+			r.record(name, false, "revert: %s receipt.logs=%q (expected null)", baselineLabel, receiptLogsRaw(gResp))
 			return
 		}
 	}
-	r.record(name, true, "19545 vs 29545 转发一致：revert(reason+logs=null) 与 success(reason+logs 内容) 逐字段相等")
+	r.record(name, true, "%s vs %s forwarding parity: revert and success reasons and logs match", baselineLabel, targetLabel)
 }
 
 func errStr(err error) string {

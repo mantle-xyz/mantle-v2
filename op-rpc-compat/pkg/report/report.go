@@ -29,10 +29,39 @@ const (
 
 // KnownDiff describes an expected response difference.
 type KnownDiff struct {
-	TestName    string          `json:"test_name"`              // test case name
-	Reason      string          `json:"reason,omitempty"`       // explanation of the difference
-	GethExample json.RawMessage `json:"geth_example,omitempty"` // expected geth response example
-	RethExample json.RawMessage `json:"reth_example,omitempty"` // expected reth response example
+	TestName        string                  `json:"test_name"`
+	Reason          string                  `json:"reason,omitempty"`
+	AppliesTo       *KnownDiffApplicability `json:"applies_to,omitempty"`
+	BaselineExample json.RawMessage         `json:"baseline_example,omitempty"`
+	TargetExample   json.RawMessage         `json:"target_example,omitempty"`
+}
+
+// EndpointMatcher selects client names and versions for a known difference.
+type EndpointMatcher struct {
+	NamePattern    string `json:"name_pattern,omitempty"`
+	VersionPattern string `json:"version_pattern,omitempty"`
+}
+
+// KnownDiffApplicability limits a known difference to the compared endpoints.
+type KnownDiffApplicability struct {
+	Baseline *EndpointMatcher `json:"baseline,omitempty"`
+	Target   *EndpointMatcher `json:"target,omitempty"`
+}
+
+func (m *EndpointMatcher) matches(endpoint EndpointMetadata) bool {
+	if m == nil {
+		return true
+	}
+	for _, pair := range [][2]string{{m.NamePattern, endpoint.Name}, {m.VersionPattern, endpoint.ClientVersion}} {
+		if pair[0] == "" {
+			continue
+		}
+		matched, err := regexp.MatchString(pair[0], pair[1])
+		if err != nil || !matched {
+			return false
+		}
+	}
+	return true
 }
 
 // KnownDiffsConfig is the known-difference file format.
@@ -50,50 +79,60 @@ type TestCase struct {
 
 // TestResult records the outcome of one case.
 type TestResult struct {
-	TestCase     TestCase          `json:"test_case"`
-	Status       TestStatus        `json:"status"`
-	Passed       bool              `json:"passed"` // true unless Status is FAIL, for existing consumers
-	GethResponse json.RawMessage   `json:"geth_response,omitempty"`
-	RethResponse json.RawMessage   `json:"reth_response,omitempty"`
-	GethError    string            `json:"geth_error,omitempty"`
-	RethError    string            `json:"reth_error,omitempty"`
-	GethDuration time.Duration     `json:"geth_duration"`
-	RethDuration time.Duration     `json:"reth_duration"`
-	Differences  []diff.Difference `json:"differences,omitempty"`
-	CompareError string            `json:"compare_error,omitempty"`
-	SkipReason   string            `json:"skip_reason,omitempty"` // reason for a skipped or compatible result
+	TestCase         TestCase          `json:"test_case"`
+	Status           TestStatus        `json:"status"`
+	Passed           bool              `json:"passed"` // true unless Status is FAIL, for existing consumers
+	BaselineResponse json.RawMessage   `json:"baseline_response,omitempty"`
+	TargetResponse   json.RawMessage   `json:"target_response,omitempty"`
+	BaselineError    string            `json:"baseline_error,omitempty"`
+	TargetError      string            `json:"target_error,omitempty"`
+	BaselineDuration time.Duration     `json:"baseline_duration"`
+	TargetDuration   time.Duration     `json:"target_duration"`
+	Differences      []diff.Difference `json:"differences,omitempty"`
+	CompareError     string            `json:"compare_error,omitempty"`
+	SkipReason       string            `json:"skip_reason,omitempty"` // reason for a skipped or compatible result
 }
+
+// EndpointMetadata identifies one side of a comparison.
+type EndpointMetadata struct {
+	Name          string `json:"name"`
+	URL           string `json:"url"`
+	ClientVersion string `json:"client_version"`
+}
+
+const reportSchemaVersion = 2
 
 // Report contains the complete comparison run.
 type Report struct {
-	Timestamp       time.Time    `json:"timestamp"`
-	GethURL         string       `json:"geth_url"`
-	RethURL         string       `json:"reth_url"`
-	TotalTests      int          `json:"total_tests"`
-	PassedTests     int          `json:"passed_tests"`
-	CompatibleTests int          `json:"compatible_tests"`
-	WarningTests    int          `json:"warning_tests"`
-	FailedTests     int          `json:"failed_tests"`
-	Results         []TestResult `json:"results"`
-	Summary         string       `json:"summary"`
+	SchemaVersion   int              `json:"schema_version"`
+	Timestamp       time.Time        `json:"timestamp"`
+	Baseline        EndpointMetadata `json:"baseline"`
+	Target          EndpointMetadata `json:"target"`
+	TotalTests      int              `json:"total_tests"`
+	PassedTests     int              `json:"passed_tests"`
+	CompatibleTests int              `json:"compatible_tests"`
+	WarningTests    int              `json:"warning_tests"`
+	FailedTests     int              `json:"failed_tests"`
+	Results         []TestResult     `json:"results"`
+	Summary         string           `json:"summary"`
 }
 
 // Reporter collects results and renders reports.
 type Reporter struct {
 	results    []TestResult
-	gethURL    string
-	rethURL    string
+	baseline   EndpointMetadata
+	target     EndpointMetadata
 	startTime  time.Time
 	verbose    bool
 	knownDiffs map[string]KnownDiff // key: test_name
 }
 
 // NewReporter creates a result collector.
-func NewReporter(gethURL, rethURL string, verbose bool) *Reporter {
+func NewReporter(baseline, target EndpointMetadata, verbose bool) *Reporter {
 	return &Reporter{
 		results:    []TestResult{},
-		gethURL:    gethURL,
-		rethURL:    rethURL,
+		baseline:   baseline,
+		target:     target,
 		startTime:  time.Now(),
 		verbose:    verbose,
 		knownDiffs: make(map[string]KnownDiff),
@@ -113,6 +152,21 @@ func (r *Reporter) LoadKnownDiffs(reader io.Reader) error {
 	}
 
 	for _, kd := range config.KnownDiffs {
+		if kd.AppliesTo != nil {
+			for _, matcher := range []*EndpointMatcher{kd.AppliesTo.Baseline, kd.AppliesTo.Target} {
+				if matcher == nil {
+					continue
+				}
+				for _, pattern := range []string{matcher.NamePattern, matcher.VersionPattern} {
+					if pattern == "" {
+						continue
+					}
+					if _, err := regexp.Compile(pattern); err != nil {
+						return fmt.Errorf("known difference %q has invalid applicability pattern %q: %w", kd.TestName, pattern, err)
+					}
+				}
+			}
+		}
 		r.knownDiffs[kd.TestName] = kd
 	}
 
@@ -122,6 +176,9 @@ func (r *Reporter) LoadKnownDiffs(reader io.Reader) error {
 // GetKnownDiff returns the rule for a test case, if one exists.
 func (r *Reporter) GetKnownDiff(testName string) *KnownDiff {
 	if kd, ok := r.knownDiffs[testName]; ok {
+		if kd.AppliesTo != nil && (!kd.AppliesTo.Baseline.matches(r.baseline) || !kd.AppliesTo.Target.matches(r.target)) {
+			return nil
+		}
 		return &kd
 	}
 	return nil
@@ -137,24 +194,24 @@ func newTestResult(tc TestCase, compareResult *rpc.CompareResult) TestResult {
 	}
 
 	// Preserve the reference response, including transport failures.
-	if compareResult.PrimaryResponse != nil {
-		result.GethDuration = compareResult.PrimaryResponse.Duration
-		if compareResult.PrimaryResponse.Error != nil {
-			result.GethError = compareResult.PrimaryResponse.Error.Error()
+	if compareResult.BaselineResponse != nil {
+		result.BaselineDuration = compareResult.BaselineResponse.Duration
+		if compareResult.BaselineResponse.Error != nil {
+			result.BaselineError = compareResult.BaselineResponse.Error.Error()
 		}
-		if compareResult.PrimaryResponse.RawBody != nil {
-			result.GethResponse = compareResult.PrimaryResponse.RawBody
+		if compareResult.BaselineResponse.RawBody != nil {
+			result.BaselineResponse = compareResult.BaselineResponse.RawBody
 		}
 	}
 
 	// Preserve the target response, including transport failures.
-	if compareResult.SecondaryResponse != nil {
-		result.RethDuration = compareResult.SecondaryResponse.Duration
-		if compareResult.SecondaryResponse.Error != nil {
-			result.RethError = compareResult.SecondaryResponse.Error.Error()
+	if compareResult.TargetResponse != nil {
+		result.TargetDuration = compareResult.TargetResponse.Duration
+		if compareResult.TargetResponse.Error != nil {
+			result.TargetError = compareResult.TargetResponse.Error.Error()
 		}
-		if compareResult.SecondaryResponse.RawBody != nil {
-			result.RethResponse = compareResult.SecondaryResponse.RawBody
+		if compareResult.TargetResponse.RawBody != nil {
+			result.TargetResponse = compareResult.TargetResponse.RawBody
 		}
 	}
 	return result
@@ -204,14 +261,14 @@ func (r *Reporter) AddResult(tc TestCase, compareResult *rpc.CompareResult, diff
 // matchesKnownDiff checks actual responses against a recorded difference.
 //
 // Comparing only error versus success would hide later code or message drift.
-// The geth reference side compares type and code because its wording varies
-// with input and version, and recorded examples may be truncated. The reth
+// The baseline reference side compares type and code because its wording varies
+// with input and version, and recorded examples may be truncated. The target
 // target side also compares normalized messages, allowing either message to
 // contain the other when an example was truncated. A changed target message
 // stops matching so the difference becomes visible again in the report.
 func (r *Reporter) matchesKnownDiff(result *TestResult, knownDiff *KnownDiff) bool {
-	return shapeMatch(parseShape(knownDiff.GethExample), parseShape(result.GethResponse), false) &&
-		shapeMatch(parseShape(knownDiff.RethExample), parseShape(result.RethResponse), true)
+	return shapeMatch(parseShape(knownDiff.BaselineExample), parseShape(result.BaselineResponse), false) &&
+		shapeMatch(parseShape(knownDiff.TargetExample), parseShape(result.TargetResponse), true)
 }
 
 var (
@@ -287,7 +344,7 @@ const (
 // determineStatus classifies a comparison result.
 func (r *Reporter) determineStatus(result *TestResult, compareResult *rpc.CompareResult, diffResult *diff.CompareResult, compareErr error) TestStatus {
 	// Transport failures are always test failures.
-	if result.GethError != "" || result.RethError != "" {
+	if result.BaselineError != "" || result.TargetError != "" {
 		return StatusFail
 	}
 
@@ -296,15 +353,15 @@ func (r *Reporter) determineStatus(result *TestResult, compareResult *rpc.Compar
 		return StatusFail
 	}
 
-	gethHasRPCError := compareResult.PrimaryResponse != nil &&
-		compareResult.PrimaryResponse.Response != nil &&
-		compareResult.PrimaryResponse.Response.Error != nil
-	rethHasRPCError := compareResult.SecondaryResponse != nil &&
-		compareResult.SecondaryResponse.Response != nil &&
-		compareResult.SecondaryResponse.Response.Error != nil
+	baselineHasRPCError := compareResult.BaselineResponse != nil &&
+		compareResult.BaselineResponse.Response != nil &&
+		compareResult.BaselineResponse.Response.Error != nil
+	targetHasRPCError := compareResult.TargetResponse != nil &&
+		compareResult.TargetResponse.Response != nil &&
+		compareResult.TargetResponse.Response.Error != nil
 
-	if gethHasRPCError || rethHasRPCError {
-		status, diffs, reason := r.checkRPCErrorCompatibility(compareResult, gethHasRPCError, rethHasRPCError)
+	if baselineHasRPCError || targetHasRPCError {
+		status, diffs, reason := r.checkRPCErrorCompatibility(compareResult, baselineHasRPCError, targetHasRPCError)
 		if len(diffs) > 0 {
 			result.Differences = diffs
 		}
@@ -324,24 +381,24 @@ func (r *Reporter) determineStatus(result *TestResult, compareResult *rpc.Compar
 		// Extra fields and other warning-level differences do not fail the test.
 		if diffResult.FailCount == 0 && diffResult.WarningCount > 0 {
 			// Count extra and missing fields separately for the target.
-			rethExtraCount := 0
-			gethExtraCount := 0
+			targetExtraCount := 0
+			baselineExtraCount := 0
 			for _, d := range diffResult.Differences {
 				if d.Severity == diff.SeverityWarning {
 					if d.Type == diff.DiffTypeExtra {
-						rethExtraCount++
+						targetExtraCount++
 					} else if d.Type == diff.DiffTypeMissing {
-						gethExtraCount++
+						baselineExtraCount++
 					}
 				}
 			}
 
 			var reasonParts []string
-			if rethExtraCount > 0 {
-				reasonParts = append(reasonParts, fmt.Sprintf("reth 有 %d 处额外字段", rethExtraCount))
+			if targetExtraCount > 0 {
+				reasonParts = append(reasonParts, fmt.Sprintf("target 有 %d 处额外字段", targetExtraCount))
 			}
-			if gethExtraCount > 0 {
-				reasonParts = append(reasonParts, fmt.Sprintf("geth 有 %d 处额外字段", gethExtraCount))
+			if baselineExtraCount > 0 {
+				reasonParts = append(reasonParts, fmt.Sprintf("baseline 有 %d 处额外字段", baselineExtraCount))
 			}
 			if len(reasonParts) > 0 {
 				result.SkipReason = fmt.Sprintf("%s（不影响通过）", strings.Join(reasonParts, "，"))
@@ -360,70 +417,71 @@ func (r *Reporter) determineStatus(result *TestResult, compareResult *rpc.Compar
 }
 
 // checkRPCErrorCompatibility returns status, differences, and a reason for two RPC errors.
-func (r *Reporter) checkRPCErrorCompatibility(compareResult *rpc.CompareResult, gethHasError, rethHasError bool) (TestStatus, []diff.Difference, string) {
+func (r *Reporter) checkRPCErrorCompatibility(compareResult *rpc.CompareResult, baselineHasError, targetHasError bool) (TestStatus, []diff.Difference, string) {
 	var diffs []diff.Difference
 
 	// An error on only one side is a failure.
-	if gethHasError != rethHasError {
-		if gethHasError {
-			gethErr := compareResult.PrimaryResponse.Response.Error
+	if baselineHasError != targetHasError {
+		if baselineHasError {
+			baselineErr := compareResult.BaselineResponse.Response.Error
 			diffs = append(diffs, diff.Difference{
 				Path:     "error",
 				Type:     diff.DiffTypeExtra,
-				Expected: fmt.Sprintf("code=%d, message=%s", gethErr.Code, gethErr.Message),
+				Expected: fmt.Sprintf("code=%d, message=%s", baselineErr.Code, baselineErr.Message),
 				Actual:   nil,
-				Message:  "geth 返回错误，reth 返回成功",
+				Message:  fmt.Sprintf("%s returned an error; %s succeeded", r.baseline.Name, r.target.Name),
 			})
 		} else {
-			rethErr := compareResult.SecondaryResponse.Response.Error
+			targetErr := compareResult.TargetResponse.Response.Error
 			diffs = append(diffs, diff.Difference{
 				Path:     "error",
 				Type:     diff.DiffTypeMissing,
 				Expected: nil,
-				Actual:   fmt.Sprintf("code=%d, message=%s", rethErr.Code, rethErr.Message),
-				Message:  "geth 返回成功，reth 返回错误",
+				Actual:   fmt.Sprintf("code=%d, message=%s", targetErr.Code, targetErr.Message),
+				Message:  fmt.Sprintf("%s succeeded; %s returned an error", r.baseline.Name, r.target.Name),
 			})
 		}
 		return StatusFail, diffs, ""
 	}
 
-	if gethHasError && rethHasError {
-		gethErr := compareResult.PrimaryResponse.Response.Error
-		rethErr := compareResult.SecondaryResponse.Response.Error
+	if baselineHasError && targetHasError {
+		baselineErr := compareResult.BaselineResponse.Response.Error
+		targetErr := compareResult.TargetResponse.Response.Error
 
-		gethErrObj := map[string]interface{}{
-			"code":    gethErr.Code,
-			"message": gethErr.Message,
+		baselineErrObj := map[string]interface{}{
+			"code":    baselineErr.Code,
+			"message": baselineErr.Message,
 		}
-		rethErrObj := map[string]interface{}{
-			"code":    rethErr.Code,
-			"message": rethErr.Message,
+		targetErrObj := map[string]interface{}{
+			"code":    targetErr.Code,
+			"message": targetErr.Message,
 		}
 
-		compat := diff.CheckErrorCompatibility(gethErrObj, rethErrObj)
+		compat := diff.CheckErrorCompatibility(baselineErrObj, targetErrObj)
 		switch compat {
 		case diff.ErrorCompatIdentical:
 			return StatusPass, nil, ""
 		case diff.ErrorCompatMethodNotFound:
-			reason := fmt.Sprintf("双方都返回方法不存在/未实现错误 (geth: %d, reth: %d)", gethErr.Code, rethErr.Code)
+			reason := fmt.Sprintf("both clients reported an unsupported method (%s: %d, %s: %d)",
+				r.baseline.Name, baselineErr.Code, r.target.Name, targetErr.Code)
 			return StatusCompatible, nil, reason
 		}
 
-		if gethErr.Code != rethErr.Code {
+		if baselineErr.Code != targetErr.Code {
 			diffs = append(diffs, diff.Difference{
 				Path:     "error.code",
 				Type:     diff.DiffTypeValue,
-				Expected: gethErr.Code,
-				Actual:   rethErr.Code,
+				Expected: baselineErr.Code,
+				Actual:   targetErr.Code,
 				Message:  "错误码不同",
 			})
 		}
-		if gethErr.Message != rethErr.Message {
+		if baselineErr.Message != targetErr.Message {
 			diffs = append(diffs, diff.Difference{
 				Path:     "error.message",
 				Type:     diff.DiffTypeValue,
-				Expected: gethErr.Message,
-				Actual:   rethErr.Message,
+				Expected: baselineErr.Message,
+				Actual:   targetErr.Message,
 				Message:  "错误消息不同",
 			})
 		}
@@ -458,7 +516,7 @@ func (r *Reporter) printResult(result TestResult) {
 	fmt.Printf("%s %s [%s]\n", statusStr, cyan(result.TestCase.Method), result.TestCase.Name)
 
 	if r.verbose {
-		fmt.Printf("  geth: %v, reth: %v\n", result.GethDuration, result.RethDuration)
+		fmt.Printf("  %s: %v, %s: %v\n", r.baseline.Name, result.BaselineDuration, r.target.Name, result.TargetDuration)
 	}
 
 	if result.Status == StatusCompatible {
@@ -482,16 +540,16 @@ func (r *Reporter) printResult(result TestResult) {
 	}
 
 	if result.Status == StatusFail {
-		if result.GethError != "" && result.RethError == "" {
-			fmt.Printf("  %s geth 错误: %s\n", yellow("→"), result.GethError)
+		if result.BaselineError != "" && result.TargetError == "" {
+			fmt.Printf("  %s %s error: %s\n", yellow("→"), r.baseline.Name, result.BaselineError)
 		}
-		if result.RethError != "" && result.GethError == "" {
-			fmt.Printf("  %s reth 错误: %s\n", yellow("→"), result.RethError)
+		if result.TargetError != "" && result.BaselineError == "" {
+			fmt.Printf("  %s %s error: %s\n", yellow("→"), r.target.Name, result.TargetError)
 		}
-		if result.GethError != "" && result.RethError != "" {
+		if result.BaselineError != "" && result.TargetError != "" {
 			fmt.Printf("  %s 双方错误不兼容:\n", yellow("→"))
-			fmt.Printf("    geth: %s\n", truncateValue(result.GethError, 60))
-			fmt.Printf("    reth: %s\n", truncateValue(result.RethError, 60))
+			fmt.Printf("    %s: %s\n", r.baseline.Name, truncateValue(result.BaselineError, 60))
+			fmt.Printf("    %s: %s\n", r.target.Name, truncateValue(result.TargetError, 60))
 		}
 		if result.CompareError != "" {
 			fmt.Printf("  %s 对比错误: %s\n", yellow("→"), result.CompareError)
@@ -516,10 +574,10 @@ func (r *Reporter) printDifferences(diffs []diff.Difference, limit int) {
 		}
 		fmt.Printf("    %s[%s] %s\n", severityTag, d.Type, d.Path)
 		if d.Expected != nil {
-			fmt.Printf("      geth: %v\n", truncateValue(d.Expected, 200))
+			fmt.Printf("      %s: %v\n", r.baseline.Name, truncateValue(d.Expected, 200))
 		}
 		if d.Actual != nil {
-			fmt.Printf("      reth: %v\n", truncateValue(d.Actual, 200))
+			fmt.Printf("      %s: %v\n", r.target.Name, truncateValue(d.Actual, 200))
 		}
 	}
 	if len(diffs) > limit {
@@ -530,11 +588,12 @@ func (r *Reporter) printDifferences(diffs []diff.Difference, limit int) {
 // Generate builds the final report.
 func (r *Reporter) Generate() *Report {
 	report := &Report{
-		Timestamp:  time.Now(),
-		GethURL:    r.gethURL,
-		RethURL:    r.rethURL,
-		TotalTests: len(r.results),
-		Results:    r.results,
+		SchemaVersion: reportSchemaVersion,
+		Timestamp:     time.Now(),
+		Baseline:      r.baseline,
+		Target:        r.target,
+		TotalTests:    len(r.results),
+		Results:       r.results,
 	}
 
 	for _, result := range r.results {
@@ -572,8 +631,8 @@ func (r *Reporter) PrintSummary() {
 	yellow := color.New(color.FgYellow).SprintFunc()
 	blue := color.New(color.FgBlue).SprintFunc()
 
-	fmt.Printf("geth: %s\n", cyan(report.GethURL))
-	fmt.Printf("reth: %s\n", cyan(report.RethURL))
+	fmt.Printf("%s: %s\n", report.Baseline.Name, cyan(report.Baseline.URL))
+	fmt.Printf("%s: %s\n", report.Target.Name, cyan(report.Target.URL))
 	fmt.Printf("耗时: %v\n", time.Since(r.startTime))
 	fmt.Println()
 

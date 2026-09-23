@@ -37,18 +37,18 @@ func (t *Tester) DeployContract(ctx context.Context, bytecode string, testName s
 		TestName: testName,
 	}
 
-	gethNonce, err := t.GetNonce(ctx, t.gethClient, t.builder.Address())
+	baselineNonce, err := t.GetNonce(ctx, t.baselineClient, t.builder.Address())
 	if err != nil {
-		return nil, fmt.Errorf("获取 Geth nonce 失败: %w", err)
+		return nil, fmt.Errorf("获取 Baseline nonce 失败: %w", err)
 	}
 
-	gasPrice, err := t.GetGasPrice(ctx, t.gethClient)
+	gasPrice, err := t.GetGasPrice(ctx, t.baselineClient)
 	if err != nil {
 		return nil, fmt.Errorf("获取 gas 价格失败: %w", err)
 	}
 
 	bytecodeBytes := common.FromHex(bytecode)
-	estimatedGas, err := t.EstimateGas(ctx, t.gethClient, map[string]interface{}{
+	estimatedGas, err := t.EstimateGas(ctx, t.baselineClient, map[string]interface{}{
 		"from": t.builder.Address().Hex(),
 		"data": hexutil.Encode(bytecodeBytes),
 	})
@@ -60,9 +60,9 @@ func (t *Tester) DeployContract(ctx context.Context, bytecode string, testName s
 	maxPriorityFee := big.NewInt(1000000000) // 1 gwei
 	maxFeePerGas := new(big.Int).Add(gasPrice, maxPriorityFee)
 
-	gethTx := types.NewTx(&types.DynamicFeeTx{
+	baselineTx := types.NewTx(&types.DynamicFeeTx{
 		ChainID:   t.chainID,
-		Nonce:     gethNonce,
+		Nonce:     baselineNonce,
 		To:        nil, // nil creates a contract
 		Value:     big.NewInt(0),
 		Gas:       gasLimit,
@@ -72,33 +72,33 @@ func (t *Tester) DeployContract(ctx context.Context, bytecode string, testName s
 	})
 
 	signer := types.NewCancunSigner(t.chainID)
-	gethSignedTx, err := types.SignTx(gethTx, signer, t.builder.privateKey)
+	baselineSignedTx, err := types.SignTx(baselineTx, signer, t.builder.privateKey)
 	if err != nil {
-		return nil, fmt.Errorf("签名 Geth 交易失败: %w", err)
+		return nil, fmt.Errorf("签名 Baseline 交易失败: %w", err)
 	}
 
-	gethTxHash, err := t.SendRawTransaction(ctx, t.gethClient, gethSignedTx, fmt.Sprintf("%s_deploy_geth", testName))
+	baselineTxHash, err := t.SendRawTransaction(ctx, t.baselineClient, baselineSignedTx, fmt.Sprintf("%s_deploy_baseline", testName))
 	if err != nil {
-		return nil, fmt.Errorf("发送 Geth 部署交易失败: %w", err)
+		return nil, fmt.Errorf("发送 Baseline 部署交易失败: %w", err)
 	}
-	result.GethTxHash = gethTxHash.Hex()
+	result.BaselineTxHash = baselineTxHash.Hex()
 
-	gethReceipt, err := t.WaitForReceipt(ctx, t.gethClient, gethTxHash, 60*time.Second)
+	baselineReceipt, err := t.WaitForReceipt(ctx, t.baselineClient, baselineTxHash, 60*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("等待 Geth 部署确认失败: %w", err)
+		return nil, fmt.Errorf("等待 Baseline 部署确认失败: %w", err)
 	}
-	result.GethReceipt = gethReceipt
-	result.GethContractAddress = gethReceipt.ContractAddress
+	result.BaselineReceipt = baselineReceipt
+	result.BaselineContractAddress = baselineReceipt.ContractAddress
 
-	if gethReceipt.Status != 1 {
-		return nil, fmt.Errorf("Geth 合约部署失败: status=%d", gethReceipt.Status)
+	if baselineReceipt.Status != 1 {
+		return nil, fmt.Errorf("Baseline 合约部署失败: status=%d", baselineReceipt.Status)
 	}
 
-	rethNonce := gethNonce + 1
+	targetNonce := baselineNonce + 1
 
-	rethTx := types.NewTx(&types.DynamicFeeTx{
+	targetTx := types.NewTx(&types.DynamicFeeTx{
 		ChainID:   t.chainID,
-		Nonce:     rethNonce,
+		Nonce:     targetNonce,
 		To:        nil, // nil creates a contract
 		Value:     big.NewInt(0),
 		Gas:       gasLimit,
@@ -107,42 +107,42 @@ func (t *Tester) DeployContract(ctx context.Context, bytecode string, testName s
 		Data:      bytecodeBytes,
 	})
 
-	rethSignedTx, err := types.SignTx(rethTx, signer, t.builder.privateKey)
+	targetSignedTx, err := types.SignTx(targetTx, signer, t.builder.privateKey)
 	if err != nil {
-		return nil, fmt.Errorf("签名 Reth 交易失败: %w", err)
+		return nil, fmt.Errorf("签名 Target 交易失败: %w", err)
 	}
 
-	rethTxHash, err := t.SendRawTransaction(ctx, t.rethClient, rethSignedTx, fmt.Sprintf("%s_deploy_reth", testName))
+	targetTxHash, err := t.SendRawTransaction(ctx, t.targetClient, targetSignedTx, fmt.Sprintf("%s_deploy_target", testName))
 	if err != nil {
-		return nil, fmt.Errorf("发送 Reth 部署交易失败: %w", err)
+		return nil, fmt.Errorf("发送 Target 部署交易失败: %w", err)
 	}
-	result.RethTxHash = rethTxHash.Hex()
+	result.TargetTxHash = targetTxHash.Hex()
 
-	rethReceipt, err := t.WaitForReceipt(ctx, t.rethClient, rethTxHash, 60*time.Second)
+	targetReceipt, err := t.WaitForReceipt(ctx, t.targetClient, targetTxHash, 60*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("等待 Reth 部署确认失败: %w", err)
+		return nil, fmt.Errorf("等待 Target 部署确认失败: %w", err)
 	}
-	result.RethReceipt = rethReceipt
-	result.RethContractAddress = rethReceipt.ContractAddress
+	result.TargetReceipt = targetReceipt
+	result.TargetContractAddress = targetReceipt.ContractAddress
 
-	if rethReceipt.Status != 1 {
-		return nil, fmt.Errorf("❌ Reth 合约部署失败: status=%d", rethReceipt.Status)
+	if targetReceipt.Status != 1 {
+		return nil, fmt.Errorf("❌ Target 合约部署失败: status=%d", targetReceipt.Status)
 	}
 
-	match, diffErr := t.CompareReceipts(ctx, testName, gethTxHash, rethTxHash)
+	match, diffErr := t.CompareReceipts(ctx, testName, baselineTxHash, targetTxHash)
 
-	result.Success = gethReceipt.Status == 1 && rethReceipt.Status == 1 && match
+	result.Success = baselineReceipt.Status == 1 && targetReceipt.Status == 1 && match
 
 	if !result.Success && result.Error == "" {
 		var errs []string
 		if !match && diffErr != nil {
 			errs = append(errs, diffErr.Error())
 		}
-		if gethReceipt.Status != 1 {
-			errs = append(errs, "Geth Status != 1")
+		if baselineReceipt.Status != 1 {
+			errs = append(errs, "Baseline Status != 1")
 		}
-		if rethReceipt.Status != 1 {
-			errs = append(errs, "Reth Status != 1")
+		if targetReceipt.Status != 1 {
+			errs = append(errs, "Target Status != 1")
 		}
 		result.Error = strings.Join(errs, " | ")
 	}
@@ -152,46 +152,46 @@ func (t *Tester) DeployContract(ctx context.Context, bytecode string, testName s
 
 // CallContract invokes the same contract method on both clients and compares responses.
 // callData contains the encoded method invocation.
-func (t *Tester) CallContract(ctx context.Context, gethContractAddr, rethContractAddr common.Address, callData []byte, testName string) (*ContractCallResult, error) {
+func (t *Tester) CallContract(ctx context.Context, baselineContractAddr, targetContractAddr common.Address, callData []byte, testName string) (*ContractCallResult, error) {
 	result := &ContractCallResult{
 		TestName:        testName,
-		ContractAddress: gethContractAddr.Hex(),
+		ContractAddress: baselineContractAddr.Hex(),
 	}
 
-	gethReq := rpc.NewRequest("eth_call", []interface{}{
+	baselineReq := rpc.NewRequest("eth_call", []interface{}{
 		map[string]interface{}{
-			"to":   gethContractAddr.Hex(),
+			"to":   baselineContractAddr.Hex(),
 			"data": hexutil.Encode(callData),
 		},
 		"latest",
 	})
-	rethReq := rpc.NewRequest("eth_call", []interface{}{
+	targetReq := rpc.NewRequest("eth_call", []interface{}{
 		map[string]interface{}{
-			"to":   rethContractAddr.Hex(),
+			"to":   targetContractAddr.Hex(),
 			"data": hexutil.Encode(callData),
 		},
 		"latest",
 	})
 
-	gethResp := t.gethClient.Call(ctx, gethReq)
-	rethResp := t.rethClient.Call(ctx, rethReq)
+	baselineResp := t.baselineClient.Call(ctx, baselineReq)
+	targetResp := t.targetClient.Call(ctx, targetReq)
 
 	if t.reporter != nil {
 		compareResult := &rpc.CompareResult{
-			Request:           gethReq, // retain the reference request in the report
-			PrimaryResponse:   gethResp,
-			SecondaryResponse: rethResp,
+			Request:          baselineReq, // retain the reference request in the report
+			BaselineResponse: baselineResp,
+			TargetResponse:   targetResp,
 		}
 
 		var diffResult *diff.CompareResult
 		var compareErr error
-		if gethResp.Response.Error == nil && rethResp.Response.Error == nil {
+		if baselineResp.Response.Error == nil && targetResp.Response.Error == nil {
 			// Normalize eth_call responses by removing the request ID.
-			gethRaw := normalizeRawResponse(gethResp.RawBody, false)
-			rethRaw := normalizeRawResponse(rethResp.RawBody, false)
+			baselineRaw := normalizeRawResponse(baselineResp.RawBody, false)
+			targetRaw := normalizeRawResponse(targetResp.RawBody, false)
 			diffResult, compareErr = diff.Compare(
-				gethRaw,
-				rethRaw,
+				baselineRaw,
+				targetRaw,
 				diff.DefaultOptions(),
 			)
 		}
@@ -201,7 +201,7 @@ func (t *Tester) CallContract(ctx context.Context, gethContractAddr, rethContrac
 			Method: "eth_call",
 			Params: []interface{}{
 				map[string]interface{}{
-					"to":   gethContractAddr.Hex(), // retain the reference contract address
+					"to":   baselineContractAddr.Hex(), // retain the reference contract address
 					"data": hexutil.Encode(callData),
 				},
 				"latest",
@@ -210,24 +210,24 @@ func (t *Tester) CallContract(ctx context.Context, gethContractAddr, rethContrac
 		t.reporter.AddResult(tc, compareResult, diffResult, compareErr)
 	}
 
-	if gethResp.Error != nil {
-		return nil, fmt.Errorf("❌ Geth eth_call 失败: %w", gethResp.Error)
+	if baselineResp.Error != nil {
+		return nil, fmt.Errorf("❌ Baseline eth_call 失败: %w", baselineResp.Error)
 	}
-	if gethResp.Response.Error != nil {
-		return nil, fmt.Errorf("❌ Geth RPC error: %s", gethResp.Response.Error.Message)
+	if baselineResp.Response.Error != nil {
+		return nil, fmt.Errorf("❌ Baseline RPC error: %s", baselineResp.Response.Error.Message)
 	}
 
-	var gethResultHex string
-	if err := json.Unmarshal(gethResp.Response.Result, &gethResultHex); err != nil {
-		return nil, fmt.Errorf("解析 Geth 响应失败: %w", err)
+	var baselineResultHex string
+	if err := json.Unmarshal(baselineResp.Response.Result, &baselineResultHex); err != nil {
+		return nil, fmt.Errorf("解析 Baseline 响应失败: %w", err)
 	}
-	result.GethResult = gethResultHex
+	result.BaselineResult = baselineResultHex
 
-	if rethResp.Error == nil && rethResp.Response.Error == nil {
-		var rethResultHex string
-		if err := json.Unmarshal(rethResp.Response.Result, &rethResultHex); err == nil {
-			result.RethResult = rethResultHex
-			result.ResultMatch = gethResultHex == rethResultHex
+	if targetResp.Error == nil && targetResp.Response.Error == nil {
+		var targetResultHex string
+		if err := json.Unmarshal(targetResp.Response.Result, &targetResultHex); err == nil {
+			result.TargetResult = targetResultHex
+			result.ResultMatch = baselineResultHex == targetResultHex
 		}
 	}
 
@@ -237,25 +237,25 @@ func (t *Tester) CallContract(ctx context.Context, gethContractAddr, rethContrac
 }
 
 // SendContractTransaction sends a state-changing contract call to both clients.
-func (t *Tester) SendContractTransaction(ctx context.Context, gethContractAddr, rethContractAddr common.Address, callData []byte, testName string) (*ContractTxResult, error) {
+func (t *Tester) SendContractTransaction(ctx context.Context, baselineContractAddr, targetContractAddr common.Address, callData []byte, testName string) (*ContractTxResult, error) {
 	result := &ContractTxResult{
 		TestName:        testName,
-		ContractAddress: gethContractAddr.Hex(),
+		ContractAddress: baselineContractAddr.Hex(),
 	}
 
-	gethNonce, err := t.GetNonce(ctx, t.gethClient, t.builder.Address())
+	baselineNonce, err := t.GetNonce(ctx, t.baselineClient, t.builder.Address())
 	if err != nil {
-		return nil, fmt.Errorf("获取 Geth nonce 失败: %w", err)
+		return nil, fmt.Errorf("获取 Baseline nonce 失败: %w", err)
 	}
 
-	gasPrice, err := t.GetGasPrice(ctx, t.gethClient)
+	gasPrice, err := t.GetGasPrice(ctx, t.baselineClient)
 	if err != nil {
 		return nil, fmt.Errorf("获取 gas 价格失败: %w", err)
 	}
 
-	estimatedGas, err := t.EstimateGas(ctx, t.gethClient, map[string]interface{}{
+	estimatedGas, err := t.EstimateGas(ctx, t.baselineClient, map[string]interface{}{
 		"from": t.builder.Address().Hex(),
-		"to":   gethContractAddr.Hex(),
+		"to":   baselineContractAddr.Hex(),
 		"data": hexutil.Encode(callData),
 	})
 	if err != nil {
@@ -266,10 +266,10 @@ func (t *Tester) SendContractTransaction(ctx context.Context, gethContractAddr, 
 	maxPriorityFee := big.NewInt(1000000000)
 	maxFeePerGas := new(big.Int).Add(gasPrice, maxPriorityFee)
 
-	gethTx := types.NewTx(&types.DynamicFeeTx{
+	baselineTx := types.NewTx(&types.DynamicFeeTx{
 		ChainID:   t.chainID,
-		Nonce:     gethNonce,
-		To:        &gethContractAddr,
+		Nonce:     baselineNonce,
+		To:        &baselineContractAddr,
 		Value:     big.NewInt(0),
 		Gas:       gasLimit,
 		GasFeeCap: maxFeePerGas,
@@ -278,29 +278,29 @@ func (t *Tester) SendContractTransaction(ctx context.Context, gethContractAddr, 
 	})
 
 	signer := types.NewCancunSigner(t.chainID)
-	gethSignedTx, err := types.SignTx(gethTx, signer, t.builder.privateKey)
+	baselineSignedTx, err := types.SignTx(baselineTx, signer, t.builder.privateKey)
 	if err != nil {
-		return nil, fmt.Errorf("签名 Geth 交易失败: %w", err)
+		return nil, fmt.Errorf("签名 Baseline 交易失败: %w", err)
 	}
 
-	gethTxHash, err := t.SendRawTransaction(ctx, t.gethClient, gethSignedTx, fmt.Sprintf("%s_geth", testName))
+	baselineTxHash, err := t.SendRawTransaction(ctx, t.baselineClient, baselineSignedTx, fmt.Sprintf("%s_baseline", testName))
 	if err != nil {
-		return nil, fmt.Errorf("发送 Geth 交易失败: %w", err)
+		return nil, fmt.Errorf("发送 Baseline 交易失败: %w", err)
 	}
-	result.GethTxHash = gethTxHash.Hex()
+	result.BaselineTxHash = baselineTxHash.Hex()
 
-	gethReceipt, err := t.WaitForReceipt(ctx, t.gethClient, gethTxHash, 60*time.Second)
+	baselineReceipt, err := t.WaitForReceipt(ctx, t.baselineClient, baselineTxHash, 60*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("等待 Geth 交易确认失败: %w", err)
+		return nil, fmt.Errorf("等待 Baseline 交易确认失败: %w", err)
 	}
-	result.GethReceipt = gethReceipt
+	result.BaselineReceipt = baselineReceipt
 
-	rethNonce := gethNonce + 1
+	targetNonce := baselineNonce + 1
 
-	rethTx := types.NewTx(&types.DynamicFeeTx{
+	targetTx := types.NewTx(&types.DynamicFeeTx{
 		ChainID:   t.chainID,
-		Nonce:     rethNonce,
-		To:        &rethContractAddr,
+		Nonce:     targetNonce,
+		To:        &targetContractAddr,
 		Value:     big.NewInt(0),
 		Gas:       gasLimit,
 		GasFeeCap: maxFeePerGas,
@@ -308,34 +308,34 @@ func (t *Tester) SendContractTransaction(ctx context.Context, gethContractAddr, 
 		Data:      callData,
 	})
 
-	rethSignedTx, err := types.SignTx(rethTx, signer, t.builder.privateKey)
+	targetSignedTx, err := types.SignTx(targetTx, signer, t.builder.privateKey)
 	if err != nil {
-		return nil, fmt.Errorf("签名 Reth 交易失败: %w", err)
+		return nil, fmt.Errorf("签名 Target 交易失败: %w", err)
 	}
 
-	rethTxHash, err := t.SendRawTransaction(ctx, t.rethClient, rethSignedTx, fmt.Sprintf("%s_reth", testName))
+	targetTxHash, err := t.SendRawTransaction(ctx, t.targetClient, targetSignedTx, fmt.Sprintf("%s_target", testName))
 	if err != nil {
-		return nil, fmt.Errorf("发送 Reth 交易失败: %w", err)
+		return nil, fmt.Errorf("发送 Target 交易失败: %w", err)
 	}
-	result.RethTxHash = rethTxHash.Hex()
+	result.TargetTxHash = targetTxHash.Hex()
 
-	rethReceipt, err := t.WaitForReceipt(ctx, t.rethClient, rethTxHash, 60*time.Second)
+	targetReceipt, err := t.WaitForReceipt(ctx, t.targetClient, targetTxHash, 60*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("等待 Reth 交易确认失败: %w", err)
+		return nil, fmt.Errorf("等待 Target 交易确认失败: %w", err)
 	}
-	result.RethReceipt = rethReceipt
+	result.TargetReceipt = targetReceipt
 
-	match, diffErr := t.CompareReceipts(ctx, testName, gethTxHash, rethTxHash)
+	match, diffErr := t.CompareReceipts(ctx, testName, baselineTxHash, targetTxHash)
 
-	result.Success = gethReceipt.Status == 1 && match
+	result.Success = baselineReceipt.Status == 1 && match
 
 	if !result.Success && result.Error == "" {
 		var errs []string
 		if !match && diffErr != nil {
 			errs = append(errs, diffErr.Error())
 		}
-		if gethReceipt.Status != 1 {
-			errs = append(errs, "Geth Status != 1")
+		if baselineReceipt.Status != 1 {
+			errs = append(errs, "Baseline Status != 1")
 		}
 
 		result.Error = strings.Join(errs, " | ")

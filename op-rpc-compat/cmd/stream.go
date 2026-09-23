@@ -22,8 +22,6 @@ import (
 )
 
 const (
-	defaultStreamRPC      = "http://127.0.0.1:9545"
-	defaultStreamWatchRPC = "http://127.0.0.1:19545"
 	defaultGPOTarget      = "0x420000000000000000000000000000000000000F"
 	defaultSenderPrivKey0 = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 )
@@ -49,28 +47,38 @@ var (
 
 var streamCmd = &cobra.Command{
 	Use:   "stream",
-	Short: "持续发交易/监听区块内 GPO 交易顺序",
-	Long: `持续向指定 RPC 发送交易（尽量贴近每个区块尾部），并可持续监听指定 RPC
-的每个区块，判断是否出现 GPO 交易以及 GPO 交易后是否还有新交易。
-
-默认即为「同时发送 + 监听」（--send --watch），发送 RPC 默认 127.0.0.1:9545，
-监听 RPC 默认 127.0.0.1:19545，私钥默认使用本地测试账户。
-
-示例:
-  # 等价于默认行为（send + watch + 本地 9545/19545）
-  rpc_compat stream
-
-  # 只发送交易
-  rpc_compat stream --watch=false --private-key 0x... --to 0x...
-
-  # 只监听区块
-  rpc_compat stream --send=false
-
-  # 自定义发送 + 监听 RPC
-  rpc_compat stream --rpc http://127.0.0.1:9545 --watch-rpc http://127.0.0.1:19545 --private-key 0x... --to 0x...`,
+	Short: "Send transactions and monitor block ordering",
+	Long: `Send transactions near block boundaries and monitor GPO transaction ordering.
+Provide the send and watch RPC endpoints explicitly or through environment variables.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		sendURL, watchURL, err := resolveStreamEndpoints(cmd, streamSend, streamWatch)
+		if err != nil {
+			return err
+		}
+		streamRPC, streamWatchRPC = sendURL, watchURL
 		return runStream()
 	},
+}
+
+func resolveStreamEndpoints(cmd *cobra.Command, send, watch bool) (string, string, error) {
+	sendURL, err := endpointFlagValue(cmd, "rpc", "STREAM_RPC_URL")
+	if err != nil {
+		return "", "", err
+	}
+	watchURL, err := endpointFlagValue(cmd, "watch-rpc", "STREAM_WATCH_RPC_URL")
+	if err != nil {
+		return "", "", err
+	}
+	if send && sendURL == "" {
+		return "", "", fmt.Errorf("send mode requires --rpc or STREAM_RPC_URL")
+	}
+	if watch && watchURL == "" {
+		watchURL = sendURL
+	}
+	if watch && watchURL == "" {
+		return "", "", fmt.Errorf("watch mode requires --watch-rpc, STREAM_WATCH_RPC_URL, or --rpc")
+	}
+	return sendURL, watchURL, nil
 }
 
 func init() {
@@ -81,7 +89,7 @@ func init() {
 		defaultPrivateKey = defaultSenderPrivKey0
 	}
 
-	streamCmd.Flags().StringVar(&streamRPC, "rpc", defaultStreamRPC, "发送交易使用的 RPC 端点")
+	streamCmd.Flags().StringVar(&streamRPC, "rpc", "", "RPC endpoint used to send transactions")
 	streamCmd.Flags().BoolVar(&streamSend, "send", true, "持续发送交易（尽量贴近每个区块尾部）")
 	streamCmd.Flags().BoolVar(&streamWatch, "watch", true, "持续监听区块交易并检查 GPO 交易顺序")
 
@@ -93,7 +101,7 @@ func init() {
 	streamCmd.Flags().DurationVar(&streamSendPollInterval, "send-poll", 200*time.Millisecond, "发送模式轮询新区块间隔")
 	streamCmd.Flags().DurationVar(&streamFallbackBlockTime, "block-time", 2*time.Second, "发送模式的默认区块时间（用于初始预测）")
 
-	streamCmd.Flags().StringVar(&streamWatchRPC, "watch-rpc", defaultStreamWatchRPC, "监听 RPC（为空则使用 --rpc）")
+	streamCmd.Flags().StringVar(&streamWatchRPC, "watch-rpc", "", "RPC endpoint to monitor (defaults to --rpc)")
 	streamCmd.Flags().StringVar(&streamStartBlock, "start-block", "latest", "监听起始块号（latest/十进制/0x十六进制）")
 	streamCmd.Flags().DurationVar(&streamWatchPollInterval, "watch-poll", 1*time.Second, "监听模式轮询间隔")
 	streamCmd.Flags().StringVar(&streamGPOAddress, "gpo-address", defaultGPOTarget, "GPO 合约地址")
@@ -225,7 +233,8 @@ func buildSendConfig() (*sendConfig, error) {
 		return nil, fmt.Errorf("--private-key 不能为空")
 	}
 
-	tester, err := tx.NewTester(streamRPC, streamRPC, streamPrivateKey, nil)
+	streamPair := rpc.NewClientPair(streamRPC, "stream", streamRPC, "stream", 30*time.Second)
+	tester, err := tx.NewTester(streamPair, streamPrivateKey, nil)
 	if err != nil {
 		return nil, fmt.Errorf("初始化发送器失败: %w", err)
 	}
@@ -237,7 +246,7 @@ func buildSendConfig() (*sendConfig, error) {
 
 	return &sendConfig{
 		tester: tester,
-		client: tester.GethClient(),
+		client: tester.BaselineClient(),
 		to:     to,
 		amount: amount,
 	}, nil
@@ -354,14 +363,14 @@ func runSendLoop(ctx context.Context, cfg *sendConfig) error {
 func sendOneEIP1559TxNoPriorityFee(ctx context.Context, cfg *sendConfig, nonce uint64, baseFee *big.Int) (common.Hash, *big.Int, error) {
 	zeroTip := big.NewInt(0)
 	params := &tx.TxParams{
-		From:                   cfg.tester.Builder().Address(),
-		To:                     &cfg.to,
-		Value:                  cfg.amount,
-		Gas:                    streamGasLimit,
-		Nonce:                  nonce,
-		ChainID:                cfg.tester.ChainID(),
-		MaxFeePerGas:           baseFee,
-		MaxPriorityFeePerGas:   zeroTip,
+		From:                 cfg.tester.Builder().Address(),
+		To:                   &cfg.to,
+		Value:                cfg.amount,
+		Gas:                  streamGasLimit,
+		Nonce:                nonce,
+		ChainID:              cfg.tester.ChainID(),
+		MaxFeePerGas:         baseFee,
+		MaxPriorityFeePerGas: zeroTip,
 	}
 	signedTx, err := cfg.tester.Builder().BuildAndSign(tx.TxTypeEIP1559, params)
 	if err != nil {

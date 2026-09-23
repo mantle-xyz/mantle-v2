@@ -72,21 +72,21 @@ type StateSnapshot struct {
 
 // TxTestResult records a transaction comparison result.
 type TxTestResult struct {
-	TestName    string `json:"test_name"`
-	TxType      string `json:"tx_type"`
-	Passed      bool   `json:"passed"`
-	GethTxHash  string `json:"geth_tx_hash,omitempty"`
-	RethTxHash  string `json:"reth_tx_hash,omitempty"`
-	Error       string `json:"error,omitempty"`
-	GethReceipt *TxReceipt `json:"geth_receipt,omitempty"`
-	RethReceipt *TxReceipt `json:"reth_receipt,omitempty"`
+	TestName        string     `json:"test_name"`
+	TxType          string     `json:"tx_type"`
+	Passed          bool       `json:"passed"`
+	BaselineTxHash  string     `json:"baseline_tx_hash,omitempty"`
+	TargetTxHash    string     `json:"target_tx_hash,omitempty"`
+	Error           string     `json:"error,omitempty"`
+	BaselineReceipt *TxReceipt `json:"baseline_receipt,omitempty"`
+	TargetReceipt   *TxReceipt `json:"target_receipt,omitempty"`
 
 	// State comparison.
 	StateComparison *StateComparison `json:"state_comparison,omitempty"`
 
 	// Preconfirmation responses, when applicable.
-	GethPreconf *PreconfResponse `json:"geth_preconf,omitempty"`
-	RethPreconf *PreconfResponse `json:"reth_preconf,omitempty"`
+	BaselinePreconf *PreconfResponse `json:"baseline_preconf,omitempty"`
+	TargetPreconf   *PreconfResponse `json:"target_preconf,omitempty"`
 }
 
 // TxReceipt contains the receipt fields needed for comparison.
@@ -102,19 +102,19 @@ type TxReceipt struct {
 // StateComparison records differences between client state snapshots.
 type StateComparison struct {
 	// Balance changes.
-	GethBalanceDelta *big.Int `json:"geth_balance_delta"`
-	RethBalanceDelta *big.Int `json:"reth_balance_delta"`
-	BalanceMatch     bool     `json:"balance_match"`
+	BaselineBalanceDelta *big.Int `json:"baseline_balance_delta"`
+	TargetBalanceDelta   *big.Int `json:"target_balance_delta"`
+	BalanceMatch         bool     `json:"balance_match"`
 
 	// Gas usage.
-	GethGasUsed uint64 `json:"geth_gas_used"`
-	RethGasUsed uint64 `json:"reth_gas_used"`
-	GasMatch    bool   `json:"gas_match"`
+	BaselineGasUsed uint64 `json:"baseline_gas_used"`
+	TargetGasUsed   uint64 `json:"target_gas_used"`
+	GasMatch        bool   `json:"gas_match"`
 
 	// Receipt status.
-	GethStatus uint64 `json:"geth_status"`
-	RethStatus uint64 `json:"reth_status"`
-	StatusMatch bool  `json:"status_match"`
+	BaselineStatus uint64 `json:"baseline_status"`
+	TargetStatus   uint64 `json:"target_status"`
+	StatusMatch    bool   `json:"status_match"`
 
 	// Detailed differences.
 	Differences []string `json:"differences,omitempty"`
@@ -122,15 +122,15 @@ type StateComparison struct {
 
 // ContractDeployResult records a contract deployment comparison.
 type ContractDeployResult struct {
-	TestName             string                    `json:"test_name"`
-	Success              bool                      `json:"success"`
-	GethTxHash           string                    `json:"geth_tx_hash,omitempty"`
-	RethTxHash           string                    `json:"reth_tx_hash,omitempty"`
-	GethContractAddress  string                    `json:"geth_contract_address,omitempty"`
-	RethContractAddress  string                    `json:"reth_contract_address,omitempty"`
-	GethReceipt          *TxReceipt                `json:"geth_receipt,omitempty"`
-	RethReceipt          *TxReceipt                `json:"reth_receipt,omitempty"`
-	Error                string                    `json:"error,omitempty"`
+	TestName                string     `json:"test_name"`
+	Success                 bool       `json:"success"`
+	BaselineTxHash          string     `json:"baseline_tx_hash,omitempty"`
+	TargetTxHash            string     `json:"target_tx_hash,omitempty"`
+	BaselineContractAddress string     `json:"baseline_contract_address,omitempty"`
+	TargetContractAddress   string     `json:"target_contract_address,omitempty"`
+	BaselineReceipt         *TxReceipt `json:"baseline_receipt,omitempty"`
+	TargetReceipt           *TxReceipt `json:"target_receipt,omitempty"`
+	Error                   string     `json:"error,omitempty"`
 }
 
 // ContractCallResult records an eth_call comparison.
@@ -138,20 +138,20 @@ type ContractCallResult struct {
 	TestName        string `json:"test_name"`
 	Success         bool   `json:"success"`
 	ContractAddress string `json:"contract_address"`
-	GethResult      string `json:"geth_result,omitempty"`
-	RethResult      string `json:"reth_result,omitempty"`
+	BaselineResult  string `json:"baseline_result,omitempty"`
+	TargetResult    string `json:"target_result,omitempty"`
 	ResultMatch     bool   `json:"result_match"`
 	Error           string `json:"error,omitempty"`
 }
 
 // ContractTxResult records a state-changing contract transaction comparison.
 type ContractTxResult struct {
-	TestName        string               `json:"test_name"`
-	Success         bool                 `json:"success"`
-	ContractAddress string               `json:"contract_address"`
-	GethTxHash      string               `json:"geth_tx_hash,omitempty"`
-	RethTxHash      string               `json:"reth_tx_hash,omitempty"`
-	GethReceipt     *TxReceipt           `json:"geth_receipt,omitempty"`
-	RethReceipt     *TxReceipt           `json:"reth_receipt,omitempty"`
-	Error           string               `json:"error,omitempty"`
+	TestName        string     `json:"test_name"`
+	Success         bool       `json:"success"`
+	ContractAddress string     `json:"contract_address"`
+	BaselineTxHash  string     `json:"baseline_tx_hash,omitempty"`
+	TargetTxHash    string     `json:"target_tx_hash,omitempty"`
+	BaselineReceipt *TxReceipt `json:"baseline_receipt,omitempty"`
+	TargetReceipt   *TxReceipt `json:"target_receipt,omitempty"`
+	Error           string     `json:"error,omitempty"`
 }
