@@ -1,4 +1,2 @@
-report.json
-report.tx.json
-report.scan.json
-rpc_compat
+report*.json
+/bin/op-rpc-compat
