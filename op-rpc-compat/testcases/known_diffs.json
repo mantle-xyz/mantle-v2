@@ -176,14 +176,6 @@
       },
       "target_example": {
         "result": "\"op-reth-rpc2\""
-      },
-      "applies_to": {
-        "baseline": {
-          "name_pattern": "^op-geth$"
-        },
-        "target": {
-          "name_pattern": "^op-reth$"
-        }
       }
     },
     {
@@ -2229,14 +2221,6 @@
       },
       "target_example": {
         "result": "0x9a43c3b0b1db218e46f75aa0d834a2b8"
-      },
-      "applies_to": {
-        "baseline": {
-          "name_pattern": "^op-geth$"
-        },
-        "target": {
-          "name_pattern": "^op-reth$"
-        }
       }
     },
     {
@@ -2247,14 +2231,6 @@
       },
       "target_example": {
         "result": "0xcb018a92101b190e89315f1ea38da7fc"
-      },
-      "applies_to": {
-        "baseline": {
-          "name_pattern": "^op-geth$"
-        },
-        "target": {
-          "name_pattern": "^op-reth$"
-        }
       }
     },
     {
@@ -2265,14 +2241,6 @@
       },
       "target_example": {
         "result": "0x..."
-      },
-      "applies_to": {
-        "baseline": {
-          "name_pattern": "^op-geth$"
-        },
-        "target": {
-          "name_pattern": "^op-reth$"
-        }
       }
     },
     {
@@ -2283,14 +2251,6 @@
       },
       "target_example": {
         "result": "0x..."
-      },
-      "applies_to": {
-        "baseline": {
-          "name_pattern": "^op-geth$"
-        },
-        "target": {
-          "name_pattern": "^op-reth$"
-        }
       }
     },
     {

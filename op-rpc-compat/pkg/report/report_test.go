@@ -10,7 +10,28 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/diff"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/rpc"
+	"github.com/ethereum-optimism/optimism/op-rpc-compat/testcases"
 )
+
+func TestGenericDynamicKnownDiffsApplyAcrossClientPairs(t *testing.T) {
+	r := NewReporter(EndpointMetadata{Name: "old-reth"}, EndpointMetadata{Name: "new-reth"}, false)
+	file, err := testcases.FS.Open("known_diffs.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if err := r.LoadKnownDiffs(file); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"web3_clientVersion", "eth_newBlockFilter", "eth_newFilter", "eth_newFilter_with_address", "eth_newPendingTransactionFilter"} {
+		if r.GetKnownDiff(name) == nil {
+			t.Errorf("implementation-independent known difference %s must apply", name)
+		}
+	}
+	if r.GetKnownDiff("eth_hashrate") != nil {
+		t.Fatal("geth/reth-specific known difference applied to old/new reth")
+	}
+}
 
 func TestReporterPrintsLogicalEndpointNames(t *testing.T) {
 	r := NewReporter(EndpointMetadata{Name: "old-reth", URL: "http://old.example"}, EndpointMetadata{Name: "new-reth", URL: "http://new.example"}, true)
