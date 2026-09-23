@@ -2,10 +2,22 @@ package report
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/rpc"
 )
+
+func TestLoadKnownDiffsFromReader(t *testing.T) {
+	r := NewReporter("baseline", "target", false)
+	data := strings.NewReader(`{"known_diffs":[{"test_name":"sample","reason":"expected difference"}]}`)
+	if err := r.LoadKnownDiffs(data); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.GetKnownDiff("sample"); got == nil || got.Reason != "expected difference" {
+		t.Fatalf("known difference = %+v", got)
+	}
+}
 
 func TestAddCompatibleResultPreservesRPCErrorWithoutFailing(t *testing.T) {
 	r := NewReporter("geth", "reth", false)

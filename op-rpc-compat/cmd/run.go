@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/report"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/rpc"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/tx"
+	"github.com/ethereum-optimism/optimism/op-rpc-compat/testcases"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -52,10 +54,12 @@ func runTests() error {
 
 	var allTests []report.TestCase
 	var testFiles []string
+	var corpus fs.FS
 
 	if testFile != "" {
 		testFiles = []string{testFile}
 	} else {
+		corpus = testcaseFS(testcasesDir)
 		files, err := findTestFiles(testcasesDir, excludeFiles)
 		if err != nil {
 			return fmt.Errorf("查找测试文件失败: %w", err)
@@ -67,7 +71,13 @@ func runTests() error {
 	}
 
 	for _, file := range testFiles {
-		tests, err := loadTestFile(file)
+		var tests []report.TestCase
+		var err error
+		if testFile != "" {
+			tests, err = loadTestFile(file)
+		} else {
+			tests, err = loadTestFileFS(corpus, filepath.Base(file))
+		}
 		if err != nil {
 			return fmt.Errorf("加载测试文件 %s 失败: %w", file, err)
 		}
@@ -114,10 +124,8 @@ func runTests() error {
 
 	// Load known differences from the selected testcase directory.
 	knownDiffsPath := filepath.Join(testcasesDir, "known_diffs.json")
-	if _, err := os.Stat(knownDiffsPath); err == nil {
-		if err := reporter.LoadKnownDiffs(knownDiffsPath); err == nil {
-			fmt.Printf("已加载已知差异配置: %s\n", knownDiffsPath)
-		}
+	if err := loadKnownDiffsFS(reporter, testcaseFS(testcasesDir)); err == nil {
+		fmt.Printf("已加载已知差异配置: %s\n", knownDiffsPath)
 	}
 
 	fmt.Printf("\ngeth: %s\n", gethURL)
@@ -168,8 +176,7 @@ func runTransactionTests() error {
 
 	reporter := report.NewReporter(gethURL, rethURL, verbose)
 
-	knownDiffsPath := filepath.Join(testcasesDir, "known_diffs.json")
-	if err := reporter.LoadKnownDiffs(knownDiffsPath); err != nil {
+	if err := loadKnownDiffsFS(reporter, testcaseFS(testcasesDir)); err != nil {
 		fmt.Printf("警告: 加载已知差异配置失败: %v\n", err)
 	}
 
@@ -700,9 +707,26 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 // Configuration files are excluded from the testcase corpus.
 const knownDiffsFileName = "known_diffs.json"
 
+func testcaseFS(dir string) fs.FS {
+	if dir == "" {
+		return testcases.FS
+	}
+	return os.DirFS(dir)
+}
+
+func loadKnownDiffsFS(reporter *report.Reporter, filesystem fs.FS) error {
+	file, err := filesystem.Open(knownDiffsFileName)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	return reporter.LoadKnownDiffs(file)
+}
+
 // findTestFiles returns JSON cases from a directory, excluding configuration and named files.
 func findTestFiles(dir string, excludes []string) ([]string, error) {
 	var files []string
+	filesystem := testcaseFS(dir)
 
 	excludeSet := make(map[string]bool)
 	for _, e := range excludes {
@@ -710,7 +734,7 @@ func findTestFiles(dir string, excludes []string) ([]string, error) {
 	}
 	excludeSet[knownDiffsFileName] = true
 
-	entries, err := os.ReadDir(dir)
+	entries, err := fs.ReadDir(filesystem, ".")
 	if err != nil {
 		return nil, err
 	}
@@ -735,7 +759,11 @@ func findTestFiles(dir string, excludes []string) ([]string, error) {
 
 // loadTestFile decodes one JSON testcase file.
 func loadTestFile(file string) ([]report.TestCase, error) {
-	data, err := os.ReadFile(file)
+	return loadTestFileFS(os.DirFS(filepath.Dir(file)), filepath.Base(file))
+}
+
+func loadTestFileFS(filesystem fs.FS, file string) ([]report.TestCase, error) {
+	data, err := fs.ReadFile(filesystem, file)
 	if err != nil {
 		return nil, err
 	}

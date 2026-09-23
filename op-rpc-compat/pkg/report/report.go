@@ -4,6 +4,7 @@ package report
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"sort"
@@ -99,9 +100,9 @@ func NewReporter(gethURL, rethURL string, verbose bool) *Reporter {
 	}
 }
 
-// LoadKnownDiffs loads known-difference rules from a file.
-func (r *Reporter) LoadKnownDiffs(filename string) error {
-	data, err := os.ReadFile(filename)
+// LoadKnownDiffs loads known-difference rules from a reader.
+func (r *Reporter) LoadKnownDiffs(reader io.Reader) error {
+	data, err := io.ReadAll(reader)
 	if err != nil {
 		return err
 	}

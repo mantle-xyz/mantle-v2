@@ -1,10 +1,93 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/report"
+	"github.com/ethereum-optimism/optimism/op-rpc-compat/testcases"
 )
+
+func TestDefaultCorpusDoesNotDependOnWorkingDirectory(t *testing.T) {
+	t.Chdir(t.TempDir())
+	files, err := findTestFiles("", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(files, "eth_basic.json") {
+		t.Fatalf("default corpus missing eth_basic.json: %v", files)
+	}
+	if slices.Contains(files, knownDiffsFileName) {
+		t.Fatal("known_diffs.json must not run as a testcase")
+	}
+}
+
+func TestExplicitTestcaseDirectoryUsesOSFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "custom.json"), []byte("[]"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files, err := findTestFiles(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(files, []string{filepath.Join(dir, "custom.json")}) {
+		t.Fatalf("files = %v", files)
+	}
+}
+
+func TestExplicitTestFileUsesOSPath(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "custom.json")
+	if err := os.WriteFile(file, []byte(`[{"name":"custom","method":"eth_chainId","params":[]}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tests, err := loadTestFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tests) != 1 || tests[0].Name != "custom" {
+		t.Fatalf("tests = %+v", tests)
+	}
+}
+
+func TestEmbeddedTestcaseLoadsOutsideRepository(t *testing.T) {
+	t.Chdir(t.TempDir())
+	tests, err := loadTestFileFS(testcases.FS, "eth_basic.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tests) == 0 {
+		t.Fatal("embedded eth_basic.json contains no testcases")
+	}
+}
+
+func TestDefaultKnownDiffsLoadOutsideRepository(t *testing.T) {
+	t.Chdir(t.TempDir())
+	r := report.NewReporter("baseline", "target", false)
+	if err := loadKnownDiffsFS(r, testcaseFS("")); err != nil {
+		t.Fatal(err)
+	}
+	if r.GetKnownDiff("eth_hashrate") == nil {
+		t.Fatal("embedded known differences missing eth_hashrate")
+	}
+}
+
+func TestCustomKnownDiffsUseSelectedDirectory(t *testing.T) {
+	dir := t.TempDir()
+	data := []byte(`{"known_diffs":[{"test_name":"custom","reason":"custom corpus"}]}`)
+	if err := os.WriteFile(filepath.Join(dir, knownDiffsFileName), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := report.NewReporter("baseline", "target", false)
+	if err := loadKnownDiffsFS(r, testcaseFS(dir)); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.GetKnownDiff("custom"); got == nil || got.Reason != "custom corpus" {
+		t.Fatalf("known difference = %+v", got)
+	}
+}
 
 func TestReplaceTemplateVarsBlockOneRLP(t *testing.T) {
 	tests := []report.TestCase{{

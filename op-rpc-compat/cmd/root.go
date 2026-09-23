@@ -92,7 +92,7 @@ func init() {
 	rootCmd.Flags().DurationVar(&retryDelay, "retry-delay", 1*time.Second, "重试间隔")
 
 	rootCmd.Flags().StringVarP(&testFile, "file", "f", "", "指定测试文件路径 (不指定则运行所有)")
-	rootCmd.Flags().StringVar(&testcasesDir, "testcases-dir", "testcases", "测试用例目录")
+	rootCmd.Flags().StringVar(&testcasesDir, "testcases-dir", "", "测试用例目录（默认使用内嵌用例）")
 	rootCmd.Flags().StringSliceVar(&excludeFiles, "exclude", nil, "排除的文件名 (可多次指定，如 --exclude errors_full.json)")
 
 	rootCmd.Flags().BoolVar(&txTest, "tx", false, "运行交易测试（Legacy/EIP-1559/EIP-7702，包含标准和预确认方式）")
