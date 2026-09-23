@@ -584,7 +584,7 @@
       },
       "latest"
     ],
-    "description": "Issue-5 基准：不带 list 的 EIP-1559 请求"
+    "description": "EIP-1559 request without access or authorization lists"
   },
   {
     "name": "eth_estimateTotalFee_preserves_access_list",
@@ -607,7 +607,7 @@
       },
       "latest"
     ],
-    "description": "Issue-5：EIP-1559 代理 envelope 必须保留 access list"
+    "description": "EIP-1559 proxy envelope preserves the access list"
   },
   {
     "name": "eth_estimateTotalFee_preserves_authorization_list",
@@ -632,7 +632,7 @@
       },
       "latest"
     ],
-    "description": "Issue-5：authorization list 存在时构造 EIP-7702 代理 envelope"
+    "description": "Authorization list selects an EIP-7702 proxy envelope"
   },
   {
     "name": "eth_estimateTotalFee_preserves_access_and_authorization_lists",
@@ -665,6 +665,6 @@
       },
       "latest"
     ],
-    "description": "Issue-5：EIP-7702 代理 envelope 同时保留 access list 与 authorization list"
+    "description": "EIP-7702 proxy envelope preserves access and authorization lists"
   }
 ]

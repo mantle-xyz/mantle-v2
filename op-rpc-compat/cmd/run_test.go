@@ -4,11 +4,23 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/report"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/testcases"
 )
+
+func TestTxStandardOnlyRequiresTx(t *testing.T) {
+	oldTxMode, oldStandardOnly := txTest, txStandardOnly
+	t.Cleanup(func() {
+		txTest, txStandardOnly = oldTxMode, oldStandardOnly
+	})
+	txTest, txStandardOnly = false, true
+	if err := runTests(); err == nil || !strings.Contains(err.Error(), "--tx") {
+		t.Fatalf("standalone --tx-standard-only error = %v", err)
+	}
+}
 
 func TestDefaultCorpusDoesNotDependOnWorkingDirectory(t *testing.T) {
 	t.Chdir(t.TempDir())
