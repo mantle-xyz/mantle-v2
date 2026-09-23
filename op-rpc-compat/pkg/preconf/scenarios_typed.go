@@ -83,7 +83,7 @@ func (r *Runner) scenarioValid7702Preconf(ctx context.Context) {
 	const name = "valid_7702_preconf"
 	z, err := tx.NewBuilder(r.tester.ChainID(), throwaway7702Key)
 	if err != nil {
-		r.record(name, true, "INCONCLUSIVE: throwaway key: %v", err)
+		r.recordInconclusive(name, "throwaway key: %v", err)
 		return
 	}
 	zNonce, err := r.tester.GetNonce(ctx, r.seq, z.Address())
@@ -98,7 +98,7 @@ func (r *Runner) scenarioValid7702Preconf(ctx context.Context) {
 		Nonce:   zNonce,
 	})
 	if err != nil {
-		r.record(name, true, "INCONCLUSIVE: sign 7702 auth: %v", err)
+		r.recordInconclusive(name, "sign 7702 auth: %v", err)
 		return
 	}
 	feeCap, tip := r.fee1559(ctx)
@@ -113,21 +113,21 @@ func (r *Runner) scenarioValid7702Preconf(ctx context.Context) {
 		To: &to, Value: big.NewInt(0), AuthList: []types.SetCodeAuthorization{auth},
 	})
 	if err != nil {
-		r.record(name, true, "INCONCLUSIVE: build 7702: %v", err)
+		r.recordInconclusive(name, "build 7702: %v", err)
 		return
 	}
 	signed, err := r.funder.SignTx(unsigned)
 	if err != nil {
-		r.record(name, true, "INCONCLUSIVE: sign 7702: %v", err)
+		r.recordInconclusive(name, "sign 7702: %v", err)
 		return
 	}
 	resp, err := r.tester.SendRawTransactionWithPreconf(ctx, r.seq, signed, "7702")
 	if err != nil {
-		r.record(name, true, "INCONCLUSIVE: 7702 preconf 被拒（fork 未启用或类型不 eligible）: %v", err)
+		r.recordInconclusive(name, "7702 preconf 被拒（fork 未启用或类型不 eligible）: %v", err)
 		return
 	}
 	if resp.Status != "success" {
-		r.record(name, true, "INCONCLUSIVE: 7702 status=%s reason=%q", resp.Status, derefReason(resp))
+		r.recordInconclusive(name, "7702 status=%s reason=%q", resp.Status, derefReason(resp))
 		return
 	}
 	if _, ok := r.verifyOnChain(ctx, name, []promise{promiseFrom(resp)}); ok {

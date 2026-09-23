@@ -127,7 +127,7 @@ func (r *Runner) scenarioMultiPreconfSameSlot(ctx context.Context) {
 		resp, err := r.tester.SendRawTransactionWithPreconf(ctx, r.seq, signed, "a7")
 		if err != nil {
 			if strings.Contains(err.Error(), "nonce") || strings.Contains(err.Error(), "gap") {
-				r.record(name, true, "INCONCLUSIVE: 第 %d 笔被拒(%v) → sequencer 不接纳并发连续 nonce（reth gap 行为？），admit=%d<%d", i, err, len(ps), N)
+				r.recordInconclusive(name, "第 %d 笔被拒(%v) → sequencer 不接纳并发连续 nonce（reth gap 行为？），admit=%d<%d", i, err, len(ps), N)
 				return
 			}
 			r.record(name, false, "tx %d send: %v", i, err)
@@ -170,7 +170,7 @@ func (r *Runner) scenarioMultiPreconfSameSlot(ctx context.Context) {
 	if maxShare >= 2 {
 		r.record(name, true, "%d 笔全部链上兑现 + nonce/余额守恒；最多 %d 笔共 slot（跨 %d 块）", N, maxShare, len(perBlock))
 	} else {
-		r.record(name, true, "INCONCLUSIVE: %d 笔全兑现且守恒，但每笔单独成块（出块太快），未形成同 slot 多笔", N)
+		r.recordInconclusive(name, "%d 笔全兑现且守恒，但每笔单独成块（出块太快），未形成同 slot 多笔", N)
 	}
 }
 
@@ -278,7 +278,7 @@ func (r *Runner) scenarioTightTimeoutEviction(ctx context.Context) {
 	// WorstCase (ECMUL loop, ~4.9 ns/gas) at ~38M gas ≈ 190ms — exceeds a 100ms preconftimeout with
 	// margin, unlike GasBurner (sstore, ~3ms) which never reaches a mid-range timeout.
 	if err := r.ensureWorstCase(ctx); err != nil {
-		r.record(name, true, "INCONCLUSIVE: 无法部署 WorstCase（%v），跳过", err)
+		r.recordInconclusive(name, "无法部署 WorstCase（%v），跳过", err)
 		return
 	}
 	gp, err := r.gasPrice(ctx)
@@ -332,7 +332,7 @@ func (r *Runner) scenarioTightTimeoutEviction(ctx context.Context) {
 		evictedOK++
 	}
 	if timedOut == 0 {
-		r.record(name, true, "INCONCLUSIVE: %d 笔均未超时（preconftimeout > WorstCase ~190ms）→ 用 100ms profile 才能验证清池", K)
+		r.recordInconclusive(name, "%d 笔均未超时（preconftimeout > WorstCase ~190ms）→ 用 100ms profile 才能验证清池", K)
 		return
 	}
 	r.record(name, true, "%d/%d 超时的 tx 均已清池（不上链且不在池）", evictedOK, timedOut)

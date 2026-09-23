@@ -143,6 +143,9 @@ and send transactions. `--heavy` adds throughput and ordering scenarios. The
 sequencer and both verifier URLs are required; op-node and L1 URLs are needed
 for scenarios that exercise those services. The network must already have the
 appropriate preconfirmation allowlists and checker configured.
+Preconfirmation scenarios report `PASS`, `FAIL`, or `INCONCLUSIVE` separately.
+An inconclusive result does not fail the command, but it does not establish the
+scenario's invariant.
 
 ```bash
 go run ./op-rpc-compat preconf \

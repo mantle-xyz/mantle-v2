@@ -34,11 +34,11 @@ func (r *Runner) scenarioSequencerStallStaleness(ctx context.Context) {
 
 	active, err := r.adminSequencerActive(ctx, opNode)
 	if err != nil {
-		r.record(name, true, "INCONCLUSIVE: op-node admin RPC 不可达（%s）: %v", r.cfg.OpNodeURL, err)
+		r.recordInconclusive(name, "op-node admin RPC 不可达（%s）: %v", r.cfg.OpNodeURL, err)
 		return
 	}
 	if !active {
-		r.record(name, true, "INCONCLUSIVE: sequencer 已非 active，跳过（先恢复再跑）")
+		r.recordInconclusive(name, "sequencer 已非 active，跳过（先恢复再跑）")
 		return
 	}
 
@@ -169,10 +169,10 @@ func (r *Runner) scenarioRecoverModeNoFalseSuccess(ctx context.Context) {
 
 	// preflight: admin reachable + sequencer active
 	if active, err := r.adminSequencerActive(ctx, opNode); err != nil {
-		r.record(name, true, "INCONCLUSIVE: op-node admin RPC 不可达: %v", err)
+		r.recordInconclusive(name, "op-node admin RPC 不可达: %v", err)
 		return
 	} else if !active {
-		r.record(name, true, "INCONCLUSIVE: sequencer 非 active，跳过")
+		r.recordInconclusive(name, "sequencer 非 active，跳过")
 		return
 	}
 

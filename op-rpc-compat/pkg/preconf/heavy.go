@@ -222,7 +222,7 @@ func (r *Runner) scenarioPreconfOrdering(ctx context.Context) {
 		}
 		return
 	}
-	r.record(name, true, "INCONCLUSIVE (skipped): preconf and regular tx never co-located in one block after 6 attempts")
+	r.recordInconclusive(name, "preconf and regular tx never co-located in one block after 6 attempts")
 }
 
 // txIndexInBlock returns the position of txHash within the given block (full-tx form).

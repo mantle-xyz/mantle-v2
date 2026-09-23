@@ -73,7 +73,7 @@ func (r *Runner) scenarioBlockFull(ctx context.Context) {
 			s := sErr.Error()
 			switch {
 			case strings.Contains(s, "can't be submitted as preconf"):
-				r.record(name, true, "INCONCLUSIVE (skipped): GasBurner %s not in txpool.topreconfs — add + restart op-geth", r.burnerAddr.Hex())
+				r.recordInconclusive(name, "GasBurner %s not in txpool.topreconfs — add + restart op-geth", r.burnerAddr.Hex())
 				return
 			case strings.Contains(s, "already known"):
 				hashes = append(hashes, signed.Hash()) // queued by a prior attempt → accepted
@@ -122,7 +122,7 @@ func (r *Runner) scenarioBlockFull(ctx context.Context) {
 	if len(blocks) >= 2 {
 		r.record(name, true, "%d burner txs (each ~45%% of block gas=%d) spread across %d blocks; over-capacity spilled to later blocks, no block exceeded its gas limit", len(hashes), gasLimitHdr, len(blocks))
 	} else {
-		r.record(name, true, "INCONCLUSIVE: %d burner txs all landed in %d block(s) — expected spilling across ≥2 blocks", len(hashes), len(blocks))
+		r.recordInconclusive(name, "%d burner txs all landed in %d block(s) — expected spilling across ≥2 blocks", len(hashes), len(blocks))
 	}
 }
 

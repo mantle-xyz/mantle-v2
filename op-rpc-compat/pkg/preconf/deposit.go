@@ -127,7 +127,7 @@ func (r *Runner) scenarioDepositOrdering(ctx context.Context) {
 			return
 		}
 		if !hasUser {
-			r.record(name, true, "block %d: deposit present, no sequencer tx co-located (deposit-first invariant holds vacuously)", blk)
+			r.recordInconclusive(name, "block %d: deposit present but no sequencer tx co-located, so ordering was not exercised", blk)
 			return
 		}
 		if lastDep < firstUser {
@@ -137,7 +137,7 @@ func (r *Runner) scenarioDepositOrdering(ctx context.Context) {
 		}
 		return
 	}
-	r.record(name, true, "INCONCLUSIVE (skipped): user deposit did not derive to L2 within 150s")
+	r.recordInconclusive(name, "user deposit did not derive to L2 within 150s")
 }
 
 // l2BlockNumber returns the current L2 head number on the sequencer.

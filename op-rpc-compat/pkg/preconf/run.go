@@ -46,9 +46,17 @@ type Runner struct {
 
 type result struct {
 	name   string
-	pass   bool
+	status resultStatus
 	detail string
 }
+
+type resultStatus string
+
+const (
+	resultPassed       resultStatus = "PASS"
+	resultFailed       resultStatus = "FAIL"
+	resultInconclusive resultStatus = "INCONCLUSIVE"
+)
 
 // NewRunner wires the sequencer, verifiers, and per-account signers.
 // This suite tracks its own pass/fail outcomes, so the transaction tester has no reporter.
@@ -80,13 +88,42 @@ func NewRunner(cfg Config) (*Runner, error) {
 
 // record logs and stores a scenario outcome.
 func (r *Runner) record(name string, pass bool, format string, args ...interface{}) {
+	status := resultFailed
+	if pass {
+		status = resultPassed
+	}
+	r.recordStatus(name, status, format, args...)
+}
+
+func (r *Runner) recordInconclusive(name, format string, args ...interface{}) {
+	r.recordStatus(name, resultInconclusive, format, args...)
+}
+
+func (r *Runner) recordStatus(name string, status resultStatus, format string, args ...interface{}) {
 	detail := fmt.Sprintf(format, args...)
-	r.results = append(r.results, result{name: name, pass: pass, detail: detail})
+	r.results = append(r.results, result{name: name, status: status, detail: detail})
 	mark := "✓ PASS"
-	if !pass {
+	switch status {
+	case resultFailed:
 		mark = "✗ FAIL"
+	case resultInconclusive:
+		mark = "? INCONCLUSIVE"
 	}
 	fmt.Printf("[%s] %s — %s\n", mark, name, detail)
+}
+
+func (r *Runner) resultCounts() (passed, failed, inconclusive int) {
+	for _, res := range r.results {
+		switch res.status {
+		case resultPassed:
+			passed++
+		case resultInconclusive:
+			inconclusive++
+		default:
+			failed++
+		}
+	}
+	return passed, failed, inconclusive
 }
 
 // Run executes setup then all default scenarios; returns an error if any scenario failed.
@@ -146,15 +183,8 @@ func (r *Runner) Run(ctx context.Context) error {
 	runOptIn("recover_mode_no_false_success", func() { r.scenarioRecoverModeNoFalseSuccess(ctx) })
 
 	// summary
-	var passed, failed int
-	for _, res := range r.results {
-		if res.pass {
-			passed++
-		} else {
-			failed++
-		}
-	}
-	fmt.Printf("\n=== preconf summary: %d passed, %d failed ===\n", passed, failed)
+	passed, failed, inconclusive := r.resultCounts()
+	fmt.Printf("\n=== preconf summary: %d passed, %d failed, %d inconclusive ===\n", passed, failed, inconclusive)
 	if failed > 0 {
 		return fmt.Errorf("%d preconf scenario(s) failed", failed)
 	}
