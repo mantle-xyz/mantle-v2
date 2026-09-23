@@ -24,6 +24,7 @@ LINT_PKGS := \
 	./devnet-sdk/... \
 	./gas-oracle/... \
 	./op-acceptance-tests/... \
+	./op-rpc-compat/... \
 	./op-batcher/... \
 	./op-chain-ops/... \
 	./op-core/... \
@@ -109,6 +110,10 @@ contracts-bedrock-docker: ## Builds Docker image for Bedrock contracts
 submodules: ## Updates git submodules
 	git submodule update --init --recursive
 .PHONY: submodules
+
+op-rpc-compat: ## Builds the cross-client RPC compatibility runner
+	just $(JUSTFLAGS) ./op-rpc-compat/op-rpc-compat
+.PHONY: op-rpc-compat
 
 
 op-node: ## Builds op-node binary
@@ -278,6 +283,7 @@ MANTLE_TEST_PKGS := \
 	./op-batcher/... \
 	./op-chain-ops/... \
 	./op-node/... \
+	./op-rpc-compat/... \
 	./op-proposer/... \
 	./op-service/... \
 	./op-e2e/system/mantleda/... \
