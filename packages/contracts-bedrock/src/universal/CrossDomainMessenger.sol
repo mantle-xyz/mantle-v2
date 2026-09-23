@@ -118,11 +118,13 @@ abstract contract CrossDomainMessenger is
     uint64 public constant RELAY_CALL_OVERHEAD = 40_000;
 
     /// @notice Additional CALL budget for creating a recipient account.
-    /// @dev Based on the tested L1 Amsterdam pricing with costPerStateByte = 1,530.
-    ///      Without an extra state-gas reservoir, a cold value-bearing CALL to a new account
-    ///      costs 3,000 + 10,300 + 120 * 1,530 = 196,900 gas, excluding memory expansion and
-    ///      surrounding instructions. SafeCall.hasMinGas includes a 40,000 CALL buffer;
-    ///      adding 185,000 provides 225,000 gas, leaving 28,100 above these dynamic CALL costs.
+    /// @dev Based on the L1 Amsterdam pricing with CostPerStateByte = 1,530.
+    ///      A cold value-bearing CALL to a new account must make available up to 197,900 gas:
+    ///      3,000 for COLD_ACCOUNT_ACCESS, 11,300 for CALL_VALUE (9,000 ACCOUNT_WRITE plus a
+    ///      2,300 stipend), and 120 * 1,530 for account-creation state gas. An unused stipend can
+    ///      be returned, so this budget is not necessarily the final gas used. SafeCall.hasMinGas
+    ///      includes a 40,000 CALL buffer; adding 185,000 provides 225,000 gas, leaving 27,100
+    ///      above these dynamic CALL costs before memory expansion and surrounding instructions.
     ///      Token approval and relay result recording are budgeted separately.
     ///      Before enabling Amsterdam on Mantle L2, revalidate this budget against its actual
     ///      gas schedule. Shared constants do not imply identical L1 and L2 pricing.
