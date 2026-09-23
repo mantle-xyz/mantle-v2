@@ -1,0 +1,56 @@
+[
+  {
+    "name": "eth_getHeaderByHash_not_found",
+    "method": "eth_getHeaderByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "不存在的区块哈希"
+  },
+  {
+    "name": "eth_getHeaderByHash_latest_template",
+    "method": "eth_getHeaderByHash",
+    "params": ["{{latest_block_hash}}"],
+    "description": "获取最新区块头（使用模板变量 latest_block_hash）"
+  },
+  {
+    "name": "eth_getHeaderByNumber_earliest",
+    "method": "eth_getHeaderByNumber",
+    "params": ["earliest"],
+    "description": "获取最早区块头"
+  },
+  {
+    "name": "eth_getHeaderByNumber_latest",
+    "method": "eth_getHeaderByNumber",
+    "params": ["latest"],
+    "description": "获取最新区块头"
+  },
+  {
+    "name": "eth_getHeaderByNumber_latest_template",
+    "method": "eth_getHeaderByNumber",
+    "params": ["{{latest_block_number}}"],
+    "description": "获取最新区块头（使用模板变量 latest_block_number）"
+  },
+  {
+    "name": "eth_getHeaderByNumber_pending",
+    "method": "eth_getHeaderByNumber",
+    "params": ["pending"],
+    "description": "获取 pending 区块头"
+  },
+  {
+    "name": "eth_getHeaderByNumber_safe",
+    "method": "eth_getHeaderByNumber",
+    "params": ["safe"],
+    "description": "获取 safe 区块头"
+  },
+  {
+    "name": "eth_getHeaderByNumber_finalized",
+    "method": "eth_getHeaderByNumber",
+    "params": ["finalized"],
+    "description": "获取 finalized 区块头"
+  },
+  {
+    "name": "eth_getHeaderByNumber_0x1",
+    "method": "eth_getHeaderByNumber",
+    "params": ["0x1"],
+    "description": "获取区块 1 头"
+  }
+]

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "debug_traceCall_jsTracer_bigInt_ctor",
+    "method": "debug_traceCall",
+    "params": [
+      {"to": "0x0000000000000000000000000000000000000000", "data": "0x"},
+      "latest",
+      {"tracer": "{step:function(log){},fault:function(log){},result:function(ctx,db){return bigInt(0).toString();}}"}
+    ],
+    "description": "自定义 JS tracer 使用 geth camelCase bigInt 构造（revm-inspectors #443 回归）；修复前 reth 报 'bigInt is not defined'，修复后 geth/reth 均返回 \"0\""
+  },
+  {
+    "name": "debug_traceCall_jsTracer_bigInt_shims",
+    "method": "debug_traceCall",
+    "params": [
+      {"to": "0x0000000000000000000000000000000000000000", "data": "0x"},
+      "latest",
+      {"tracer": "{step:function(log){},fault:function(log){},result:function(ctx,db){return [bigInt('100').toString(16),bigInt(1).plus(bigInt(2)).toString(),bigInt(10).minus(bigInt(3)).toString(),bigInt(1).equals(bigInt(1)),bigInt(42).toJSNumber()].join(',');}}"}
+    ],
+    "description": "覆盖 #443 补的 BigInteger.js shim：toString(16)/plus/minus/equals/toJSNumber，geth/reth 均应返回 \"64,3,7,true,42\""
+  },
+  {
+    "name": "debug_traceCall_jsTracer_bigInt_gethCallTracerPattern",
+    "method": "debug_traceCall",
+    "params": [
+      {"to": "0x0000000000000000000000000000000000000000", "data": "0x"},
+      "latest",
+      {"tracer": "{step:function(log){},fault:function(log){},result:function(ctx,db){var ret=bigInt(0);return !ret.equals(0);}}"}
+    ],
+    "description": "模拟 geth call_tracer_legacy.js 的 !ret.equals(0) 模式，geth/reth 均应返回 false"
+  }
+]

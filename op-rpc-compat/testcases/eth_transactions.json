@@ -1,0 +1,56 @@
+[
+  {
+    "name": "eth_getTransactionReceipt_not_found",
+    "method": "eth_getTransactionReceipt",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "不存在的交易哈希"
+  },
+  {
+    "name": "eth_getTransactionReceipt_latest_template",
+    "method": "eth_getTransactionReceipt",
+    "params": ["{{latest_tx_hash}}"],
+    "description": "获取最新交易收据（使用模板变量 latest_tx_hash）"
+  },
+  {
+    "name": "eth_getTransactionReceipt_deposit",
+    "method": "eth_getTransactionReceipt",
+    "params": ["{{latest_deposit_tx_hash}}"],
+    "description": "deposit 交易(type 0x7e)收据的 geth/reth 一致性:deposit 不付 L1 fee,geth 不展示 l1Fee/l1GasPrice/scalars/blobGasUsed,reth 应对齐(修复前 reth 多这些字段会报 WARNING)"
+  },
+  {
+    "name": "eth_getRawTransactionByHash_not_found",
+    "method": "eth_getRawTransactionByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "不存在的交易哈希"
+  },
+  {
+    "name": "eth_getRawTransactionByHash_latest_template",
+    "method": "eth_getRawTransactionByHash",
+    "params": ["{{latest_tx_hash}}"],
+    "description": "获取最新原始交易（使用模板变量 latest_tx_hash）"
+  },
+  {
+    "name": "eth_getTransactionByHash_not_found",
+    "method": "eth_getTransactionByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "不存在的交易哈希"
+  },
+  {
+    "name": "eth_getTransactionByHash_latest_template",
+    "method": "eth_getTransactionByHash",
+    "params": ["{{latest_tx_hash}}"],
+    "description": "获取最新交易（使用模板变量 latest_tx_hash）"
+  },
+  {
+    "name": "eth_sendTransaction_invalid",
+    "method": "eth_sendTransaction",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "to": "0x0000000000000000000000000000000000000001",
+        "value": "0x0"
+      }
+    ],
+    "description": "发送交易（可能因账户未解锁或余额不足而失败）"
+  }
+]

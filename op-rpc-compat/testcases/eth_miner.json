@@ -1,0 +1,50 @@
+[
+  {
+    "name": "miner_setExtra",
+    "method": "miner_setExtra",
+    "params": [
+      "0x"
+    ],
+    "description": "设置矿工额外数据（空数据）"
+  },
+  {
+    "name": "miner_setExtra_hex",
+    "method": "miner_setExtra",
+    "params": [
+      "0x68656c6c6f"
+    ],
+    "description": "设置矿工额外数据（hex 字符串）"
+  },
+  {
+    "name": "miner_setGasLimit",
+    "method": "miner_setGasLimit",
+    "params": [
+      "0x5208"
+    ],
+    "description": "设置矿工 gas 限制"
+  },
+  {
+    "name": "miner_setGasLimit_zero",
+    "method": "miner_setGasLimit",
+    "params": [
+      "0x0"
+    ],
+    "description": "设置矿工 gas 限制为 0（可能返回错误）"
+  },
+  {
+    "name": "miner_setGasPrice",
+    "method": "miner_setGasPrice",
+    "params": [
+      "0x3b9aca00"
+    ],
+    "description": "设置矿工 gas 价格（1 gwei）"
+  },
+  {
+    "name": "miner_setGasPrice_zero",
+    "method": "miner_setGasPrice",
+    "params": [
+      "0x0"
+    ],
+    "description": "设置矿工 gas 价格为 0（可能返回错误）"
+  }
+]

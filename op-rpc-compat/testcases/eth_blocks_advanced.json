@@ -1,0 +1,152 @@
+[
+  {
+    "name": "eth_getBlockByNumber_safe_full",
+    "method": "eth_getBlockByNumber",
+    "params": ["safe", true],
+    "description": "获取 safe 区块（含完整交易）"
+  },
+  {
+    "name": "eth_getBlockByNumber_finalized_full",
+    "method": "eth_getBlockByNumber",
+    "params": ["finalized", true],
+    "description": "获取 finalized 区块（含完整交易）"
+  },
+  {
+    "name": "eth_getBlockByNumber_large_number",
+    "method": "eth_getBlockByNumber",
+    "params": ["0xffffffff", false],
+    "description": "请求不存在的大区块号"
+  },
+  {
+    "name": "eth_getBlockByHash_not_found",
+    "method": "eth_getBlockByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000001", false],
+    "description": "请求不存在的区块哈希"
+  },
+  {
+    "name": "eth_getBlockByHash_latest_template",
+    "method": "eth_getBlockByHash",
+    "params": ["{{latest_block_hash}}", false],
+    "description": "获取最新区块（使用模板变量 latest_block_hash）"
+  },
+  {
+    "name": "eth_getBlockByHash_latest_template_full",
+    "method": "eth_getBlockByHash",
+    "params": ["{{latest_block_hash}}", true],
+    "description": "获取最新区块（使用模板变量 latest_block_hash，含完整交易）"
+  },
+  {
+    "name": "eth_getBlockReceipts_safe",
+    "method": "eth_getBlockReceipts",
+    "params": ["safe"],
+    "description": "获取 safe 区块的所有收据"
+  },
+  {
+    "name": "eth_getBlockReceipts_finalized",
+    "method": "eth_getBlockReceipts",
+    "params": ["finalized"],
+    "description": "获取 finalized 区块的所有收据"
+  },
+  {
+    "name": "eth_getBlockReceipts_pending",
+    "method": "eth_getBlockReceipts",
+    "params": ["pending"],
+    "description": "获取 pending 区块的所有收据"
+  },
+  {
+    "name": "eth_getBlockReceipts_not_found",
+    "method": "eth_getBlockReceipts",
+    "params": ["0xffffffff"],
+    "description": "请求不存在的区块"
+  },
+  {
+    "name": "eth_getBlockTransactionCountByNumber_safe",
+    "method": "eth_getBlockTransactionCountByNumber",
+    "params": ["safe"],
+    "description": "获取 safe 区块的交易数量"
+  },
+  {
+    "name": "eth_getBlockTransactionCountByNumber_finalized",
+    "method": "eth_getBlockTransactionCountByNumber",
+    "params": ["finalized"],
+    "description": "获取 finalized 区块的交易数量"
+  },
+  {
+    "name": "eth_getBlockTransactionCountByNumber_pending",
+    "method": "eth_getBlockTransactionCountByNumber",
+    "params": ["pending"],
+    "description": "获取 pending 区块的交易数量"
+  },
+  {
+    "name": "eth_getBlockTransactionCountByHash_not_found",
+    "method": "eth_getBlockTransactionCountByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000001"],
+    "description": "请求不存在的区块哈希"
+  },
+  {
+    "name": "eth_getBlockTransactionCountByHash_latest_template",
+    "method": "eth_getBlockTransactionCountByHash",
+    "params": ["{{latest_block_hash}}"],
+    "description": "获取最新区块的交易数量（使用模板变量 latest_block_hash）"
+  },
+  {
+    "name": "eth_getBlockRange_small",
+    "method": "eth_getBlockRange",
+    "params": ["0x0", "0x5", false],
+    "description": "获取区块范围 0-5"
+  },
+  {
+    "name": "eth_getBlockRange_with_full_tx",
+    "method": "eth_getBlockRange",
+    "params": ["0x0", "0x2", true],
+    "description": "获取区块范围（含完整交易）"
+  },
+  {
+    "name": "eth_getBlockRange_single_block",
+    "method": "eth_getBlockRange",
+    "params": ["0x1", "0x1", false],
+    "description": "获取单个区块范围"
+  },
+  {
+    "name": "eth_getBlockRange_invalid_range",
+    "method": "eth_getBlockRange",
+    "params": ["0x10", "0x1", false],
+    "description": "无效范围（from > to）"
+  },
+  {
+    "name": "eth_getTransactionByBlockNumberAndIndex_safe",
+    "method": "eth_getTransactionByBlockNumberAndIndex",
+    "params": ["safe", "0x0"],
+    "description": "获取 safe 区块的交易"
+  },
+  {
+    "name": "eth_getTransactionByBlockNumberAndIndex_finalized",
+    "method": "eth_getTransactionByBlockNumberAndIndex",
+    "params": ["finalized", "0x0"],
+    "description": "获取 finalized 区块的交易"
+  },
+  {
+    "name": "eth_getTransactionByBlockNumberAndIndex_pending",
+    "method": "eth_getTransactionByBlockNumberAndIndex",
+    "params": ["pending", "0x0"],
+    "description": "获取 pending 区块的交易"
+  },
+  {
+    "name": "eth_getTransactionByBlockNumberAndIndex_out_of_range",
+    "method": "eth_getTransactionByBlockNumberAndIndex",
+    "params": ["latest", "0xffffffff"],
+    "description": "超出范围的交易索引"
+  },
+  {
+    "name": "eth_getRawTransactionByBlockNumberAndIndex_safe",
+    "method": "eth_getRawTransactionByBlockNumberAndIndex",
+    "params": ["safe", "0x0"],
+    "description": "获取 safe 区块的原始交易"
+  },
+  {
+    "name": "eth_getRawTransactionByBlockNumberAndIndex_finalized",
+    "method": "eth_getRawTransactionByBlockNumberAndIndex",
+    "params": ["finalized", "0x0"],
+    "description": "获取 finalized 区块的原始交易"
+  }
+]

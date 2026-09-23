@@ -1,0 +1,87 @@
+[
+  {
+    "name": "invalid_method",
+    "method": "eth_invalidMethod",
+    "params": [],
+    "description": "调用不存在的方法"
+  },
+  {
+    "name": "invalid_block_tag",
+    "method": "eth_getBlockByNumber",
+    "params": ["invalid", false],
+    "description": "无效的区块标签"
+  },
+  {
+    "name": "invalid_hex_number",
+    "method": "eth_getBlockByNumber",
+    "params": ["0xGGG", false],
+    "description": "无效的十六进制数"
+  },
+  {
+    "name": "missing_required_param",
+    "method": "eth_getBalance",
+    "params": [],
+    "description": "缺少必需参数"
+  },
+  {
+    "name": "wrong_param_count",
+    "method": "eth_getBlockByNumber",
+    "params": ["0x1"],
+    "description": "参数数量不足"
+  },
+  {
+    "name": "invalid_address_format",
+    "method": "eth_getBalance",
+    "params": ["not_an_address", "latest"],
+    "description": "无效的地址格式"
+  },
+  {
+    "name": "invalid_address_length",
+    "method": "eth_getBalance",
+    "params": ["0x123", "latest"],
+    "description": "地址长度不正确"
+  },
+  {
+    "name": "future_block",
+    "method": "eth_getBlockByNumber",
+    "params": ["0xffffffff", false],
+    "description": "请求未来区块"
+  },
+  {
+    "name": "eth_call_revert",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0xffffffff"
+      },
+      "latest"
+    ],
+    "description": "可能导致 revert 的调用"
+  },
+  {
+    "name": "eth_estimateGas_oog",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x1",
+        "data": "0x"
+      }
+    ],
+    "description": "gas 不足的估算"
+  },
+  {
+    "name": "null_to_address",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": null,
+        "data": "0x"
+      },
+      "latest"
+    ],
+    "description": "to 地址为 null（合约创建）"
+  }
+]
+

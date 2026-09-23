@@ -1,0 +1,122 @@
+[
+    {
+      "name": "debug_traceBlockByNumber_latest",
+      "method": "debug_traceBlockByNumber",
+      "params": ["latest"],
+      "description": "trace 最新区块"
+    },
+    {
+      "name": "debug_traceBlockByNumber_with_tracer",
+      "method": "debug_traceBlockByNumber",
+      "params": ["latest", {"tracer": "callTracer"}],
+      "description": "使用 callTracer trace 区块"
+    },
+    {
+    "name": "debug_traceBlockByNumber_0x1",
+    "method": "debug_traceBlockByNumber",
+    "params": ["0x1", {}],
+    "description": "trace 区块 1"
+    },
+    {
+      "name": "debug_traceTransaction_valid",
+      "method": "debug_traceTransaction",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000001"],
+      "description": "trace 交易"
+    },
+    {
+      "name": "debug_traceTransaction_latest_template",
+      "method": "debug_traceTransaction",
+      "params": ["{{latest_tx_hash}}"],
+      "description": "trace 最新交易（使用模板变量 latest_tx_hash）"
+    },
+    {
+      "name": "debug_traceTransaction_with_callTracer",
+      "method": "debug_traceTransaction",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000001", {"tracer": "callTracer"}],
+      "description": "使用 callTracer trace 交易"
+    },
+    {
+      "name": "debug_traceTransaction_with_prestateTracer",
+      "method": "debug_traceTransaction",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000001", {"tracer": "prestateTracer"}],
+      "description": "使用 prestateTracer trace 交易"
+    },
+    {
+      "name": "debug_traceTransaction_with_4byteTracer",
+      "method": "debug_traceTransaction",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000001", {"tracer": "4byteTracer"}],
+      "description": "使用 4byteTracer trace 交易"
+    },
+    {
+      "name": "debug_traceCall_basic",
+      "method": "debug_traceCall",
+    "params": [{"to": "0x0000000000000000000000000000000000000001", "data": "0x"}, "latest"],
+      "description": "基本 debug_traceCall"
+    },
+    {
+    "name": "debug_accountRange_latest",
+    "method": "debug_accountRange",
+    "params": ["latest", "0x0000000000000000000000000000000000000000000000000000000000000000", 10, false, false, false],
+    "description": "获取最新区块的账户范围"
+    },
+    {
+      "name": "debug_getRawReceipts_latest",
+      "method": "debug_getRawReceipts",
+      "params": ["latest"],
+      "description": "获取最新区块原始收据"
+    },
+    {
+      "name": "debug_getRawReceipts_by_number",
+      "method": "debug_getRawReceipts",
+    "params": ["0x1"],
+      "description": "获取指定区块原始收据"
+    },
+  {
+    "name": "debug_getRawReceipts_earliest",
+    "method": "debug_getRawReceipts",
+    "params": ["earliest"],
+    "description": "获取创世区块原始收据"
+  },
+    {
+      "name": "debug_getRawHeader_latest",
+      "method": "debug_getRawHeader",
+      "params": ["latest"],
+      "description": "获取最新区块原始头"
+    },
+  {
+    "name": "debug_getRawHeader_earliest",
+    "method": "debug_getRawHeader",
+    "params": ["earliest"],
+    "description": "获取创世区块原始头"
+  },
+  {
+    "name": "debug_getRawHeader_by_number",
+    "method": "debug_getRawHeader",
+    "params": ["0x1"],
+    "description": "获取指定区块原始头"
+  },
+    {
+      "name": "debug_getRawBlock_latest",
+      "method": "debug_getRawBlock",
+      "params": ["latest"],
+      "description": "获取最新区块原始数据"
+    },
+  {
+    "name": "debug_getRawBlock_earliest",
+    "method": "debug_getRawBlock",
+    "params": ["earliest"],
+    "description": "获取创世区块原始数据"
+  },
+  {
+    "name": "debug_getRawBlock_by_number",
+    "method": "debug_getRawBlock",
+    "params": ["0x1"],
+    "description": "获取指定区块原始数据"
+  },
+    {
+      "name": "debug_getBadBlocks",
+      "method": "debug_getBadBlocks",
+      "params": [],
+      "description": "获取坏区块列表"
+    }
+  ]

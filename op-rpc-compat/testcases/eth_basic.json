@@ -1,0 +1,194 @@
+[
+  {
+    "name": "eth_chainId",
+    "method": "eth_chainId",
+    "params": [],
+    "description": "获取链 ID"
+  },
+  {
+    "name": "eth_blockNumber",
+    "method": "eth_blockNumber",
+    "params": [],
+    "description": "获取最新区块号"
+  },
+  {
+    "name": "eth_gasPrice",
+    "method": "eth_gasPrice",
+    "params": [],
+    "description": "获取当前 gas 价格"
+  },
+  {
+    "name": "eth_protocolVersion",
+    "method": "eth_protocolVersion",
+    "params": [],
+    "description": "获取协议版本"
+  },
+  {
+    "name": "eth_coinbase",
+    "method": "eth_coinbase",
+    "params": [],
+    "description": "获取 coinbase 地址"
+  },
+  {
+    "name": "eth_mining",
+    "method": "eth_mining",
+    "params": [],
+    "description": "检查是否在挖矿"
+  },
+  {
+    "name": "eth_hashrate",
+    "method": "eth_hashrate",
+    "params": [],
+    "description": "获取挖矿算力"
+  },
+  {
+    "name": "eth_accounts",
+    "method": "eth_accounts",
+    "params": [],
+    "description": "获取账户列表"
+  },
+  {
+    "name": "eth_maxPriorityFeePerGas",
+    "method": "eth_maxPriorityFeePerGas",
+    "params": [],
+    "description": "获取建议的 maxPriorityFeePerGas"
+  },
+  {
+    "name": "eth_blobBaseFee",
+    "method": "eth_blobBaseFee",
+    "params": [],
+    "description": "获取 blob base fee (EIP-4844)"
+  },
+  {
+    "name": "net_version",
+    "method": "net_version",
+    "params": [],
+    "description": "获取网络版本"
+  },
+  {
+    "name": "net_listening",
+    "method": "net_listening",
+    "params": [],
+    "description": "检查是否正在监听"
+  },
+  {
+    "name": "net_peerCount",
+    "method": "net_peerCount",
+    "params": [],
+    "description": "获取对等节点数量"
+  },
+  {
+    "name": "web3_clientVersion",
+    "method": "web3_clientVersion",
+    "params": [],
+    "description": "获取客户端版本"
+  },
+  {
+    "name": "web3_sha3",
+    "method": "web3_sha3",
+    "params": ["0x68656c6c6f20776f726c64"],
+    "description": "计算 Keccak-256 哈希"
+  },
+  {
+    "name": "web3_sha3_hello",
+    "method": "web3_sha3",
+    "params": ["0x68656c6c6f"],
+    "description": "计算 'hello' 的 Keccak-256"
+  },
+  {
+    "name": "web3_sha3_empty",
+    "method": "web3_sha3",
+    "params": ["0x"],
+    "description": "计算空字符串的 Keccak-256"
+  },
+  {
+    "name": "rpc_modules",
+    "method": "rpc_modules",
+    "params": [],
+    "description": "获取可用的 RPC 模块"
+  },
+  {
+    "name": "eth_syncing",
+    "method": "eth_syncing",
+    "params": [],
+    "description": "获取同步状态"
+  },
+  {
+    "name": "eth_fillTransaction_minimal",
+    "method": "eth_fillTransaction",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000001",
+        "value": "0x0"
+      }
+    ],
+    "description": "填充交易参数（需要 from 地址）"
+  },
+  {
+    "name": "eth_fillTransaction_with_from",
+    "method": "eth_fillTransaction",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000001",
+        "value": "0x0"
+      }
+    ],
+    "description": "填充交易参数（包含 from 地址）"
+  },
+  {
+    "name": "eth_sign_invalid_account",
+    "method": "eth_sign",
+    "params": [
+      "0x0000000000000000000000000000000000000000",
+      "0x68656c6c6f"
+    ],
+    "description": "签名消息（可能因账户未解锁而失败）"
+  },
+  {
+    "name": "eth_signTransaction_invalid",
+    "method": "eth_signTransaction",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "to": "0x0000000000000000000000000000000000000001",
+        "value": "0x0"
+      }
+    ],
+    "description": "签名交易（可能因账户未解锁而失败）"
+  },
+  {
+    "name": "eth_simulateV1_simple",
+    "method": "eth_simulateV1",
+    "params": [
+      {
+        "transactions": [
+          {
+            "to": "0x0000000000000000000000000000000000000000",
+            "data": "0x"
+          }
+        ]
+      },
+      "latest"
+    ],
+    "description": "模拟交易执行（简单场景，参数格式为对象）"
+  },
+  {
+    "name": "eth_simulateV1_with_value",
+    "method": "eth_simulateV1",
+    "params": [
+      {
+        "transactions": [
+          {
+            "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+            "to": "0x0000000000000000000000000000000000000001",
+            "value": "0x1"
+          }
+        ]
+      },
+      "latest"
+    ],
+    "description": "模拟交易执行（带 value，参数格式为对象）"
+  }
+]

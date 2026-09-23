@@ -1,0 +1,62 @@
+[
+  {
+    "name": "trace_call_basic",
+    "method": "trace_call",
+    "params": [{"to": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "data": "0x"}, ["trace"], "latest"],
+    "description": "基本 trace_call"
+  },
+  {
+    "name": "trace_call_with_vmTrace",
+    "method": "trace_call",
+    "params": [{"to": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "data": "0x"}, ["vmTrace"], "latest"],
+    "description": "带 vmTrace 的 trace_call"
+  },
+  {
+    "name": "trace_call_with_stateDiff",
+    "method": "trace_call",
+    "params": [{"to": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "data": "0x"}, ["stateDiff"], "latest"],
+    "description": "带 stateDiff 的 trace_call"
+  },
+  {
+    "name": "trace_callMany_basic",
+    "method": "trace_callMany",
+    "params": [[[{"to": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "data": "0x"}, ["trace"]]], "latest"],
+    "description": "基本 trace_callMany"
+  },
+  {
+    "name": "trace_replayBlockTransactions_latest",
+    "method": "trace_replayBlockTransactions",
+    "params": ["latest", ["trace"]],
+    "description": "重放最新区块交易"
+  },
+  {
+    "name": "trace_replayBlockTransactions_0x1",
+    "method": "trace_replayBlockTransactions",
+    "params": ["0x1", ["trace"]],
+    "description": "重放区块 1 交易"
+  },
+  {
+    "name": "trace_block_latest",
+    "method": "trace_block",
+    "params": ["latest"],
+    "description": "trace 最新区块"
+  },
+  {
+    "name": "trace_block_0x1",
+    "method": "trace_block",
+    "params": ["0x1"],
+    "description": "trace 区块 1"
+  },
+  {
+    "name": "trace_filter_basic",
+    "method": "trace_filter",
+    "params": [{"fromBlock": "0x0", "toBlock": "0x5"}],
+    "description": "基本 trace_filter"
+  },
+  {
+    "name": "trace_filter_with_address",
+    "method": "trace_filter",
+    "params": [{"fromBlock": "0x0", "toBlock": "0x5", "toAddress": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"]}],
+    "description": "带地址的 trace_filter"
+  }
+]

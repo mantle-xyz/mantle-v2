@@ -1,0 +1,279 @@
+[
+  {
+    "name": "eth_call_minimal",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, "latest"],
+    "description": "最小参数：仅 to 地址"
+  },
+  {
+    "name": "eth_call_with_data_empty",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000001", "data": "0x"}, "latest"],
+    "description": "空 data 字段"
+  },
+  {
+    "name": "eth_call_with_data_short",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000001", "data": "0x12345678"}, "latest"],
+    "description": "短 data（4字节函数选择器）"
+  },
+  {
+    "name": "eth_call_with_from",
+    "method": "eth_call",
+    "params": [{"from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "to": "0x0000000000000000000000000000000000000001", "data": "0x"}, "latest"],
+    "description": "指定 from 地址"
+  },
+  {
+    "name": "eth_call_with_value_zero",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000001", "value": "0x0"}, "latest"],
+    "description": "value 为 0"
+  },
+  {
+    "name": "eth_call_with_value_nonzero",
+    "method": "eth_call",
+    "params": [{"from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "to": "0x0000000000000000000000000000000000000001", "value": "0xde0b6b3a7640000"}, "latest"],
+    "description": "value 为 1 ETH（需要 from 有余额）"
+  },
+  {
+    "name": "eth_call_with_gas_sufficient",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000001", "gas": "0x7530"}, "latest"],
+    "description": "gas 为 30000（足够执行）"
+  },
+  {
+    "name": "eth_call_with_gas_high",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000001", "gas": "0x1e8480"}, "latest"],
+    "description": "gas 为 2000000"
+  },
+  {
+    "name": "eth_call_with_gasPrice",
+    "method": "eth_call",
+    "params": [{"from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "to": "0x0000000000000000000000000000000000000001", "gas": "0x7530", "gasPrice": "0x2540be400"}, "latest"],
+    "description": "指定 gasPrice（10 gwei，足够高于 base fee）"
+  },
+  {
+    "name": "eth_call_with_maxFeePerGas",
+    "method": "eth_call",
+    "params": [{"from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "to": "0x0000000000000000000000000000000000000001", "gas": "0x7530", "maxFeePerGas": "0x2540be400"}, "latest"],
+    "description": "指定 maxFeePerGas（10 gwei，EIP-1559）"
+  },
+  {
+    "name": "eth_call_with_maxPriorityFeePerGas",
+    "method": "eth_call",
+    "params": [{"from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "to": "0x0000000000000000000000000000000000000001", "gas": "0x7530", "maxFeePerGas": "0x2540be400", "maxPriorityFeePerGas": "0x3b9aca00"}, "latest"],
+    "description": "指定 maxFeePerGas 和 maxPriorityFeePerGas"
+  },
+  {
+    "name": "eth_call_with_nonce",
+    "method": "eth_call",
+    "params": [{"from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "to": "0x0000000000000000000000000000000000000001", "nonce": "0x0"}, "latest"],
+    "description": "指定 nonce"
+  },
+  {
+    "name": "eth_call_all_params",
+    "method": "eth_call",
+    "params": [{"from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "to": "0x0000000000000000000000000000000000000001", "gas": "0x7530", "gasPrice": "0x2540be400", "value": "0x0", "data": "0x", "nonce": "0x0"}, "latest"],
+    "description": "所有参数（Legacy 交易类型）"
+  },
+  {
+    "name": "eth_call_eip1559_params",
+    "method": "eth_call",
+    "params": [{"from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "to": "0x0000000000000000000000000000000000000001", "gas": "0x7530", "maxFeePerGas": "0x2540be400", "maxPriorityFeePerGas": "0x3b9aca00", "value": "0x0", "data": "0x"}, "latest"],
+    "description": "所有参数（EIP-1559 交易类型）"
+  },
+
+  {
+    "name": "eth_call_block_latest",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, "latest"],
+    "description": "区块标签：latest"
+  },
+  {
+    "name": "eth_call_block_pending",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, "pending"],
+    "description": "区块标签：pending"
+  },
+  {
+    "name": "eth_call_block_earliest",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, "earliest"],
+    "description": "区块标签：earliest"
+  },
+  {
+    "name": "eth_call_block_safe",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, "safe"],
+    "description": "区块标签：safe"
+  },
+  {
+    "name": "eth_call_block_finalized",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, "finalized"],
+    "description": "区块标签：finalized"
+  },
+  {
+    "name": "eth_call_block_number_0x0",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, "0x0"],
+    "description": "区块号：0（创世块）"
+  },
+  {
+    "name": "eth_call_block_number_0x1",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, "0x1"],
+    "description": "区块号：1"
+  },
+  {
+    "name": "eth_call_block_number_0x10",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, "0x10"],
+    "description": "区块号：16"
+  },
+
+  {
+    "name": "eth_call_precompile_ecrecover",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000001", "data": "0x"}, "latest"],
+    "description": "预编译合约：ecrecover (0x1)"
+  },
+  {
+    "name": "eth_call_precompile_sha256",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000002", "data": "0x68656c6c6f"}, "latest"],
+    "description": "预编译合约：sha256 (0x2)"
+  },
+  {
+    "name": "eth_call_precompile_ripemd160",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000003", "data": "0x68656c6c6f"}, "latest"],
+    "description": "预编译合约：ripemd160 (0x3)"
+  },
+  {
+    "name": "eth_call_precompile_identity",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000004", "data": "0x68656c6c6f"}, "latest"],
+    "description": "预编译合约：identity (0x4)"
+  },
+  {
+    "name": "eth_call_precompile_modexp",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000005", "data": "0x"}, "latest"],
+    "description": "预编译合约：modexp (0x5)"
+  },
+  {
+    "name": "eth_call_precompile_bn256add",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000006", "data": "0x"}, "latest"],
+    "description": "预编译合约：bn256Add (0x6)"
+  },
+  {
+    "name": "eth_call_precompile_bn256mul",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000007", "data": "0x"}, "latest"],
+    "description": "预编译合约：bn256ScalarMul (0x7)"
+  },
+  {
+    "name": "eth_call_precompile_bn256pairing",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000008", "data": "0x"}, "latest"],
+    "description": "预编译合约：bn256Pairing (0x8)"
+  },
+  {
+    "name": "eth_call_precompile_blake2f",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000009", "gas": "0xf4240", "data": "0x0000000c48c9bdf267e6096a3ba7ca8485ae67bb2bf894fe72f36e3cf1361d5f3af54fa5d182e6ad7f520e511f6c3e2b8c68059b6bbd41fbabd9831f79217e1319cde05b61626300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000300000000000000000000000000000001"}, "latest"],
+    "description": "预编译合约：blake2f (0x9) 带有效输入"
+  },
+
+  {
+    "name": "eth_call_to_null_contract_creation",
+    "method": "eth_call",
+    "params": [{"from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "data": "0x6080604052348015600f57600080fd5b50603f80601d6000396000f3fe6080604052600080fdfea264697066735822122000000000000000000000000000000000000000000000000000000000000000000064736f6c63430008130033"}, "latest"],
+    "description": "to 为 null（合约创建模拟）"
+  },
+
+  {
+    "name": "error_eth_call_gas_zero",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "gas": "0x0"}, "latest"],
+    "description": "错误场景：gas 为 0"
+  },
+  {
+    "name": "eth_call_gas_boundary_21000",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "gas": "0x5208"}, "latest"],
+    "description": "边界值：gas 为 21000（标准转账）"
+  },
+  {
+    "name": "eth_call_gas_boundary_max",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "gas": "0x1c9c380"}, "latest"],
+    "description": "边界值：gas 为 30000000（区块 gas limit）"
+  },
+  {
+    "name": "error_eth_call_value_overflow",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "value": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}, "latest"],
+    "description": "错误场景：value 为 max uint256（余额不足）"
+  },
+  {
+    "name": "eth_call_gasPrice_boundary_zero",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "gasPrice": "0x0"}, "latest"],
+    "description": "边界值：gasPrice 为 0"
+  },
+  {
+    "name": "eth_call_nonce_boundary_max",
+    "method": "eth_call",
+    "params": [{"from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "to": "0x0000000000000000000000000000000000000000", "nonce": "0xffffffffffffffff"}, "latest"],
+    "description": "边界值：nonce 为 max uint64"
+  },
+
+  {
+    "name": "eth_call_with_accessList_empty",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000001", "accessList": []}, "latest"],
+    "description": "EIP-2930：空 accessList"
+  },
+  {
+    "name": "eth_call_with_accessList_single",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000001", "accessList": [{"address": "0x0000000000000000000000000000000000000001", "storageKeys": []}]}, "latest"],
+    "description": "EIP-2930：单地址 accessList"
+  },
+  {
+    "name": "eth_call_with_accessList_with_storage",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000001", "accessList": [{"address": "0x0000000000000000000000000000000000000001", "storageKeys": ["0x0000000000000000000000000000000000000000000000000000000000000000"]}]}, "latest"],
+    "description": "EIP-2930：带 storageKeys 的 accessList"
+  },
+
+  {
+    "name": "eth_call_with_stateOverride_balance",
+    "method": "eth_call",
+    "params": [{"to": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"}, "latest", {"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266": {"balance": "0xde0b6b3a7640000"}}],
+    "description": "状态覆盖：修改余额"
+  },
+  {
+    "name": "eth_call_with_stateOverride_nonce",
+    "method": "eth_call",
+    "params": [{"to": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"}, "latest", {"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266": {"nonce": "0x100"}}],
+    "description": "状态覆盖：修改 nonce"
+  },
+  {
+    "name": "eth_call_with_stateOverride_code",
+    "method": "eth_call",
+    "params": [{"to": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "data": "0x"}, "latest", {"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266": {"code": "0x6080604052600080fd"}}],
+    "description": "状态覆盖：修改 code"
+  },
+  {
+    "name": "eth_call_with_stateOverride_storage",
+    "method": "eth_call",
+    "params": [{"to": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"}, "latest", {"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266": {"stateDiff": {"0x0000000000000000000000000000000000000000000000000000000000000000": "0x0000000000000000000000000000000000000000000000000000000000000001"}}}],
+    "description": "状态覆盖：修改 storage"
+  }
+]
+

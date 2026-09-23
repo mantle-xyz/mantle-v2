@@ -1,0 +1,38 @@
+[
+  {
+    "name": "eth_getUncleCountByBlockHash_not_found",
+    "method": "eth_getUncleCountByBlockHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "不存在的区块哈希"
+  },
+  {
+    "name": "eth_getUncleCountByBlockHash_latest_template",
+    "method": "eth_getUncleCountByBlockHash",
+    "params": ["{{latest_block_hash}}"],
+    "description": "获取最新区块的 uncle 数量（使用模板变量 latest_block_hash）"
+  },
+  {
+    "name": "eth_getUncleCountByBlockNumber_earliest",
+    "method": "eth_getUncleCountByBlockNumber",
+    "params": ["earliest"],
+    "description": "最早区块的 uncle 数量"
+  },
+  {
+    "name": "eth_getUncleCountByBlockNumber_latest",
+    "method": "eth_getUncleCountByBlockNumber",
+    "params": ["latest"],
+    "description": "最新区块的 uncle 数量"
+  },
+  {
+    "name": "eth_getUncleCountByBlockNumber_pending",
+    "method": "eth_getUncleCountByBlockNumber",
+    "params": ["pending"],
+    "description": "pending 区块的 uncle 数量"
+  },
+  {
+    "name": "eth_getUncleByBlockNumberAndIndex_latest",
+    "method": "eth_getUncleByBlockNumberAndIndex",
+    "params": ["latest", "0x0"],
+    "description": "获取最新区块的 uncle"
+  }
+]

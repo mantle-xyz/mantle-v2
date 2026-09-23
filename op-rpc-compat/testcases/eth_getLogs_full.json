@@ -1,0 +1,222 @@
+[
+  {
+    "name": "eth_getLogs_minimal",
+    "method": "eth_getLogs",
+    "params": [{}],
+    "description": "最小参数：空对象"
+  },
+  {
+    "name": "eth_getLogs_latest_only",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "latest", "toBlock": "latest"}],
+    "description": "仅最新区块"
+  },
+  {
+    "name": "eth_getLogs_pending",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "pending", "toBlock": "pending"}],
+    "description": "pending 区块"
+  },
+  {
+    "name": "eth_getLogs_earliest",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "earliest", "toBlock": "earliest"}],
+    "description": "earliest 区块（创世块）"
+  },
+  {
+    "name": "eth_getLogs_safe",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "safe", "toBlock": "safe"}],
+    "description": "safe 区块"
+  },
+  {
+    "name": "eth_getLogs_finalized",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "finalized", "toBlock": "finalized"}],
+    "description": "finalized 区块"
+  },
+
+  {
+    "name": "eth_getLogs_block_range_0_to_1",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "0x1"}],
+    "description": "区块范围：0 到 1"
+  },
+  {
+    "name": "eth_getLogs_block_range_0_to_10",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "0xa"}],
+    "description": "区块范围：0 到 10"
+  },
+  {
+    "name": "eth_getLogs_block_range_0_to_100",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "0x64"}],
+    "description": "区块范围：0 到 100"
+  },
+  {
+    "name": "eth_getLogs_block_range_single",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x1", "toBlock": "0x1"}],
+    "description": "单个区块"
+  },
+  {
+    "name": "eth_getLogs_block_range_earliest_to_latest",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "earliest", "toBlock": "latest"}],
+    "description": "从 earliest 到 latest（可能返回大量数据）"
+  },
+
+  {
+    "name": "eth_getLogs_with_single_address",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "address": "0x0000000000000000000000000000000000000000"}],
+    "description": "单个地址过滤"
+  },
+  {
+    "name": "eth_getLogs_with_multiple_addresses",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "address": ["0x0000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000001"]}],
+    "description": "多个地址过滤"
+  },
+  {
+    "name": "eth_getLogs_with_address_array_single",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "address": ["0x0000000000000000000000000000000000000000"]}],
+    "description": "地址数组（单个元素）"
+  },
+
+  {
+    "name": "eth_getLogs_with_single_topic",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000"]}],
+    "description": "单个 topic 过滤"
+  },
+  {
+    "name": "eth_getLogs_with_topic_null",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": [null]}],
+    "description": "topic 为 null（匹配任意）"
+  },
+  {
+    "name": "eth_getLogs_with_two_topics",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000000000000000000000000001"]}],
+    "description": "两个 topic 过滤"
+  },
+  {
+    "name": "eth_getLogs_with_three_topics",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000000000000000000000000000002"]}],
+    "description": "三个 topic 过滤"
+  },
+  {
+    "name": "eth_getLogs_with_four_topics",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000000000000000000000000000002", "0x0000000000000000000000000000000000000000000000000000000000000003"]}],
+    "description": "四个 topic 过滤（最大）"
+  },
+  {
+    "name": "eth_getLogs_with_topic_array",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": [["0x0000000000000000000000000000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000000000000000000000000001"]]}],
+    "description": "topic 数组（OR 匹配）"
+  },
+  {
+    "name": "eth_getLogs_with_mixed_topics",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000", null, "0x0000000000000000000000000000000000000000000000000000000000000002"]}],
+    "description": "混合 topic（包含 null）"
+  },
+  {
+    "name": "eth_getLogs_with_topic_array_and_null",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": [["0x0000000000000000000000000000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000000000000000000000000001"], null]}],
+    "description": "topic 数组 + null 组合"
+  },
+
+  {
+    "name": "eth_getLogs_with_blockhash",
+    "method": "eth_getLogs",
+    "params": [{"blockHash": "{{latest_block_hash}}"}],
+    "description": "按 blockHash 查询（动态获取 latest block hash）"
+  },
+
+  {
+    "name": "eth_getLogs_address_and_topics",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "address": "0x0000000000000000000000000000000000000000", "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000"]}],
+    "description": "地址 + topic 组合过滤"
+  },
+  {
+    "name": "eth_getLogs_multi_address_and_topics",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "address": ["0x0000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000001"], "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000", null]}],
+    "description": "多地址 + 多 topic 组合过滤"
+  },
+
+  {
+    "name": "eth_getLogs_erc20_transfer_topic",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]}],
+    "description": "ERC20 Transfer 事件签名"
+  },
+  {
+    "name": "eth_getLogs_erc20_approval_topic",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925"]}],
+    "description": "ERC20 Approval 事件签名"
+  },
+
+  {
+    "name": "eth_getLogs_boundary_empty_result",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "0x0", "address": "0xffffffffffffffffffffffffffffffffffffffff"}],
+    "description": "边界值：应返回空数组"
+  },
+  {
+    "name": "eth_getLogs_boundary_block_0_only",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "0x0"}],
+    "description": "边界值：仅区块 0"
+  },
+
+  {
+    "name": "eth_getLogs_fromBlock_only",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0"}],
+    "description": "仅指定 fromBlock"
+  },
+  {
+    "name": "eth_getLogs_toBlock_only",
+    "method": "eth_getLogs",
+    "params": [{"toBlock": "latest"}],
+    "description": "仅指定 toBlock"
+  },
+  {
+    "name": "eth_getLogs_address_only",
+    "method": "eth_getLogs",
+    "params": [{"address": "0x0000000000000000000000000000000000000000"}],
+    "description": "仅指定 address"
+  },
+  {
+    "name": "eth_getLogs_topics_only",
+    "method": "eth_getLogs",
+    "params": [{"topics": ["0x0000000000000000000000000000000000000000000000000000000000000000"]}],
+    "description": "仅指定 topics"
+  },
+
+  {
+    "name": "eth_getLogs_empty_topics_array",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": []}],
+    "description": "空 topics 数组"
+  },
+  {
+    "name": "eth_getLogs_empty_address_array",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "address": []}],
+    "description": "空 address 数组"
+  }
+]
+

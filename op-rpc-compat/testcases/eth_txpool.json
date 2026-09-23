@@ -1,0 +1,27 @@
+[
+  {
+    "name": "txpool_status",
+    "method": "txpool_status",
+    "params": [],
+    "description": "获取交易池状态"
+  },
+  {
+    "name": "txpool_content",
+    "method": "txpool_content",
+    "params": [],
+    "description": "获取交易池内容"
+  },
+  {
+    "name": "txpool_inspect",
+    "method": "txpool_inspect",
+    "params": [],
+    "description": "检查交易池"
+  },
+  {
+    "name": "txpool_contentFrom_zero",
+    "method": "txpool_contentFrom",
+    "params": ["0x0000000000000000000000000000000000000000"],
+    "description": "获取指定地址的交易池内容"
+  }
+]
+

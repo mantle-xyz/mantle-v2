@@ -1,0 +1,104 @@
+[
+  {
+    "name": "eth_feeHistory_safe",
+    "method": "eth_feeHistory",
+    "params": ["0x4", "safe", [25, 75]],
+    "description": "safe 区块标签"
+  },
+  {
+    "name": "eth_feeHistory_finalized",
+    "method": "eth_feeHistory",
+    "params": ["0x4", "finalized", [25, 75]],
+    "description": "finalized 区块标签"
+  },
+  {
+    "name": "eth_feeHistory_empty_percentiles",
+    "method": "eth_feeHistory",
+    "params": ["0x4", "latest", []],
+    "description": "空百分位数组"
+  },
+  {
+    "name": "eth_feeHistory_many_percentiles",
+    "method": "eth_feeHistory",
+    "params": ["0x4", "latest", [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]],
+    "description": "多个百分位"
+  },
+  {
+    "name": "eth_getTransactionByHash_not_found",
+    "method": "eth_getTransactionByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "不存在的交易哈希"
+  },
+  {
+    "name": "eth_getTransactionReceipt_not_found",
+    "method": "eth_getTransactionReceipt",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "不存在的交易收据"
+  },
+  {
+    "name": "web3_sha3_empty",
+    "method": "web3_sha3",
+    "params": ["0x"],
+    "description": "空输入的 keccak256"
+  },
+  {
+    "name": "web3_sha3_hello",
+    "method": "web3_sha3",
+    "params": ["0x68656c6c6f"],
+    "description": "\"hello\" 的 keccak256"
+  },
+  {
+    "name": "web3_sha3_large_input",
+    "method": "web3_sha3",
+    "params": ["0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"],
+    "description": "64 字节输入的 keccak256"
+  },
+  {
+    "name": "eth_chainId_verify",
+    "method": "eth_chainId",
+    "params": [],
+    "description": "验证链 ID"
+  },
+  {
+    "name": "net_version_verify",
+    "method": "net_version",
+    "params": [],
+    "description": "验证网络版本"
+  },
+  {
+    "name": "eth_blockNumber_verify",
+    "method": "eth_blockNumber",
+    "params": [],
+    "description": "验证当前区块号"
+  },
+  {
+    "name": "eth_gasPrice_verify",
+    "method": "eth_gasPrice",
+    "params": [],
+    "description": "验证当前 gas 价格"
+  },
+  {
+    "name": "eth_maxPriorityFeePerGas_verify",
+    "method": "eth_maxPriorityFeePerGas",
+    "params": [],
+    "description": "验证当前 priority fee"
+  },
+  {
+    "name": "eth_blobBaseFee_verify",
+    "method": "eth_blobBaseFee",
+    "params": [],
+    "description": "验证当前 blob base fee"
+  },
+  {
+    "name": "eth_mining_verify",
+    "method": "eth_mining",
+    "params": [],
+    "description": "验证挖矿状态"
+  },
+  {
+    "name": "eth_accounts_verify",
+    "method": "eth_accounts",
+    "params": [],
+    "description": "验证账户列表"
+  }
+]

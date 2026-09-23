@@ -1,0 +1,583 @@
+[
+  {
+    "name": "eth_estimateGas_minimal",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      }
+    ],
+    "description": "\u6700\u5c0f\u53c2\u6570\uff1a\u4ec5 to \u5730\u5740"
+  },
+  {
+    "name": "eth_estimateGas_with_from",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000"
+      }
+    ],
+    "description": "\u6307\u5b9a from \u5730\u5740"
+  },
+  {
+    "name": "eth_estimateGas_with_value_zero",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "value": "0x0"
+      }
+    ],
+    "description": "value \u4e3a 0"
+  },
+  {
+    "name": "eth_estimateGas_with_value_nonzero",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "value": "0xde0b6b3a7640000"
+      }
+    ],
+    "description": "value \u4e3a 1 ETH\uff08\u9700\u8981 from \u6709\u8db3\u591f\u4f59\u989d\uff09"
+  },
+  {
+    "name": "eth_estimateGas_with_data_empty",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      }
+    ],
+    "description": "\u7a7a data"
+  },
+  {
+    "name": "eth_estimateGas_with_data_short",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x12345678"
+      }
+    ],
+    "description": "\u77ed data\uff084\u5b57\u8282\uff09"
+  },
+  {
+    "name": "eth_estimateGas_with_data_long",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+      }
+    ],
+    "description": "\u957f data\uff0832\u5b57\u8282\uff09"
+  },
+  {
+    "name": "eth_estimateGas_with_gas",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x5208"
+      }
+    ],
+    "description": "\u6307\u5b9a gas limit"
+  },
+  {
+    "name": "eth_estimateGas_with_gasPrice",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gasPrice": "0x2540be400"
+      }
+    ],
+    "description": "\u6307\u5b9a gasPrice\uff0810 gwei\uff0cLegacy\uff09"
+  },
+  {
+    "name": "eth_estimateGas_with_maxFeePerGas",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "maxFeePerGas": "0x2540be400"
+      }
+    ],
+    "description": "\u6307\u5b9a maxFeePerGas\uff0810 gwei\uff0cEIP-1559\uff09"
+  },
+  {
+    "name": "eth_estimateGas_with_maxPriorityFeePerGas",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "maxFeePerGas": "0x2540be400",
+        "maxPriorityFeePerGas": "0x3b9aca00"
+      }
+    ],
+    "description": "\u6307\u5b9a maxFeePerGas \u548c maxPriorityFeePerGas"
+  },
+  {
+    "name": "eth_estimateGas_all_legacy_params",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x5208",
+        "gasPrice": "0x3b9aca00",
+        "value": "0x0",
+        "data": "0x"
+      }
+    ],
+    "description": "\u6240\u6709\u53c2\u6570\uff08Legacy\uff09"
+  },
+  {
+    "name": "eth_estimateGas_all_eip1559_params",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x5208",
+        "maxFeePerGas": "0x77359400",
+        "maxPriorityFeePerGas": "0x3b9aca00",
+        "value": "0x0",
+        "data": "0x"
+      }
+    ],
+    "description": "\u6240\u6709\u53c2\u6570\uff08EIP-1559\uff09"
+  },
+  {
+    "name": "eth_estimateGas_with_block_latest",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "latest"
+    ],
+    "description": "\u6307\u5b9a\u533a\u5757\uff1alatest"
+  },
+  {
+    "name": "eth_estimateGas_with_block_pending",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "pending"
+    ],
+    "description": "\u6307\u5b9a\u533a\u5757\uff1apending"
+  },
+  {
+    "name": "eth_estimateGas_with_block_earliest",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "earliest"
+    ],
+    "description": "\u6307\u5b9a\u533a\u5757\uff1aearliest"
+  },
+  {
+    "name": "eth_estimateGas_with_block_safe",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "safe"
+    ],
+    "description": "\u6307\u5b9a\u533a\u5757\uff1asafe"
+  },
+  {
+    "name": "eth_estimateGas_with_block_finalized",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "finalized"
+    ],
+    "description": "\u6307\u5b9a\u533a\u5757\uff1afinalized"
+  },
+  {
+    "name": "eth_estimateGas_with_block_number",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "0x1"
+    ],
+    "description": "\u6307\u5b9a\u533a\u5757\u53f7\uff1a0x1"
+  },
+  {
+    "name": "eth_estimateGas_simple_transfer",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "value": "0x1"
+      }
+    ],
+    "description": "\u7b80\u5355 ETH \u8f6c\u8d26\uff08\u5e94\u4e3a 21000\uff09"
+  },
+  {
+    "name": "eth_estimateGas_precompile_ecrecover",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000001",
+        "data": "0x"
+      }
+    ],
+    "description": "\u9884\u7f16\u8bd1\u5408\u7ea6\uff1aecrecover"
+  },
+  {
+    "name": "eth_estimateGas_precompile_sha256",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000002",
+        "data": "0x68656c6c6f"
+      }
+    ],
+    "description": "\u9884\u7f16\u8bd1\u5408\u7ea6\uff1asha256"
+  },
+  {
+    "name": "eth_estimateGas_precompile_identity",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000004",
+        "data": "0x68656c6c6f"
+      }
+    ],
+    "description": "\u9884\u7f16\u8bd1\u5408\u7ea6\uff1aidentity"
+  },
+  {
+    "name": "eth_estimateGas_contract_creation",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "data": "0x6080604052348015600f57600080fd5b50603f80601d6000396000f3fe6080604052600080fdfea264697066735822122000000000000000000000000000000000000000000000000000000000000000000064736f6c63430008130033"
+      }
+    ],
+    "description": "\u5408\u7ea6\u521b\u5efa\uff08to \u4e3a\u7a7a\uff09"
+  },
+  {
+    "name": "eth_estimateGas_with_accessList_empty",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "accessList": []
+      }
+    ],
+    "description": "EIP-2930\uff1a\u7a7a accessList"
+  },
+  {
+    "name": "eth_estimateGas_with_accessList_single",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "accessList": [
+          {
+            "address": "0x0000000000000000000000000000000000000001",
+            "storageKeys": []
+          }
+        ]
+      }
+    ],
+    "description": "EIP-2930\uff1a\u5355\u5730\u5740 accessList"
+  },
+  {
+    "name": "eth_estimateGas_with_accessList_with_storage",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "accessList": [
+          {
+            "address": "0x0000000000000000000000000000000000000001",
+            "storageKeys": [
+              "0x0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          }
+        ]
+      }
+    ],
+    "description": "EIP-2930\uff1a\u5e26 storageKeys \u7684 accessList"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gas_zero",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x0"
+      }
+    ],
+    "description": "\u8fb9\u754c\u503c\uff1agas \u4e3a 0"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gas_3000",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0xbb8"
+      }
+    ],
+    "description": "\u8fb9\u754c\u503c\uff1agas \u4e3a 3000\uff08\u4f4e\u4e8e intrinsic gas\uff09"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gas_20000",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x4e20"
+      }
+    ],
+    "description": "\u8fb9\u754c\u503c\uff1agas \u4e3a 20000\uff08\u7565\u4f4e\u4e8e 21000\uff09"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gas_21000",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x5208"
+      }
+    ],
+    "description": "\u8fb9\u754c\u503c\uff1agas \u4e3a 21000\uff08\u521a\u597d\u7b49\u4e8e intrinsic gas\uff09"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gas_100000",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x186a0"
+      }
+    ],
+    "description": "\u8fb9\u754c\u503c\uff1agas \u4e3a 100000\uff08\u4e2d\u7b49\u503c\uff09"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gas_1000000",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0xf4240"
+      }
+    ],
+    "description": "\u8fb9\u754c\u503c\uff1agas \u4e3a 1000000"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gas_max",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x1c9c380"
+      }
+    ],
+    "description": "\u8fb9\u754c\u503c\uff1agas \u4e3a 30000000\uff08\u533a\u5757 gas limit\uff09"
+  },
+  {
+    "name": "error_eth_estimateGas_value_overflow",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "value": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }
+    ],
+    "description": "\u9519\u8bef\u573a\u666f\uff1avalue \u4e3a max uint256\uff08\u4f59\u989d\u4e0d\u8db3\uff09"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gasPrice_zero",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gasPrice": "0x0"
+      }
+    ],
+    "description": "\u8fb9\u754c\u503c\uff1agasPrice \u4e3a 0"
+  },
+  {
+    "name": "error_eth_estimateGas_insufficient_balance",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000001",
+        "to": "0x0000000000000000000000000000000000000002",
+        "value": "0xde0b6b3a7640000"
+      }
+    ],
+    "description": "\u9519\u8bef\u573a\u666f\uff1a\u4f59\u989d\u4e0d\u8db3"
+  },
+  {
+    "name": "eth_estimateGas_with_stateOverride",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+      },
+      "latest",
+      {
+        "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266": {
+          "balance": "0xde0b6b3a7640000"
+        }
+      }
+    ],
+    "description": "\u72b6\u6001\u8986\u76d6\uff1a\u4fee\u6539\u4f59\u989d"
+  },
+  {
+    "name": "eth_estimateGas_balance_gate_maxfee_with_data",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x1111111111111111111111111111111111111111",
+        "to": "0x2222222222222222222222222222222222222222",
+        "data": "0xa9059cbb0000000000000000000000003333333333333333333333333333333333333333000000000000000000000000000000000000000000000000000000000000000a",
+        "maxFeePerGas": "0xe8d4a51000",
+        "maxPriorityFeePerGas": "0x3b9aca00"
+      },
+      "latest",
+      {
+        "0x1111111111111111111111111111111111111111": {
+          "balance": "0x5af3107a4000"
+        }
+      }
+    ],
+    "description": "\u4f59\u989d\u95e8\u63a7(\u5408\u7ea6\u8c03\u7528/\u5e26data): \u4f4e\u4f59\u989d0.0001ETH(stateOverride)+\u9ad8maxFee1000gwei, allowance=balance/maxFee=100<intrinsic; geth/reth \u5747\u5e94\u62a5 gas required exceeds allowance (100)\u3002geth \u7528 maxFeePerGas \u505a\u9664\u6570, reth \u4e0a\u6e38\u7528 effective(=min(maxFee,base+tip)) \u505a\u9664\u6570\u5bfc\u81f4 allowance \u88ab\u9ad8\u4f30, \u662f\u672c\u6b21\u4fee\u590d\u76ee\u6807"
+  },
+  {
+    "name": "eth_estimateGas_balance_gate_maxfee_basic_transfer",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x1111111111111111111111111111111111111111",
+        "to": "0x4444444444444444444444444444444444444444",
+        "maxFeePerGas": "0xe8d4a51000",
+        "maxPriorityFeePerGas": "0x3b9aca00"
+      },
+      "latest",
+      {
+        "0x1111111111111111111111111111111111111111": {
+          "balance": "0x5af3107a4000"
+        }
+      }
+    ],
+    "description": "\u4f59\u989d\u95e8\u63a7(basic transfer/\u7eafETH\u8f6c\u8d26): \u4f4e\u4f59\u989d0.0001ETH(stateOverride)+\u9ad8maxFee1000gwei, allowance=100<21000; geth/reth \u5747\u5e94\u62a5 gas required exceeds allowance (100)\u3002reth \u4e0a\u6e38\u56e0 21000 \u77ed\u8def(disable_fee_charge \u4e0d\u6821\u9a8c\u4f59\u989d)\u4f1a\u8fd4\u56de 21000, \u4fee\u590d\u9700\u77ed\u8def\u5c0a\u91cd\u95e8\u63a7"
+  },
+  {
+    "name": "eth_estimateGas_stateoverride_arsia_funds_honors_override",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x1111111111111111111111111111111111111111",
+        "to": "0x2222222222222222222222222222222222222222",
+        "value": "0x0",
+        "maxFeePerGas": "0x3b9aca00"
+      },
+      "latest",
+      {
+        "0x1111111111111111111111111111111111111111": {
+          "balance": "0x3635c9adc5dea00000"
+        }
+      }
+    ],
+    "description": "stateOverride \u4f59\u989d\u5145\u8db3(1000ETH)+\u5e26 fee \u7684\u4f30\u7b97\u3002geth \u628a stateOverride \u5e94\u7528\u5230\u4f30\u7b97\u72b6\u6001\u540e\u6309\u4f59\u989d\u5145\u8db3\u8fd4\u56de 0x5208\uff1breth \u7684 Mantle Arsia \u8d44\u91d1\u540e\u7f6e\u68c0\u67e5\u8bfb\u53d6\u7684\u662f provider \u94fe\u4e0a\u72b6\u6001(state_by_block_id)\u3001\u5ffd\u7565 stateOverride \u4f59\u989d\uff0c\u8bef\u5224\u8d44\u91d1\u4e0d\u8db3\u8fd4\u56de -32602 insufficient funds for gas + L1 data fee + operator fee\u3002reth \u7684\u6838\u5fc3 estimate_gas_with \u7528 db.basic \u5df2\u5e94\u7528 override \u5e76\u7b97\u51fa 21000\uff0c\u540e\u7f6e\u68c0\u67e5\u5374\u7528\u771f\u5b9e\u4f59\u989d(0)\u2014\u2014\u81ea\u76f8\u77db\u76fe\u3002\u5c5e reth bug\uff08Arsia \u540e\u7f6e\u68c0\u67e5\u672a\u5e94\u7528 stateOverride\uff09\u3002"
+  },
+  {
+    "name": "eth_estimateGas_stateoverride_value_precheck_honors_override",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x1111111111111111111111111111111111111111",
+        "to": "0x2222222222222222222222222222222222222222",
+        "value": "0x1",
+        "maxFeePerGas": "0x3b9aca00"
+      },
+      "latest",
+      {
+        "0x1111111111111111111111111111111111111111": {
+          "balance": "0x3635c9adc5dea00000"
+        }
+      }
+    ],
+    "description": "stateOverride \u4f59\u989d\u5145\u8db3(1000ETH)+value=1+\u5e26 fee \u7684\u4f30\u7b97\u3002geth \u5e94\u7528 override \u540e value(1)<balance \u901a\u8fc7\u3001\u8fd4\u56de 0x5208\uff1breth \u7684 Mantle value \u524d\u7f6e\u68c0\u67e5(value>=balance)\u8bfb\u53d6 provider \u94fe\u4e0a\u4f59\u989d(0)\u3001\u5ffd\u7565 stateOverride\uff0c\u8bef\u5224 value>=balance \u8fd4\u56de -32602 'failed with N gas: insufficient funds for transfer'\u3002\u5c5e reth bug\uff08value \u524d\u7f6e\u68c0\u67e5\u672a\u5e94\u7528 stateOverride\uff09\u3002"
+  },
+  {
+    "name": "eth_estimateGas_subintrinsic_gas_contract_call",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x01020304",
+        "gas": "0xbb8"
+      }
+    ],
+    "description": "\u975e basic \u8c03\u7528(\u5e26 data)+ \u7528\u6237\u4f20\u5165 gas=3000(<intrinsic)\u3002geth \u5ffd\u7565\u4f4e\u4e8e intrinsic \u7684 gas\u3001\u4ee5\u533a\u5757\u4e0a\u9650\u4e3a hi \u6b63\u5e38\u4f30\u7b97\u5e76\u8fd4\u56de\u771f\u5b9e\u4f30\u503c;reth(pre-#83)\u76f4\u63a5\u7528 gas=3000 \u6267\u884c \u2192 gas \u4e0d\u8db3\u62a5 'gas required exceeds allowance (3000)'\u3002#83 \u7684 sub-intrinsic gas floor \u4fee\u590d\u540e reth \u5e94\u4e0e geth \u4e00\u81f4(\u5ffd\u7565\u8fc7\u4f4e gas)\u3002\u65e0 fee \u2192 \u4e0d\u89e6\u53d1 Arsia/value \u524d\u7f6e\u68c0\u67e5\u3002"
+  },
+  {
+    "name": "eth_estimateGas_blob_exposure_exceeds_allowance",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x1111111111111111111111111111111111111111",
+        "to": "0x2222222222222222222222222222222222222222",
+        "value": "0x0",
+        "maxFeePerGas": "0xe8d4a51000",
+        "maxFeePerBlobGas": "0x3b9aca00",
+        "blobVersionedHashes": [
+          "0x0100000000000000000000000000000000000000000000000000000000000001"
+        ]
+      },
+      "latest",
+      {
+        "0x1111111111111111111111111111111111111111": {
+          "balance": "0xd228a47a4000"
+        }
+      }
+    ],
+    "description": "P3 blob \u655e\u53e3:override \u4f59\u989d = 100*maxFee + blobFee(131072*maxFeePerBlobGas)\u3002geth \u4e0e\u4fee\u590d\u540e reth \u5728\u7b97 allowance \u524d\u90fd\u5148\u51cf blob \u655e\u53e3 \u2192 allowance=100 \u2192 \u4e24\u4fa7 `gas required exceeds allowance (100)` / -32000\u3002\u82e5\u4e0d\u51cf blob(\u4fee\u590d\u524d reth)\u5219\u4e3a 231,\u6545\u6b64\u7528\u4f8b\u4e13\u95e8\u9a8c\u8bc1 blob \u6263\u51cf\u3002"
+  },
+  {
+    "name": "eth_estimateGas_fee_max_exceeds_allowance",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x1111111111111111111111111111111111111111",
+        "to": "0x2222222222222222222222222222222222222222",
+        "value": "0x0",
+        "maxFeePerGas": "0x7fffffffffffffffffffffffffffffff"
+      },
+      "latest",
+      {
+        "0x1111111111111111111111111111111111111111": {
+          "balance": "0xde0b6b3a7640000"
+        }
+      }
+    ],
+    "description": "FEE_MAX:\u5de8\u5927 maxFeePerGas(~1.7e38)+ override \u4f59\u989d 1ETH\u3002balance/maxFee=0 \u2192 \u4e24\u4fa7 `gas required exceeds allowance (0)` / -32000\u3002\u542b #81 \u7684 maxFee allowance \u95e8\u63a7\u66f4\u65e9\u62e6\u4e0b(\u4e0d\u518d\u8d70 Arsia \u540e\u7f6e -32602),\u4e0e geth \u9010\u5b57\u4e00\u81f4\u3002"
+  }
+]
