@@ -1,6 +1,7 @@
 package tx
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math/big"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/report"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/rpc"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -92,5 +94,55 @@ func TestIsAlreadyKnownError(t *testing.T) {
 	}
 	if isAlreadyKnownError(nil) {
 		t.Fatal("nil error must not be recognized as already known")
+	}
+}
+
+func TestComparisonRecordsTargetTransportFailure(t *testing.T) {
+	baseline := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			ID     int    `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		result := any("0x1")
+		if request.Method == "eth_getTransactionReceipt" {
+			result = map[string]any{"status": "0x1", "gasUsed": "0x5208", "blockNumber": "0x1"}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": result})
+	}))
+	defer baseline.Close()
+	closedTarget := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	closedTargetURL := closedTarget.URL
+	closedTarget.Close()
+
+	for _, tc := range []struct {
+		name string
+		run  func(*Tester) error
+	}{
+		{name: "balance", run: func(tester *Tester) error {
+			_, err := tester.GetBalanceAndCompare(context.Background(), common.Address{}, "latest", "balance")
+			return err
+		}},
+		{name: "receipt", run: func(tester *Tester) error {
+			_, err := tester.CompareReceipts(context.Background(), "receipt", common.Hash{}, common.Hash{})
+			return err
+		}},
+		{name: "receipt_poll", run: func(tester *Tester) error {
+			_, err := tester.WaitForReceiptAndCompare(context.Background(), common.Hash{}, time.Second, "receipt_poll")
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pair := rpc.NewClientPair(baseline.URL, "baseline", closedTargetURL, "target", time.Second)
+			reporter := report.NewReporter(report.EndpointMetadata{}, report.EndpointMetadata{}, false)
+			tester := &Tester{baselineClient: pair.Baseline, targetClient: pair.Target, reporter: reporter}
+			_ = tc.run(tester)
+			if !reporter.HasFailures() {
+				t.Fatal("transport failure was not recorded")
+			}
+		})
 	}
 }

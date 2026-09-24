@@ -253,10 +253,10 @@ func Test_matchesKnownDiff(t *testing.T) {
 			want: false, // changed target wording must not be waived
 		},
 		{
-			name:   "geth wording varies but reth stable -> still exempt",
+			name:   "baseline message drift surfaces",
 			gethEx: errObj(-32602, "invalid argument 1: unknown block number tag"), gethAct: errObj(-32602, "invalid argument 1: hex string without 0x prefix"),
 			rethEx: errObj(-32602, "Invalid params"), rethAct: errObj(-32602, "Invalid params"),
-			want: true, // reference code and target message still match
+			want: false,
 		},
 		{
 			name:   "truncated reth record tolerated (contains)",
@@ -283,6 +283,24 @@ func Test_matchesKnownDiff(t *testing.T) {
 			want: true,
 		},
 		{
+			name:   "success result type drift surfaces",
+			gethEx: okObj("Geth/v1.16"), gethAct: okObj("Geth/v1.16"),
+			rethEx: okObj("op-reth-rc4"), rethAct: `{"result":{"version":"op-reth-rc4"}}`,
+			want: false,
+		},
+		{
+			name:   "recorded object keys must remain present",
+			gethEx: `{"result":{"network":{"chainId":"0x1"}}}`, gethAct: `{"result":{"network":{}}}`,
+			rethEx: okObj("target"), rethAct: okObj("target"),
+			want: false,
+		},
+		{
+			name:   "unrecorded object fields are allowed",
+			gethEx: `{"result":{"network":{}}}`, gethAct: `{"result":{"network":{"chainId":"0x1"},"extra":true}}`,
+			rethEx: okObj("target"), rethAct: okObj("target"),
+			want: true,
+		},
+		{
 			name:   "type mismatch surfaces (reth error->success)",
 			gethEx: errObj(-32000, "x"), gethAct: errObj(-32000, "x"),
 			rethEx: errObj(-32602, "unknown account"), rethAct: okObj("0xraw"),
@@ -297,5 +315,38 @@ func Test_matchesKnownDiff(t *testing.T) {
 				t.Fatalf("matchesKnownDiff = %v, want %v", got, c.want)
 			}
 		})
+	}
+}
+
+func TestKnownDifferenceDisappearingIsPass(t *testing.T) {
+	r := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
+	config := `{"known_diffs":[{"test_name":"same","reason":"old difference","baseline_example":{"result":"0x1"},"target_example":{"result":"0x2"}}]}`
+	if err := r.LoadKnownDiffs(strings.NewReader(config)); err != nil {
+		t.Fatal(err)
+	}
+	raw := json.RawMessage(`{"result":"0x1"}`)
+	response := &rpc.ResponseWithMeta{RawBody: raw, Response: &rpc.Response{Result: json.RawMessage(`"0x1"`)}}
+	r.AddResult(TestCase{Name: "same", Method: "eth_chainId"}, &rpc.CompareResult{
+		BaselineResponse: response,
+		TargetResponse:   response,
+	}, &diff.CompareResult{}, nil)
+	if got := r.Generate().Results[0].Status; got != StatusPass {
+		t.Fatalf("disappeared known difference = %s, want PASS", got)
+	}
+}
+
+func TestKnownDifferenceBaselineMessageDriftWarns(t *testing.T) {
+	r := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
+	config := `{"known_diffs":[{"test_name":"drift","reason":"different errors","baseline_example":{"error":{"code":-32602,"message":"invalid block tag"}},"target_example":{"error":{"code":-32602,"message":"Invalid params"}}}]}`
+	if err := r.LoadKnownDiffs(strings.NewReader(config)); err != nil {
+		t.Fatal(err)
+	}
+	r.AddResult(TestCase{Name: "drift", Method: "eth_getBlockByNumber"}, &rpc.CompareResult{
+		BaselineResponse: &rpc.ResponseWithMeta{RawBody: []byte(`{"error":{"code":-32602,"message":"invalid hex string"}}`), Response: &rpc.Response{Error: &rpc.RPCError{Code: -32602, Message: "invalid hex string"}}},
+		TargetResponse:   &rpc.ResponseWithMeta{RawBody: []byte(`{"error":{"code":-32602,"message":"Invalid params"}}`), Response: &rpc.Response{Error: &rpc.RPCError{Code: -32602, Message: "Invalid params"}}},
+	}, nil, nil)
+	got := r.Generate().Results[0]
+	if got.Status != StatusWarning || !got.Passed || len(got.Differences) != 1 || got.Differences[0].Path != "error.message" {
+		t.Fatalf("baseline message drift = %+v, want visible warning", got)
 	}
 }

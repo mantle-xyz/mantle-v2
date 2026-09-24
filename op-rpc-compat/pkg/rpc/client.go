@@ -64,6 +64,11 @@ type ResponseWithMeta struct {
 	Error    error // transport error, not a JSON-RPC error
 }
 
+// SuccessfulResponse reports whether a request received a successful JSON-RPC response.
+func SuccessfulResponse(resp *ResponseWithMeta) bool {
+	return resp != nil && resp.Error == nil && resp.Response != nil && resp.Response.Error == nil
+}
+
 var requestID int64
 
 // NewClient creates an RPC client.

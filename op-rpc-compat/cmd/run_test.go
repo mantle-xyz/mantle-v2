@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/report"
+	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/tx"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/testcases"
 )
 
@@ -98,6 +99,32 @@ func TestCustomKnownDiffsUseSelectedDirectory(t *testing.T) {
 	}
 	if got := r.GetKnownDiff("custom"); got == nil || got.Reason != "custom corpus" {
 		t.Fatalf("known difference = %+v", got)
+	}
+}
+
+func TestMalformedKnownDiffsAreRejected(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, knownDiffsFileName), []byte(`{"known_diffs":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := report.NewReporter(report.EndpointMetadata{}, report.EndpointMetadata{}, false)
+	if _, err := loadSelectedKnownDiffs(r, dir); err == nil {
+		t.Fatal("malformed known differences must stop the run")
+	}
+}
+
+func TestTransactionFailuresAppearInReport(t *testing.T) {
+	r := report.NewReporter(report.EndpointMetadata{}, report.EndpointMetadata{}, false)
+	failed := recordTransactionResults(r, []*tx.TxTestResult{
+		{TestName: "rejection", TxType: "rejection", Error: "both endpoints accepted an invalid transaction"},
+		{TestName: "transfer", TxType: "Legacy", Passed: true},
+	})
+	generated := r.Generate()
+	if failed != 1 || !r.HasFailures() || generated.FailedTests != 1 || generated.PassedTests != 1 {
+		t.Fatalf("failed = %d, report = %+v", failed, generated)
+	}
+	if got := generated.Results[0]; got.TestCase.Name != "rejection" || got.CompareError == "" || got.Status != report.StatusFail {
+		t.Fatalf("rejection result missing from JSON report: %+v", got)
 	}
 }
 

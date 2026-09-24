@@ -80,7 +80,7 @@ Results have four statuses:
 |---|---|---|
 | `PASS` | Responses match | No |
 | `COMPATIBLE` | An applicable known difference matches, or both endpoints report an unsupported method | No |
-| `WARNING` | Only nonfatal differences were found | No |
+| `WARNING` | Only nonfatal differences were found, or a known-diff baseline error message differs from its recorded example | No |
 | `FAIL` | Responses differ or a request failed | Yes |
 
 Reports use schema version 2 and record both endpoint names, URLs, client
@@ -117,6 +117,10 @@ optionally `web3_clientVersion` with regular expressions:
 If the endpoint names or versions do not match `applies_to`, the difference is
 reported normally. Rules without `applies_to` describe implementation-independent
 dynamic values such as client versions and generated filter IDs.
+If a known difference disappears, the result is `PASS`. Recorded successful
+result objects require their listed fields but allow additional fields and
+changing values. A changed baseline error message is visible as `WARNING`;
+target response drift and transport failures are `FAIL`.
 
 ## Stateful Modes
 
@@ -129,6 +133,8 @@ preconfirmation. `--tx-standard-only` alone is an error. The default signing key
 is a public local-devnet test key and must not be used on a funded network.
 The full preconfirmation parity scenario is calibrated for an op-geth sequencer;
 use standard-only mode on a reth sequencer.
+The JSON report includes each transaction assertion alongside its underlying
+RPC comparisons. Any failed assertion makes the command exit with status 1.
 
 ```bash
 go run ./op-rpc-compat \
@@ -145,7 +151,8 @@ for scenarios that exercise those services. The network must already have the
 appropriate preconfirmation allowlists and checker configured.
 Preconfirmation scenarios report `PASS`, `FAIL`, or `INCONCLUSIVE` separately.
 An inconclusive result does not fail the command, but it does not establish the
-scenario's invariant.
+scenario's invariant. `--only` must name a registered scenario; selecting a
+heavy scenario also requires `--heavy`. Invalid selections fail before setup.
 
 ```bash
 go run ./op-rpc-compat preconf \

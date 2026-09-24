@@ -128,6 +128,56 @@ func (r *Runner) resultCounts() (passed, failed, inconclusive int) {
 
 // Run executes setup then all default scenarios; returns an error if any scenario failed.
 func (r *Runner) Run(ctx context.Context) error {
+	scenarios := []struct {
+		name  string
+		heavy bool
+		optIn bool
+		run   func()
+	}{
+		{name: "valid_native_success", run: func() { r.scenarioValidNativeSuccess(ctx) }},
+		{name: "valid_1559_preconf", run: func() { r.scenarioValid1559Preconf(ctx) }},
+		{name: "valid_7702_preconf", run: func() { r.scenarioValid7702Preconf(ctx) }},
+		{name: "reasons", run: func() { r.scenarioReasons(ctx) }},
+		{name: "whitelist_identification", run: func() { r.scenarioWhitelistIdentification(ctx) }},
+		{name: "preconf_create_rejected", run: func() { r.scenarioPreconfCreateRejected(ctx) }},
+		{name: "predicted_block_matches_actual", run: func() { r.scenarioPredictedBlockMatches(ctx) }},
+		{name: "geth_reth_parity_null_logs", run: func() { r.scenarioGethRethParity(ctx) }},
+		{name: "success_onchain_consistency", heavy: true, run: func() { r.scenarioSuccessOnchainConsistency(ctx, 20) }},
+		{name: "success_receipt_full_parity", heavy: true, run: func() { r.scenarioSuccessReceiptFullParity(ctx) }},
+		{name: "worst_case_exec_within_timeout", heavy: true, run: func() { r.scenarioWorstCaseExecWithinTimeout(ctx) }},
+		{name: "preconf_nonce_gap", heavy: true, run: func() { r.scenarioPreconfNonceGap(ctx) }},
+		{name: "preconf_gas_cap_over_2m", heavy: true, run: func() { r.scenarioPreconfGasCapOver2M(ctx) }},
+		{name: "verifier_forward_parity", heavy: true, run: func() { r.scenarioVerifierForwardParity(ctx) }},
+		{name: "stress_throughput", heavy: true, run: func() { r.scenarioStress(ctx, r.cfg.StressCount) }},
+		{name: "concurrent_burst", heavy: true, run: func() { r.scenarioConcurrentBurst(ctx, 5, 10) }},
+		{name: "multi_preconf_same_slot_all_included", heavy: true, run: func() { r.scenarioMultiPreconfSameSlot(ctx) }},
+		{name: "replacement_protection", heavy: true, run: func() { r.scenarioReplacementProtection(ctx) }},
+		{name: "tight_timeout_never_false_success", heavy: true, run: func() { r.scenarioTightTimeoutEviction(ctx) }},
+		{name: "preconf_ordered_before_regular", heavy: true, run: func() { r.scenarioPreconfOrdering(ctx) }},
+		{name: "deposit_ordered_before_user", heavy: true, run: func() { r.scenarioDepositOrdering(ctx) }},
+		{name: "block_full_spills_across_blocks", heavy: true, run: func() { r.scenarioBlockFull(ctx) }},
+		// These scenarios change sequencer behavior and require explicit selection.
+		{name: "sequencer_stall_staleness", optIn: true, run: func() { r.scenarioSequencerStallStaleness(ctx) }},
+		{name: "recover_mode_no_false_success", optIn: true, run: func() { r.scenarioRecoverModeNoFalseSuccess(ctx) }},
+	}
+
+	if r.cfg.Only != "" {
+		found := false
+		for _, scenario := range scenarios {
+			if scenario.name != r.cfg.Only {
+				continue
+			}
+			found = true
+			if scenario.heavy && !r.cfg.Heavy {
+				return fmt.Errorf("scenario %q requires --heavy", r.cfg.Only)
+			}
+			break
+		}
+		if !found {
+			return fmt.Errorf("unknown preconf scenario %q", r.cfg.Only)
+		}
+	}
+
 	fmt.Println("=== preconf: setup ===")
 	// Contracts first: TestERC20/TestPay deploy at deterministic addresses from funder nonce 0/1
 	// (TestPayAddr is whitelisted in topreconfs at that exact address). ensureFunded sends funder
@@ -143,44 +193,16 @@ func (r *Runner) Run(ctx context.Context) error {
 	}
 
 	fmt.Println("=== preconf: scenarios ===")
-	run := func(name string, fn func()) {
-		if r.cfg.Only == "" || r.cfg.Only == name {
-			fn()
+	for _, scenario := range scenarios {
+		if r.cfg.Only != "" {
+			if scenario.name != r.cfg.Only {
+				continue
+			}
+		} else if (scenario.heavy && !r.cfg.Heavy) || scenario.optIn {
+			continue
 		}
+		scenario.run()
 	}
-	// destructive scenarios: opt-in via --only ONLY (never in the default/--heavy sweep).
-	runOptIn := func(name string, fn func()) {
-		if r.cfg.Only == name {
-			fn()
-		}
-	}
-	run("valid_native_success", func() { r.scenarioValidNativeSuccess(ctx) })
-	run("valid_1559_preconf", func() { r.scenarioValid1559Preconf(ctx) })
-	run("valid_7702_preconf", func() { r.scenarioValid7702Preconf(ctx) })
-	run("reasons", func() { r.scenarioReasons(ctx) })
-	run("whitelist_identification", func() { r.scenarioWhitelistIdentification(ctx) })
-	run("preconf_create_rejected", func() { r.scenarioPreconfCreateRejected(ctx) })
-	run("predicted_block_matches_actual", func() { r.scenarioPredictedBlockMatches(ctx) })
-	run("geth_reth_parity_null_logs", func() { r.scenarioGethRethParity(ctx) })
-	if r.cfg.Heavy {
-		run("success_onchain_consistency", func() { r.scenarioSuccessOnchainConsistency(ctx, 20) })
-		run("success_receipt_full_parity", func() { r.scenarioSuccessReceiptFullParity(ctx) })
-		run("worst_case_exec_within_timeout", func() { r.scenarioWorstCaseExecWithinTimeout(ctx) })
-		run("preconf_nonce_gap", func() { r.scenarioPreconfNonceGap(ctx) })
-		run("preconf_gas_cap_over_2m", func() { r.scenarioPreconfGasCapOver2M(ctx) })
-		run("verifier_forward_parity", func() { r.scenarioVerifierForwardParity(ctx) })
-		run("stress_throughput", func() { r.scenarioStress(ctx, r.cfg.StressCount) })
-		run("concurrent_burst", func() { r.scenarioConcurrentBurst(ctx, 5, 10) })
-		run("multi_preconf_same_slot_all_included", func() { r.scenarioMultiPreconfSameSlot(ctx) })
-		run("replacement_protection", func() { r.scenarioReplacementProtection(ctx) })
-		run("tight_timeout_never_false_success", func() { r.scenarioTightTimeoutEviction(ctx) })
-		run("preconf_ordered_before_regular", func() { r.scenarioPreconfOrdering(ctx) })
-		run("deposit_ordered_before_user", func() { r.scenarioDepositOrdering(ctx) })
-		run("block_full_spills_across_blocks", func() { r.scenarioBlockFull(ctx) })
-	}
-	// destructive, opt-in only: freezes block production ~15s via op-node admin RPC.
-	runOptIn("sequencer_stall_staleness", func() { r.scenarioSequencerStallStaleness(ctx) })
-	runOptIn("recover_mode_no_false_success", func() { r.scenarioRecoverModeNoFalseSuccess(ctx) })
 
 	// summary
 	passed, failed, inconclusive := r.resultCounts()

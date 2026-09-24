@@ -228,16 +228,51 @@ func (r *Reporter) AddCompatibleResult(tc TestCase, compareResult *rpc.CompareRe
 	r.printResult(result)
 }
 
+// AddScenarioResult includes a transaction assertion in the shared JSON report.
+func (r *Reporter) AddScenarioResult(name, category string, passed bool, detail string) {
+	result := TestResult{TestCase: TestCase{Name: name, Method: "transaction", Description: category}}
+	if passed {
+		result.Status = StatusPass
+		result.Passed = true
+	} else {
+		result.Status = StatusFail
+		result.CompareError = detail
+		if result.CompareError == "" {
+			result.CompareError = "transaction assertion failed"
+		}
+	}
+	r.results = append(r.results, result)
+}
+
 // AddResult records the comparison result of one test case.
 func (r *Reporter) AddResult(tc TestCase, compareResult *rpc.CompareResult, diffResult *diff.CompareResult, compareErr error) {
 	result := newTestResult(tc, compareResult)
 
 	if knownDiff := r.GetKnownDiff(tc.Name); knownDiff != nil {
-		// Waive only a response that still matches the recorded known difference.
-		if r.matchesKnownDiff(&result, knownDiff) {
+		// A vanished difference is a pass; a transport failure is never waivable.
+		if result.BaselineError != "" || result.TargetError != "" || compareErr != nil {
+			result.Status = StatusFail
+			if compareErr != nil {
+				result.CompareError = compareErr.Error()
+			}
+		} else if identicalComparison(compareResult, diffResult) {
+			result.Status = StatusPass
+			result.Passed = true
+		} else if r.matchesKnownDiff(&result, knownDiff) {
 			result.Status = StatusCompatible
 			result.SkipReason = knownDiff.Reason // preserve the known-difference reason in the existing field
 			result.Passed = true
+		} else if baselineMessageDrift(&result, knownDiff) {
+			result.Status = StatusWarning
+			result.Passed = true
+			result.SkipReason = "baseline error message differs from the recorded known-diff example"
+			result.Differences = []diff.Difference{{
+				Path:     "error.message",
+				Type:     diff.DiffTypeValue,
+				Expected: parseShape(knownDiff.BaselineExample).msg,
+				Actual:   parseShape(result.BaselineResponse).msg,
+				Severity: diff.SeverityWarning,
+			}}
 		} else {
 			result.Status = StatusFail
 			result.CompareError = fmt.Sprintf("已知差异验证失败: 实际响应与预期不符 (预期: %s)", knownDiff.Reason)
@@ -258,17 +293,36 @@ func (r *Reporter) AddResult(tc TestCase, compareResult *rpc.CompareResult, diff
 	r.printResult(result)
 }
 
+func identicalComparison(compareResult *rpc.CompareResult, diffResult *diff.CompareResult) bool {
+	if compareResult == nil || compareResult.BaselineResponse == nil || compareResult.TargetResponse == nil {
+		return false
+	}
+	baseline, target := compareResult.BaselineResponse.Response, compareResult.TargetResponse.Response
+	if baseline == nil || target == nil {
+		return false
+	}
+	if baseline.Error != nil || target.Error != nil {
+		return baseline.Error != nil && target.Error != nil &&
+			baseline.Error.Code == target.Error.Code && baseline.Error.Message == target.Error.Message
+	}
+	return diffResult != nil && len(diffResult.Differences) == 0
+}
+
 // matchesKnownDiff checks actual responses against a recorded difference.
 //
-// Comparing only error versus success would hide later code or message drift.
-// The baseline reference side compares type and code because its wording varies
-// with input and version, and recorded examples may be truncated. The target
-// target side also compares normalized messages, allowing either message to
-// contain the other when an example was truncated. A changed target message
-// stops matching so the difference becomes visible again in the report.
+// Compare both error messages after removing variable values, and compare the
+// JSON shape of successful results. Recorded messages may be truncated.
 func (r *Reporter) matchesKnownDiff(result *TestResult, knownDiff *KnownDiff) bool {
-	return shapeMatch(parseShape(knownDiff.BaselineExample), parseShape(result.BaselineResponse), false) &&
-		shapeMatch(parseShape(knownDiff.TargetExample), parseShape(result.TargetResponse), true)
+	return shapeMatch(parseShape(knownDiff.BaselineExample), parseShape(result.BaselineResponse)) &&
+		shapeMatch(parseShape(knownDiff.TargetExample), parseShape(result.TargetResponse))
+}
+
+func baselineMessageDrift(result *TestResult, knownDiff *KnownDiff) bool {
+	expected := parseShape(knownDiff.BaselineExample)
+	actual := parseShape(result.BaselineResponse)
+	return expected.typ == responseTypeError && actual.typ == responseTypeError &&
+		expected.code == actual.code && !shapeMatch(expected, actual) &&
+		shapeMatch(parseShape(knownDiff.TargetExample), parseShape(result.TargetResponse))
 }
 
 var (
@@ -285,9 +339,10 @@ func normMsg(s string) string {
 
 // respShape extracts the comparable shape of a response.
 type respShape struct {
-	typ  responseType
-	code int
-	msg  string // normalized error message, meaningful only for errors
+	typ    responseType
+	code   int
+	msg    string // normalized error message, meaningful only for errors
+	result json.RawMessage
 }
 
 func parseShape(raw json.RawMessage) respShape {
@@ -306,30 +361,71 @@ func parseShape(raw json.RawMessage) respShape {
 		_ = json.Unmarshal(e, &eo)
 		return respShape{typ: responseTypeError, code: eo.Code, msg: normMsg(eo.Message)}
 	}
-	if _, ok := resp["result"]; ok {
-		return respShape{typ: responseTypeSuccess}
+	if value, ok := resp["result"]; ok {
+		return respShape{typ: responseTypeSuccess, result: value}
 	}
 	return respShape{typ: responseTypeUnknown}
 }
 
 // shapeMatch checks an actual response against a recorded shape.
-// When matchMsg is true, it also compares normalized error messages.
-func shapeMatch(expected, actual respShape, matchMsg bool) bool {
-	if expected.typ != actual.typ {
+func shapeMatch(expected, actual respShape) bool {
+	if expected.typ == responseTypeUnknown || expected.typ != actual.typ {
 		return false
 	}
 	if expected.typ == responseTypeError {
 		if expected.code != actual.code {
 			return false
 		}
-		if !matchMsg {
-			return true
-		}
 		// Recorded examples may be truncated on either side.
-		return strings.Contains(actual.msg, expected.msg) || strings.Contains(expected.msg, actual.msg)
+		return expected.msg != "" && actual.msg != "" &&
+			(strings.Contains(actual.msg, expected.msg) || strings.Contains(expected.msg, actual.msg))
 	}
-	// Successful results may contain variable values such as versions or filter IDs.
-	return true
+	return sameResultShape(expected.result, actual.result)
+}
+
+func sameResultShape(expected, actual json.RawMessage) bool {
+	var expectedValue, actualValue interface{}
+	if json.Unmarshal(expected, &expectedValue) != nil || json.Unmarshal(actual, &actualValue) != nil {
+		return false
+	}
+	return sameValueShape(expectedValue, actualValue)
+}
+
+func sameValueShape(expected, actual interface{}) bool {
+	switch value := expected.(type) {
+	case map[string]interface{}:
+		other, ok := actual.(map[string]interface{})
+		if !ok {
+			return false
+		}
+		for key, field := range value {
+			actualField, found := other[key]
+			if !found || !sameValueShape(field, actualField) {
+				return false
+			}
+		}
+		return true
+	case []interface{}:
+		other, ok := actual.([]interface{})
+		if !ok || (len(value) > 0 && len(other) == 0) {
+			return false
+		}
+		if len(value) > 0 && !sameValueShape(value[0], other[0]) {
+			return false
+		}
+		return true
+	case string:
+		_, ok := actual.(string)
+		return ok
+	case float64:
+		_, ok := actual.(float64)
+		return ok
+	case bool:
+		_, ok := actual.(bool)
+		return ok
+	default:
+		return actual == nil
+	}
 }
 
 // responseType classifies a response as success, error, or unknown.

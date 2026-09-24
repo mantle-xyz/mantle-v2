@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"math/big"
@@ -127,7 +128,11 @@ func runTests() error {
 
 	// Load known differences from the selected testcase directory.
 	knownDiffsPath := filepath.Join(testcasesDir, "known_diffs.json")
-	if err := loadKnownDiffsFS(reporter, testcaseFS(testcasesDir)); err == nil {
+	loaded, err := loadSelectedKnownDiffs(reporter, testcasesDir)
+	if err != nil {
+		return err
+	}
+	if loaded {
 		fmt.Printf("已加载已知差异配置: %s\n", knownDiffsPath)
 	}
 
@@ -143,7 +148,7 @@ func runTests() error {
 		var diffResult *diff.CompareResult
 		var compareErr error
 
-		if compareResult.BaselineResponse.Error == nil && compareResult.TargetResponse.Error == nil {
+		if rpc.SuccessfulResponse(compareResult.BaselineResponse) && rpc.SuccessfulResponse(compareResult.TargetResponse) {
 			diffResult, compareErr = diff.Compare(
 				compareResult.BaselineResponse.RawBody,
 				compareResult.TargetResponse.RawBody,
@@ -178,8 +183,8 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 
 	reporter := report.NewReporter(baselineMeta, targetMeta, verbose)
 
-	if err := loadKnownDiffsFS(reporter, testcaseFS(testcasesDir)); err != nil {
-		fmt.Printf("警告: 加载已知差异配置失败: %v\n", err)
+	if _, err := loadSelectedKnownDiffs(reporter, testcasesDir); err != nil {
+		return err
 	}
 
 	tester, err := tx.NewTester(clients, txPrivateKey, reporter)
@@ -294,7 +299,7 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 
 	var fhDiffResult *diff.CompareResult
 	var fhCompareErr error
-	if fhBaselineResp.Response.Error == nil && fhTargetResp.Response.Error == nil {
+	if rpc.SuccessfulResponse(fhBaselineResp) && rpc.SuccessfulResponse(fhTargetResp) {
 		fhDiffResult, fhCompareErr = diff.Compare(
 			fhBaselineResp.RawBody,
 			fhTargetResp.RawBody,
@@ -310,6 +315,7 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 	reporter.AddResult(fhTC, fhCompareResult, fhDiffResult, fhCompareErr)
 
 	printTxTestSummary(results)
+	failedTransactions := recordTransactionResults(reporter, results)
 
 	reporter.PrintSummary()
 
@@ -322,11 +328,23 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 	}
 
 	// Return a failing exit status when a transaction scenario failed.
-	if reporter.HasFailures() {
+	if failedTransactions > 0 || reporter.HasFailures() {
 		os.Exit(1)
 	}
 
 	return nil
+}
+
+func recordTransactionResults(reporter *report.Reporter, results []*tx.TxTestResult) int {
+	failed := 0
+	for _, result := range results {
+		passed := result.Passed && result.Error == ""
+		if !passed {
+			failed++
+		}
+		reporter.AddScenarioResult(result.TestName, result.TxType, passed, result.Error)
+	}
+	return failed
 }
 
 // testEIP7702Transfer checks standard and preconfirmed EIP-7702 transfers.
@@ -723,6 +741,17 @@ func loadKnownDiffsFS(reporter *report.Reporter, filesystem fs.FS) error {
 	}
 	defer file.Close()
 	return reporter.LoadKnownDiffs(file)
+}
+
+func loadSelectedKnownDiffs(reporter *report.Reporter, dir string) (bool, error) {
+	err := loadKnownDiffsFS(reporter, testcaseFS(dir))
+	if errors.Is(err, fs.ErrNotExist) && dir != "" {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("load known differences: %w", err)
+	}
+	return true, nil
 }
 
 // findTestFiles returns JSON cases from a directory, excluding configuration and named files.

@@ -129,7 +129,7 @@ func (t *Tester) GetBalanceAndCompare(ctx context.Context, address common.Addres
 
 		var diffResult *diff.CompareResult
 		var compareErr error
-		if baselineResp.Response.Error == nil && targetResp.Response.Error == nil {
+		if rpc.SuccessfulResponse(baselineResp) && rpc.SuccessfulResponse(targetResp) {
 			baselineRaw := normalizeRawResponse(baselineResp.RawBody, false)
 			targetRaw := normalizeRawResponse(targetResp.RawBody, false)
 			diffResult, compareErr = diff.Compare(
@@ -459,7 +459,7 @@ func (t *Tester) CompareReceipts(ctx context.Context, testName string, baselineT
 	var diffResult *diff.CompareResult
 	var compareErr error
 
-	if baselineResp.Response.Error == nil && targetResp.Response.Error == nil {
+	if rpc.SuccessfulResponse(baselineResp) && rpc.SuccessfulResponse(targetResp) {
 		baselineRaw := normalizeRawResponse(baselineResp.RawBody, true)
 		targetRaw := normalizeRawResponse(targetResp.RawBody, true)
 
@@ -532,6 +532,12 @@ func (t *Tester) CompareReceipts(ctx context.Context, testName string, baselineT
 		Params: []interface{}{baselineTxHash.Hex(), targetTxHash.Hex()}, // retain both transaction hashes
 	}
 	t.reporter.AddResult(tc, compareResult, diffResult, compareErr)
+	if baselineResp.Error != nil {
+		return false, baselineResp.Error
+	}
+	if targetResp.Error != nil {
+		return false, targetResp.Error
+	}
 
 	if compareErr != nil {
 		return false, compareErr
@@ -599,7 +605,7 @@ func (t *Tester) WaitForReceiptAndCompare(ctx context.Context, txHash common.Has
 		// Record the comparison once the reference receipt is available.
 		if t.reporter != nil {
 			// Allow the target a short period to catch up with the reference.
-			if string(targetResp.Response.Result) == "null" {
+			if rpc.SuccessfulResponse(targetResp) && string(targetResp.Response.Result) == "null" {
 				if time.Until(deadline) > 2*time.Second {
 					time.Sleep(200 * time.Millisecond)
 					continue
@@ -614,7 +620,7 @@ func (t *Tester) WaitForReceiptAndCompare(ctx context.Context, txHash common.Has
 
 			var diffResult *diff.CompareResult
 			var compareErr error
-			if targetResp.Response != nil && targetResp.Response.Error == nil && string(targetResp.Response.Result) != "null" {
+			if rpc.SuccessfulResponse(targetResp) && string(targetResp.Response.Result) != "null" {
 				diffResult, compareErr = diff.Compare(
 					baselineResp.RawBody,
 					targetResp.RawBody,
