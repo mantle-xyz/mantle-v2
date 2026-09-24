@@ -1,0 +1,227 @@
+[
+  {
+    "name": "debug_getRawHeader_latest",
+    "method": "debug_getRawHeader",
+    "params": ["latest"],
+    "description": "获取最新区块的原始区块头"
+  },
+  {
+    "name": "debug_getRawHeader_0x1",
+    "method": "debug_getRawHeader",
+    "params": ["0x1"],
+    "description": "获取区块 1 的原始区块头"
+  },
+  {
+    "name": "debug_getRawBlock_latest",
+    "method": "debug_getRawBlock",
+    "params": ["latest"],
+    "description": "获取最新区块的原始区块数据"
+  },
+  {
+    "name": "debug_getRawBlock_0x1",
+    "method": "debug_getRawBlock",
+    "params": ["0x1"],
+    "description": "获取区块 1 的原始区块数据"
+  },
+  {
+    "name": "debug_getRawReceipts_latest",
+    "method": "debug_getRawReceipts",
+    "params": ["latest"],
+    "description": "获取最新区块的原始收据数据"
+  },
+  {
+    "name": "debug_getRawReceipts_0x1",
+    "method": "debug_getRawReceipts",
+    "params": ["0x1"],
+    "description": "获取区块 1 的原始收据数据"
+  },
+  {
+    "name": "debug_getBadBlocks",
+    "method": "debug_getBadBlocks",
+    "params": [],
+    "description": "获取坏块列表"
+  },
+  {
+    "name": "debug_traceBlockByNumber_0x1",
+    "method": "debug_traceBlockByNumber",
+    "params": ["0x1", {}],
+    "description": "追踪区块 1 的执行"
+  },
+  {
+    "name": "debug_traceBlockByNumber_latest",
+    "method": "debug_traceBlockByNumber",
+    "params": ["latest", {}],
+    "description": "追踪最新区块的执行"
+  },
+  {
+    "name": "debug_traceBlockByNumber_callTracer",
+    "method": "debug_traceBlockByNumber",
+    "params": ["0x1", {"tracer": "callTracer"}],
+    "description": "使用 callTracer 追踪区块 1"
+  },
+  {
+    "name": "debug_dbAncient",
+    "method": "debug_dbAncient",
+    "params": [
+      "headers",
+      "0x0"
+    ],
+    "description": "获取 ancient 数据库信息（需要 kind 和 number 参数）"
+  },
+  {
+    "name": "debug_dbAncients",
+    "method": "debug_dbAncients",
+    "params": [],
+    "description": "获取所有 ancient 数据库信息"
+  },
+  {
+    "name": "debug_dbGet_valid",
+    "method": "debug_dbGet",
+    "params": [
+      "0x0000000000000000000000000000000000000000000000000000000000000000"
+    ],
+    "description": "从数据库获取数据（有效键）"
+  },
+  {
+    "name": "debug_dbGet_invalid",
+    "method": "debug_dbGet",
+    "params": [
+      "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    ],
+    "description": "从数据库获取数据（无效键，可能返回错误）"
+  },
+  {
+    "name": "debug_dumpBlock_latest",
+    "method": "debug_dumpBlock",
+    "params": [
+      "latest"
+    ],
+    "description": "转储最新区块的状态"
+  },
+  {
+    "name": "debug_dumpBlock_0x1",
+    "method": "debug_dumpBlock",
+    "params": [
+      "0x1"
+    ],
+    "description": "转储区块 1 的状态"
+  },
+  {
+    "name": "debug_executionWitness_latest",
+    "method": "debug_executionWitness",
+    "params": [
+      "latest"
+    ],
+    "description": "获取最新区块的执行见证"
+  },
+  {
+    "name": "debug_executionWitness_0x1",
+    "method": "debug_executionWitness",
+    "params": [
+      "0x1"
+    ],
+    "description": "获取区块 1 的执行见证"
+  },
+  {
+    "name": "debug_getAccessibleState_latest",
+    "method": "debug_getAccessibleState",
+    "params": [
+      "0x0",
+      "latest"
+    ],
+    "description": "获取最新区块的可访问状态（需要 from 和 to 参数）"
+  },
+  {
+    "name": "debug_getAccessibleState_0x1",
+    "method": "debug_getAccessibleState",
+    "params": [
+      "0x0",
+      "0x1"
+    ],
+    "description": "获取区块 1 的可访问状态（需要 from 和 to 参数）"
+  },
+  {
+    "name": "debug_getModifiedAccountsByHash_latest",
+    "method": "debug_getModifiedAccountsByHash",
+    "params": [
+      "0x0",
+      "{{latest_block_hash}}"
+    ],
+    "description": "通过区块哈希获取修改的账户列表（需要 start 和 end 区块哈希，start 必须小于 end）"
+  },
+  {
+    "name": "debug_getModifiedAccountsByHash_invalid",
+    "method": "debug_getModifiedAccountsByHash",
+    "params": [
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "0x0000000000000000000000000000000000000000000000000000000000000000"
+    ],
+    "description": "通过无效区块哈希获取修改的账户（可能返回错误，需要 start 和 end 参数）"
+  },
+  {
+    "name": "debug_getModifiedAccountsByNumber_0x1",
+    "method": "debug_getModifiedAccountsByNumber",
+    "params": [
+      "0x0",
+      "0x1"
+    ],
+    "description": "通过区块号获取修改的账户列表（需要 start 和 end 区块号）"
+  },
+  {
+    "name": "debug_getModifiedAccountsByNumber_latest",
+    "method": "debug_getModifiedAccountsByNumber",
+    "params": [
+      "0x0",
+      "latest"
+    ],
+    "description": "通过最新区块号获取修改的账户列表（需要 start 和 end 区块号）"
+  },
+  {
+    "name": "debug_preimage_valid",
+    "method": "debug_preimage",
+    "params": [
+      "0x0000000000000000000000000000000000000000000000000000000000000000"
+    ],
+    "description": "获取哈希的原像（如果存在）"
+  },
+  {
+    "name": "debug_preimage_invalid",
+    "method": "debug_preimage",
+    "params": [
+      "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    ],
+    "description": "获取不存在的哈希原像（可能返回 null）"
+  },
+  {
+    "name": "debug_setTrieFlushInterval",
+    "method": "debug_setTrieFlushInterval",
+    "params": [
+      "1s"
+    ],
+    "description": "设置 Trie 刷新间隔（geth 期望 duration 字符串格式，如 \"1s\"）"
+  },
+  {
+    "name": "debug_storageRangeAt_latest",
+    "method": "debug_storageRangeAt",
+    "params": [
+      "{{latest_block_hash}}",
+      0,
+      "0x0000000000000000000000000000000000000000",
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+      1
+    ],
+    "description": "获取最新区块的存储范围（需要 5 个参数：blockHash, txIndex, address, startKey, maxResult）。reth 要求第一个参数必须是区块哈希"
+  },
+  {
+    "name": "debug_storageRangeAt_0x1",
+    "method": "debug_storageRangeAt",
+    "params": [
+      "{{latest_block_hash}}",
+      0,
+      "0x0000000000000000000000000000000000000000",
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+      1
+    ],
+    "description": "获取区块的存储范围（需要 5 个参数：blockHash, txIndex, address, startKey, maxResult）。reth 要求第一个参数必须是区块哈希，使用 latest_block_hash 模板变量"
+  }
+]

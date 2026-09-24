@@ -1,0 +1,99 @@
+[
+  {
+    "name": "eth_call_simple",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      },
+      "latest"
+    ],
+    "description": "简单的 eth_call 到零地址"
+  },
+  {
+    "name": "eth_call_latest_template",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      },
+      "{{latest_block_number}}"
+    ],
+    "description": "简单的 eth_call（使用模板变量 latest_block_number）"
+  },
+  {
+    "name": "eth_call_with_value",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000001",
+        "value": "0x0",
+        "data": "0x"
+      },
+      "latest"
+    ],
+    "description": "带 value 的 eth_call"
+  },
+  {
+    "name": "eth_call_with_gas",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000001",
+        "gas": "0x7530",
+        "data": "0x"
+      },
+      "latest"
+    ],
+    "description": "带 gas 限制的 eth_call（30000 足够执行）"
+  },
+  {
+    "name": "eth_call_block_0x1",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      },
+      "0x1"
+    ],
+    "description": "在区块 1 执行 eth_call"
+  },
+  {
+    "name": "eth_estimateGas_simple",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      }
+    ],
+    "description": "简单的 gas 估算"
+  },
+  {
+    "name": "eth_estimateGas_transfer",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000001",
+        "to": "0x0000000000000000000000000000000000000002",
+        "value": "0x1"
+      }
+    ],
+    "description": "ETH 转账 gas 估算"
+  },
+  {
+    "name": "eth_createAccessList_simple",
+    "method": "eth_createAccessList",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      },
+      "latest"
+    ],
+    "description": "创建访问列表"
+  }
+]

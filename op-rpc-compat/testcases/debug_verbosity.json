@@ -1,0 +1,80 @@
+[
+  {
+    "name": "debug_verbosity_min_0",
+    "method": "debug_verbosity",
+    "params": [0],
+    "description": "边界(最小): level 0 = OFF。geth/reth 均 result:null。"
+  },
+  {
+    "name": "debug_verbosity_max_5",
+    "method": "debug_verbosity",
+    "params": [5],
+    "description": "边界(最大标准): level 5 = TRACE。geth/reth 均 result:null。"
+  },
+  {
+    "name": "debug_verbosity_above_max_10",
+    "method": "debug_verbosity",
+    "params": [10],
+    "description": "边界(超出范围): level 10。两端都接受(geth 不上限报错、reth 5+ 归 TRACE)→ 均 result:null。"
+  },
+  {
+    "name": "debug_verbosity_wrong_type",
+    "method": "debug_verbosity",
+    "params": ["3"],
+    "description": "反向: 参数类型错误(字符串而非整数)。两端均 -32602 Invalid params(措辞不同→登记 known_diffs)。"
+  },
+  {
+    "name": "debug_verbosity_missing_param",
+    "method": "debug_verbosity",
+    "params": [],
+    "description": "反向: 缺少必填参数。两端均 -32602(措辞不同→known_diffs)。"
+  },
+  {
+    "name": "debug_verbosity_negative",
+    "method": "debug_verbosity",
+    "params": [-1],
+    "description": "反向边界: 负数 level。geth 接受返回 null，reth 因 usize 拒绝返回 -32602 → 真实语义差异(known_diffs)。"
+  },
+  {
+    "name": "debug_verbosity_extra_params",
+    "method": "debug_verbosity",
+    "params": [3, 4],
+    "description": "反向: 多余参数。geth 报 -32602 too many arguments，reth 忽略多余参数返回 null → 真实语义差异(known_diffs)。"
+  },
+  {
+    "name": "debug_vmodule_empty",
+    "method": "debug_vmodule",
+    "params": [""],
+    "description": "正向: 空 pattern 重置过滤器。geth/reth 均 result:null。空串是两端语法唯一共同接受的输入。"
+  },
+  {
+    "name": "debug_vmodule_module_level",
+    "method": "debug_vmodule",
+    "params": ["eth=3"],
+    "description": "正向: 单模块 pattern(数字级别)。geth(module=N)与 reth(EnvFilter)都接受 → 均 result:null。"
+  },
+  {
+    "name": "debug_vmodule_glob",
+    "method": "debug_vmodule",
+    "params": ["eth/*=5"],
+    "description": "边界: glob + 数字级别。两端都接受 → 均 result:null。"
+  },
+  {
+    "name": "debug_vmodule_wrong_type",
+    "method": "debug_vmodule",
+    "params": [3],
+    "description": "反向: 参数类型错误(整数而非字符串)。两端均 -32602(措辞不同→known_diffs)。"
+  },
+  {
+    "name": "debug_vmodule_geth_incompatible_syntax",
+    "method": "debug_vmodule",
+    "params": ["reth::rpc=debug"],
+    "description": "反向: 级别名(非数字)pattern。reth EnvFilter 接受返回 null，geth 只认 filename=N 报 -32000 → 真实 pattern 语法差异(known_diffs)。"
+  },
+  {
+    "name": "debug_verbosity_restore_info",
+    "method": "debug_verbosity",
+    "params": [3],
+    "description": "正向(默认,且置于末尾把节点日志级别复位到 info): level 3 = INFO。geth/reth 均 result:null。"
+  }
+]

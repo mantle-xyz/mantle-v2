@@ -1,0 +1,92 @@
+[
+  {
+    "name": "eth_getStorageAt_zero_slot",
+    "method": "eth_getStorageAt",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", "0x0", "latest"],
+    "description": "获取存储槽 0 的值"
+  },
+  {
+    "name": "eth_getStorageAt_arbitrary_slot",
+    "method": "eth_getStorageAt",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", "0x1", "latest"],
+    "description": "获取存储槽 1 的值"
+  },
+  {
+    "name": "eth_getStorageAt_large_slot",
+    "method": "eth_getStorageAt",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "latest"],
+    "description": "获取最大存储槽的值"
+  },
+  {
+    "name": "eth_getStorageAt_pending",
+    "method": "eth_getStorageAt",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", "0x0", "pending"],
+    "description": "获取 pending 状态的存储槽"
+  },
+  {
+    "name": "eth_getStorageAt_earliest",
+    "method": "eth_getStorageAt",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", "0x0", "earliest"],
+    "description": "获取 earliest 状态的存储槽"
+  },
+  {
+    "name": "eth_getStorageAt_eoa",
+    "method": "eth_getStorageAt",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "0x0", "latest"],
+    "description": "获取 EOA 账户的存储槽（应返回 0x0）"
+  },
+  {
+    "name": "eth_getStorageAt_zero_address",
+    "method": "eth_getStorageAt",
+    "params": ["0x0000000000000000000000000000000000000000", "0x0", "latest"],
+    "description": "获取零地址的存储槽"
+  },
+  {
+    "name": "eth_getProof_simple",
+    "method": "eth_getProof",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", [], "latest"],
+    "description": "获取 EOA 账户的 Merkle 证明（无存储键）"
+  },
+  {
+    "name": "eth_getProof_with_storage_keys",
+    "method": "eth_getProof",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", ["0x0", "0x1"], "latest"],
+    "description": "获取合约账户的 Merkle 证明（包含存储键）"
+  },
+  {
+    "name": "eth_getProof_pending",
+    "method": "eth_getProof",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", [], "pending"],
+    "description": "获取 pending 状态的 Merkle 证明"
+  },
+  {
+    "name": "eth_getProof_earliest",
+    "method": "eth_getProof",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", [], "earliest"],
+    "description": "获取 earliest 状态的 Merkle 证明"
+  },
+  {
+    "name": "eth_getProof_zero_address",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000000", [], "latest"],
+    "description": "获取零地址的 Merkle 证明"
+  },
+  {
+    "name": "eth_getProof_with_block_number",
+    "method": "eth_getProof",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", [], "0x1"],
+    "description": "获取指定区块号的 Merkle 证明"
+  },
+  {
+    "name": "eth_getProof_multiple_storage_keys",
+    "method": "eth_getProof",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", ["0x0", "0x1", "0x2", "0x3", "0x4"], "latest"],
+    "description": "获取多个存储键的 Merkle 证明"
+  },
+  {
+    "name": "eth_getProof_large_storage_key",
+    "method": "eth_getProof",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", ["0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"], "latest"],
+    "description": "获取大存储键的 Merkle 证明"
+  }
+]

@@ -1,0 +1,182 @@
+[
+  {
+    "name": "eth_getBlockByNumber_genesis",
+    "method": "eth_getBlockByNumber",
+    "params": ["0x0", true],
+    "description": "获取创世区块（含完整交易）- hive test"
+  },
+  {
+    "name": "eth_getBlockByNumber_genesis_hash_only",
+    "method": "eth_getBlockByNumber",
+    "params": ["0x0", false],
+    "description": "获取创世区块（仅交易哈希）- hive test"
+  },
+  {
+    "name": "eth_getBlockByNumber_null_response",
+    "method": "eth_getBlockByNumber",
+    "params": ["0xffffffffffffff", false],
+    "description": "请求不存在的区块应返回 null - hive test"
+  },
+  {
+    "name": "eth_getBlockByHash_genesis",
+    "method": "eth_getBlockByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000", true],
+    "description": "使用零哈希获取区块（应返回 null）- hive test"
+  },
+  {
+    "name": "eth_getBalance_genesis_address",
+    "method": "eth_getBalance",
+    "params": ["0x0000000000000000000000000000000000000000", "0x0"],
+    "description": "获取创世区块时零地址的余额 - hive test"
+  },
+  {
+    "name": "eth_getCode_precompile",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000001", "latest"],
+    "description": "获取预编译合约代码 - hive test"
+  },
+  {
+    "name": "eth_getCode_precompile_sha256",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000002", "latest"],
+    "description": "获取 SHA256 预编译合约代码 - hive test"
+  },
+  {
+    "name": "eth_getCode_precompile_ripemd160",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000003", "latest"],
+    "description": "获取 RIPEMD160 预编译合约代码 - hive test"
+  },
+  {
+    "name": "eth_getCode_precompile_identity",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000004", "latest"],
+    "description": "获取 identity 预编译合约代码 - hive test"
+  },
+  {
+    "name": "eth_call_identity_precompile",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000004", "data": "0xdeadbeef"}, "latest"],
+    "description": "调用 identity 预编译合约 - hive test"
+  },
+  {
+    "name": "eth_call_sha256_precompile",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000002", "data": "0x68656c6c6f"}, "latest"],
+    "description": "调用 SHA256 预编译合约 - hive test"
+  },
+  {
+    "name": "eth_call_ripemd160_precompile",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000003", "data": "0x68656c6c6f"}, "latest"],
+    "description": "调用 RIPEMD160 预编译合约 - hive test"
+  },
+  {
+    "name": "eth_getTransactionCount_zero_address",
+    "method": "eth_getTransactionCount",
+    "params": ["0x0000000000000000000000000000000000000000", "latest"],
+    "description": "获取零地址的 nonce - hive test"
+  },
+  {
+    "name": "eth_getStorageAt_precompile",
+    "method": "eth_getStorageAt",
+    "params": ["0x0000000000000000000000000000000000000001", "0x0", "latest"],
+    "description": "获取预编译合约存储 - hive test"
+  },
+  {
+    "name": "eth_estimateGas_identity_precompile",
+    "method": "eth_estimateGas",
+    "params": [{"to": "0x0000000000000000000000000000000000000004", "data": "0xdeadbeef"}],
+    "description": "估算 identity 预编译调用 gas - hive test"
+  },
+  {
+    "name": "eth_estimateGas_sha256_precompile",
+    "method": "eth_estimateGas",
+    "params": [{"to": "0x0000000000000000000000000000000000000002", "data": "0x68656c6c6f"}],
+    "description": "估算 SHA256 预编译调用 gas - hive test"
+  },
+  {
+    "name": "eth_getProof_zero_address",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000000", [], "latest"],
+    "description": "获取零地址的证明 - hive test"
+  },
+  {
+    "name": "eth_getProof_precompile",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000001", [], "latest"],
+    "description": "获取预编译合约的证明 - hive test"
+  },
+  {
+    "name": "eth_feeHistory_genesis",
+    "method": "eth_feeHistory",
+    "params": ["0x1", "0x1", [25, 50, 75]],
+    "description": "从区块 1 获取费用历史 - hive test"
+  },
+  {
+    "name": "eth_feeHistory_full_range",
+    "method": "eth_feeHistory",
+    "params": ["0x10", "latest", [10, 20, 30, 40, 50, 60, 70, 80, 90]],
+    "description": "获取完整的费用历史范围 - hive test"
+  },
+  {
+    "name": "eth_feeHistory_empty_percentiles",
+    "method": "eth_feeHistory",
+    "params": ["0x5", "latest", []],
+    "description": "获取费用历史（无百分位数）- hive test"
+  },
+  {
+    "name": "eth_getLogs_genesis_to_latest",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest"}],
+    "description": "获取从创世到最新的所有日志 - hive test"
+  },
+  {
+    "name": "eth_getLogs_with_blockhash_valid",
+    "method": "eth_getLogs",
+    "params": [{"blockHash": "{{latest_block_hash}}"}],
+    "description": "使用区块哈希获取日志（动态获取有效 hash）- hive test"
+  },
+  {
+    "name": "eth_createAccessList_identity_precompile",
+    "method": "eth_createAccessList",
+    "params": [{"to": "0x0000000000000000000000000000000000000004", "data": "0xdeadbeef"}, "latest"],
+    "description": "为 identity 预编译创建访问列表 - hive test"
+  },
+  {
+    "name": "web3_sha3_empty",
+    "method": "web3_sha3",
+    "params": ["0x"],
+    "description": "空数据的 keccak256 - hive test"
+  },
+  {
+    "name": "web3_sha3_hello",
+    "method": "web3_sha3",
+    "params": ["0x68656c6c6f"],
+    "description": "'hello' 的 keccak256 - hive test"
+  },
+  {
+    "name": "net_version_check",
+    "method": "net_version",
+    "params": [],
+    "description": "检查网络版本 - hive test"
+  },
+  {
+    "name": "eth_chainId_check",
+    "method": "eth_chainId",
+    "params": [],
+    "description": "检查链 ID - hive test"
+  },
+  {
+    "name": "eth_blockNumber_check",
+    "method": "eth_blockNumber",
+    "params": [],
+    "description": "检查区块号 - hive test"
+  },
+  {
+    "name": "eth_blockNumber_check",
+    "method": "eth_blockNumber",
+    "params": [],
+    "description": "检查区块号 - hive test"
+  }
+]

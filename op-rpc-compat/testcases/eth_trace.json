@@ -1,0 +1,44 @@
+[
+  {
+    "name": "trace_block_latest",
+    "method": "trace_block",
+    "params": ["latest"],
+    "description": "追踪最新区块"
+  },
+  {
+    "name": "trace_block_0x1",
+    "method": "trace_block",
+    "params": ["0x1"],
+    "description": "追踪区块 1"
+  },
+  {
+    "name": "trace_block_0x0",
+    "method": "trace_block",
+    "params": ["0x0"],
+    "description": "追踪创世区块"
+  },
+  {
+    "name": "trace_filter_empty",
+    "method": "trace_filter",
+    "params": [{"fromBlock": "0x1", "toBlock": "0x1"}],
+    "description": "过滤追踪（空结果）"
+  },
+  {
+    "name": "trace_call_simple",
+    "method": "trace_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, ["trace"], "latest"],
+    "description": "追踪简单调用"
+  },
+  {
+    "name": "trace_call_vmTrace",
+    "method": "trace_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, ["vmTrace"], "latest"],
+    "description": "追踪调用（含 vmTrace）"
+  },
+  {
+    "name": "trace_call_stateDiff",
+    "method": "trace_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, ["stateDiff"], "latest"],
+    "description": "追踪调用（含 stateDiff）"
+  }
+]

@@ -1,0 +1,56 @@
+[
+  {
+    "name": "eth_blockNumber_no_block_tag",
+    "method": "eth_blockNumber",
+    "params": [],
+    "description": "eth_blockNumber 无区块标签参数，返回当前 latest 区块号；本 RPC 不支持 safe/finalized 等标签"
+  },
+  {
+    "name": "eth_getBlockByNumber_tag_latest",
+    "method": "eth_getBlockByNumber",
+    "params": ["latest", false],
+    "description": "区块标签：latest"
+  },
+  {
+    "name": "eth_getBlockByNumber_tag_safe",
+    "method": "eth_getBlockByNumber",
+    "params": ["safe", false],
+    "description": "区块标签：safe"
+  },
+  {
+    "name": "eth_getBlockByNumber_tag_finalized",
+    "method": "eth_getBlockByNumber",
+    "params": ["finalized", false],
+    "description": "区块标签：finalized"
+  },
+  {
+    "name": "eth_getBlockByNumber_tag_pending",
+    "method": "eth_getBlockByNumber",
+    "params": ["pending", false],
+    "description": "区块标签：pending"
+  },
+  {
+    "name": "eth_getHeaderByNumber_tag_latest",
+    "method": "eth_getHeaderByNumber",
+    "params": ["latest"],
+    "description": "区块标签：latest"
+  },
+  {
+    "name": "eth_getHeaderByNumber_tag_safe",
+    "method": "eth_getHeaderByNumber",
+    "params": ["safe"],
+    "description": "区块标签：safe"
+  },
+  {
+    "name": "eth_getHeaderByNumber_tag_finalized",
+    "method": "eth_getHeaderByNumber",
+    "params": ["finalized"],
+    "description": "区块标签：finalized"
+  },
+  {
+    "name": "eth_getHeaderByNumber_tag_pending",
+    "method": "eth_getHeaderByNumber",
+    "params": ["pending"],
+    "description": "区块标签：pending"
+  }
+]

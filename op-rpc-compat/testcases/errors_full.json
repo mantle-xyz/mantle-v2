@@ -1,0 +1,422 @@
+[
+  {
+    "name": "error_invalid_method",
+    "method": "eth_invalidMethod",
+    "params": [],
+    "description": "错误：调用不存在的方法"
+  },
+  {
+    "name": "error_invalid_method_name",
+    "method": "invalid_method_name",
+    "params": [],
+    "description": "错误：无效的方法名格式"
+  },
+  {
+    "name": "error_empty_method",
+    "method": "",
+    "params": [],
+    "description": "错误：空方法名"
+  },
+
+  {
+    "name": "error_missing_required_param",
+    "method": "eth_getBalance",
+    "params": [],
+    "description": "错误：缺少必需参数"
+  },
+  {
+    "name": "error_insufficient_params",
+    "method": "eth_getBlockByNumber",
+    "params": ["0x1"],
+    "description": "错误：参数数量不足"
+  },
+  {
+    "name": "error_too_many_params",
+    "method": "eth_blockNumber",
+    "params": ["extra_param"],
+    "description": "错误：参数过多"
+  },
+
+  {
+    "name": "error_invalid_block_tag",
+    "method": "eth_getBlockByNumber",
+    "params": ["invalid", false],
+    "description": "错误：无效的区块标签"
+  },
+  {
+    "name": "error_invalid_hex_number",
+    "method": "eth_getBlockByNumber",
+    "params": ["0xGGG", false],
+    "description": "错误：无效的十六进制数"
+  },
+  {
+    "name": "error_negative_block_number",
+    "method": "eth_getBlockByNumber",
+    "params": ["-0x1", false],
+    "description": "错误：负数区块号"
+  },
+  {
+    "name": "error_future_block",
+    "method": "eth_getBlockByNumber",
+    "params": ["0xffffffff", false],
+    "description": "错误：请求未来区块"
+  },
+  {
+    "name": "error_very_large_block",
+    "method": "eth_getBlockByNumber",
+    "params": ["0xffffffffffffffff", false],
+    "description": "错误：超大区块号"
+  },
+
+  {
+    "name": "error_invalid_address_format",
+    "method": "eth_getBalance",
+    "params": ["not_an_address", "latest"],
+    "description": "错误：无效的地址格式"
+  },
+  {
+    "name": "error_invalid_address_length_short",
+    "method": "eth_getBalance",
+    "params": ["0x123", "latest"],
+    "description": "错误：地址长度太短"
+  },
+  {
+    "name": "error_invalid_address_length_long",
+    "method": "eth_getBalance",
+    "params": ["0x0000000000000000000000000000000000000000000", "latest"],
+    "description": "错误：地址长度太长"
+  },
+  {
+    "name": "error_address_without_0x",
+    "method": "eth_getBalance",
+    "params": ["f39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "latest"],
+    "description": "错误：地址缺少 0x 前缀"
+  },
+
+  {
+    "name": "error_invalid_hash_format",
+    "method": "eth_getTransactionByHash",
+    "params": ["not_a_hash"],
+    "description": "错误：无效的哈希格式"
+  },
+  {
+    "name": "error_invalid_hash_length",
+    "method": "eth_getTransactionByHash",
+    "params": ["0x123"],
+    "description": "错误：哈希长度错误"
+  },
+  {
+    "name": "error_nonexistent_tx_hash",
+    "method": "eth_getTransactionByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "错误：不存在的交易哈希"
+  },
+  {
+    "name": "error_nonexistent_block_hash",
+    "method": "eth_getBlockByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000", false],
+    "description": "错误：不存在的区块哈希"
+  },
+
+  {
+    "name": "error_eth_call_invalid_to",
+    "method": "eth_call",
+    "params": [{"to": "invalid"}, "latest"],
+    "description": "错误：eth_call to 地址无效"
+  },
+  {
+    "name": "error_eth_call_invalid_data",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "data": "not_hex"}, "latest"],
+    "description": "错误：eth_call data 不是十六进制"
+  },
+  {
+    "name": "error_eth_call_invalid_value",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "value": "invalid"}, "latest"],
+    "description": "错误：eth_call value 无效"
+  },
+  {
+    "name": "error_eth_call_invalid_gas",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "gas": "invalid"}, "latest"],
+    "description": "错误：eth_call gas 无效"
+  },
+  {
+    "name": "error_eth_call_negative_gas",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "gas": "-0x1"}, "latest"],
+    "description": "错误：eth_call gas 为负数"
+  },
+  {
+    "name": "error_eth_call_oog",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "gas": "0x1", "data": "0x12345678"}, "latest"],
+    "description": "错误：eth_call gas 不足 (OOG)"
+  },
+  {
+    "name": "error_eth_call_revert_empty",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "data": "0xffffffff"}, "latest"],
+    "description": "错误：eth_call 可能 revert"
+  },
+
+  {
+    "name": "error_eth_estimateGas_invalid_to",
+    "method": "eth_estimateGas",
+    "params": [{"to": "invalid"}],
+    "description": "错误：eth_estimateGas to 地址无效"
+  },
+  {
+    "name": "error_eth_estimateGas_invalid_data",
+    "method": "eth_estimateGas",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "data": "not_hex"}],
+    "description": "错误：eth_estimateGas data 不是十六进制"
+  },
+  {
+    "name": "error_eth_estimateGas_invalid_value",
+    "method": "eth_estimateGas",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "value": "invalid"}],
+    "description": "错误：eth_estimateGas value 无效"
+  },
+  {
+    "name": "error_eth_estimateGas_insufficient_funds",
+    "method": "eth_estimateGas",
+    "params": [{"from": "0x0000000000000000000000000000000000000001", "to": "0x0000000000000000000000000000000000000002", "value": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}],
+    "description": "错误：eth_estimateGas 余额不足"
+  },
+  {
+    "name": "error_eth_estimateGas_always_revert",
+    "method": "eth_estimateGas",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "data": "0xffffffff"}],
+    "description": "错误：eth_estimateGas 调用会 revert"
+  },
+
+  {
+    "name": "error_eth_getLogs_invalid_fromBlock",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "invalid", "toBlock": "latest"}],
+    "description": "错误：eth_getLogs fromBlock 无效"
+  },
+  {
+    "name": "error_eth_getLogs_invalid_toBlock",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "invalid"}],
+    "description": "错误：eth_getLogs toBlock 无效"
+  },
+  {
+    "name": "error_eth_getLogs_invalid_address",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "address": "invalid"}],
+    "description": "错误：eth_getLogs address 无效"
+  },
+  {
+    "name": "error_eth_getLogs_invalid_topic",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["invalid"]}],
+    "description": "错误：eth_getLogs topic 无效"
+  },
+  {
+    "name": "error_eth_getLogs_invalid_blockhash",
+    "method": "eth_getLogs",
+    "params": [{"blockHash": "invalid"}],
+    "description": "错误：eth_getLogs blockHash 无效"
+  },
+  {
+    "name": "error_eth_getLogs_blockhash_with_range",
+    "method": "eth_getLogs",
+    "params": [{"blockHash": "0x0000000000000000000000000000000000000000000000000000000000000000", "fromBlock": "0x0", "toBlock": "latest"}],
+    "description": "错误：eth_getLogs blockHash 与区块范围同时指定"
+  },
+  {
+    "name": "error_eth_getLogs_range_too_large",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "0xffffff"}],
+    "description": "错误：eth_getLogs 区块范围过大"
+  },
+  {
+    "name": "error_eth_getLogs_from_greater_than_to",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x10", "toBlock": "0x1"}],
+    "description": "错误：eth_getLogs fromBlock > toBlock"
+  },
+  {
+    "name": "error_eth_getLogs_from_greater_than_head",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0xffffffff", "toBlock": "latest"}],
+    "description": "错误：eth_getLogs fromBlock 大于链头区块号"
+  },
+
+  {
+    "name": "error_eth_getStorageAt_invalid_position",
+    "method": "eth_getStorageAt",
+    "params": ["0x0000000000000000000000000000000000000000", "invalid", "latest"],
+    "description": "错误：eth_getStorageAt position 无效"
+  },
+  {
+    "name": "error_eth_getStorageAt_invalid_address",
+    "method": "eth_getStorageAt",
+    "params": ["invalid", "0x0", "latest"],
+    "description": "错误：eth_getStorageAt address 无效"
+  },
+
+  {
+    "name": "error_eth_getCode_invalid_address",
+    "method": "eth_getCode",
+    "params": ["invalid", "latest"],
+    "description": "错误：eth_getCode address 无效"
+  },
+  {
+    "name": "error_eth_getCode_invalid_block",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000000", "invalid"],
+    "description": "错误：eth_getCode block 无效"
+  },
+
+  {
+    "name": "error_eth_getTransactionCount_invalid_address",
+    "method": "eth_getTransactionCount",
+    "params": ["invalid", "latest"],
+    "description": "错误：eth_getTransactionCount address 无效"
+  },
+  {
+    "name": "error_eth_getTransactionCount_invalid_block",
+    "method": "eth_getTransactionCount",
+    "params": ["0x0000000000000000000000000000000000000000", "invalid"],
+    "description": "错误：eth_getTransactionCount block 无效"
+  },
+
+  {
+    "name": "error_eth_getBlockTransactionCountByNumber_invalid",
+    "method": "eth_getBlockTransactionCountByNumber",
+    "params": ["invalid"],
+    "description": "错误：eth_getBlockTransactionCountByNumber 无效参数"
+  },
+  {
+    "name": "error_eth_getBlockTransactionCountByHash_invalid",
+    "method": "eth_getBlockTransactionCountByHash",
+    "params": ["invalid"],
+    "description": "错误：eth_getBlockTransactionCountByHash 无效参数"
+  },
+
+  {
+    "name": "error_eth_getTransactionByBlockNumberAndIndex_invalid_block",
+    "method": "eth_getTransactionByBlockNumberAndIndex",
+    "params": ["invalid", "0x0"],
+    "description": "错误：eth_getTransactionByBlockNumberAndIndex 无效区块"
+  },
+  {
+    "name": "error_eth_getTransactionByBlockNumberAndIndex_invalid_index",
+    "method": "eth_getTransactionByBlockNumberAndIndex",
+    "params": ["latest", "invalid"],
+    "description": "错误：eth_getTransactionByBlockNumberAndIndex 无效索引"
+  },
+  {
+    "name": "error_eth_getTransactionByBlockNumberAndIndex_out_of_range",
+    "method": "eth_getTransactionByBlockNumberAndIndex",
+    "params": ["latest", "0xffffff"],
+    "description": "错误：eth_getTransactionByBlockNumberAndIndex 索引越界"
+  },
+
+  {
+    "name": "error_eth_feeHistory_invalid_block_count",
+    "method": "eth_feeHistory",
+    "params": ["invalid", "latest", [25, 75]],
+    "description": "错误：eth_feeHistory 无效区块数量"
+  },
+  {
+    "name": "error_eth_feeHistory_zero_block_count",
+    "method": "eth_feeHistory",
+    "params": ["0x0", "latest", [25, 75]],
+    "description": "错误：eth_feeHistory 区块数量为 0"
+  },
+  {
+    "name": "error_eth_feeHistory_invalid_percentiles",
+    "method": "eth_feeHistory",
+    "params": ["0x4", "latest", [101]],
+    "description": "错误：eth_feeHistory percentile 超过 100"
+  },
+  {
+    "name": "error_eth_feeHistory_negative_percentiles",
+    "method": "eth_feeHistory",
+    "params": ["0x4", "latest", [-1]],
+    "description": "错误：eth_feeHistory percentile 为负数"
+  },
+
+  {
+    "name": "error_eth_getProof_invalid_address",
+    "method": "eth_getProof",
+    "params": ["invalid", [], "latest"],
+    "description": "错误：eth_getProof address 无效"
+  },
+  {
+    "name": "error_eth_getProof_invalid_storage_key",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000000", ["invalid"], "latest"],
+    "description": "错误：eth_getProof storageKey 无效"
+  },
+  {
+    "name": "error_eth_getProof_invalid_block",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000000", [], "invalid"],
+    "description": "错误：eth_getProof block 无效"
+  },
+
+  {
+    "name": "error_eth_createAccessList_invalid_to",
+    "method": "eth_createAccessList",
+    "params": [{"to": "invalid"}, "latest"],
+    "description": "错误：eth_createAccessList to 无效"
+  },
+  {
+    "name": "error_eth_createAccessList_invalid_block",
+    "method": "eth_createAccessList",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, "invalid"],
+    "description": "错误：eth_createAccessList block 无效"
+  },
+
+  {
+    "name": "error_web3_sha3_invalid_hex",
+    "method": "web3_sha3",
+    "params": ["not_hex"],
+    "description": "错误：web3_sha3 参数不是十六进制"
+  },
+
+  {
+    "name": "error_eth_getFilterChanges_invalid_filter",
+    "method": "eth_getFilterChanges",
+    "params": ["0xffffffffffffffff"],
+    "description": "错误：eth_getFilterChanges 无效的过滤器 ID"
+  },
+  {
+    "name": "error_eth_uninstallFilter_invalid_filter",
+    "method": "eth_uninstallFilter",
+    "params": ["0xffffffffffffffff"],
+    "description": "错误：eth_uninstallFilter 无效的过滤器 ID"
+  },
+
+  {
+    "name": "error_type_string_instead_of_number",
+    "method": "eth_getBlockByNumber",
+    "params": ["hello", false],
+    "description": "错误：类型错误 - 字符串代替数字"
+  },
+  {
+    "name": "error_type_number_instead_of_bool",
+    "method": "eth_getBlockByNumber",
+    "params": ["0x1", 1],
+    "description": "错误：类型错误 - 数字代替布尔"
+  },
+  {
+    "name": "error_type_array_instead_of_object",
+    "method": "eth_call",
+    "params": [["invalid"], "latest"],
+    "description": "错误：类型错误 - 数组代替对象"
+  },
+  {
+    "name": "error_type_null_required_param",
+    "method": "eth_getBalance",
+    "params": [null, "latest"],
+    "description": "错误：类型错误 - null 作为必需参数"
+  }
+]

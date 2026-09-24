@@ -1,0 +1,670 @@
+[
+  {
+    "name": "eth_estimateTotalFee_minimal",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      }
+    ],
+    "description": "正常：最小参数，仅 to"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_from",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000"
+      }
+    ],
+    "description": "正常：指定 from"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_value_zero",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "value": "0x0"
+      }
+    ],
+    "description": "正常：value 为 0"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_value_nonzero",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "value": "0xde0b6b3a7640000"
+      }
+    ],
+    "description": "正常：value 1 ETH"
+  },
+  {
+    "name": "eth_estimateTotalFee_simple_transfer",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "value": "0x1"
+      }
+    ],
+    "description": "正常：简单转账 1 wei"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_data_empty",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      }
+    ],
+    "description": "正常：data 空"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_data_short",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x12345678"
+      }
+    ],
+    "description": "正常：data 4 字节"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_data_long",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+      }
+    ],
+    "description": "正常：长 data（约 512 字节），覆盖 L1 费"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_gas",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x5208"
+      }
+    ],
+    "description": "正常：指定 gas"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_gasPrice",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gasPrice": "0x2540be400"
+      }
+    ],
+    "description": "正常：Legacy gasPrice 10 gwei"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_maxFeePerGas",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "maxFeePerGas": "0x2540be400"
+      }
+    ],
+    "description": "正常：EIP-1559 仅 maxFeePerGas"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_maxFeePerGas_latest",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "maxFeePerGas": "0x2540be400",
+        "maxPriorityFeePerGas": "0x3b9aca00",
+        "data": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+      },
+      "latest"
+    ],
+    "description": "正常：EIP-1559 + 长 data + block latest"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_maxFeePerGas_safe_no_data",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "maxFeePerGas": "0x2540be400",
+        "maxPriorityFeePerGas": "0x3b9aca00"
+      },
+      "safe"
+    ],
+    "description": "正常：EIP-1559 + block safe + 无 data"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_maxFeePerGas_safe",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "maxFeePerGas": "0x2540be400",
+        "maxPriorityFeePerGas": "0x3b9aca00",
+        "data": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+      },
+      "safe"
+    ],
+    "description": "正常：EIP-1559 + block safe"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_maxFeePerGas_finalized",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "maxFeePerGas": "0x2540be400",
+        "maxPriorityFeePerGas": "0x3b9aca00",
+        "data": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+      },
+      "finalized"
+    ],
+    "description": "正常：EIP-1559 + block finalized"
+  },
+  {
+    "name": "eth_estimateTotalFee_no_block",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      }
+    ],
+    "description": "正常：不传 block（默认 latest）"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_block_pending",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "pending"
+    ],
+    "description": "区块：pending（reth 非 sequencer 可能 Block not found）"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_block_earliest",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "earliest"
+    ],
+    "description": "区块：earliest（可能无 L1 信息，L1 费为 0）"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_block_safe",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "safe"
+    ],
+    "description": "区块：safe"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_block_finalized",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "finalized"
+    ],
+    "description": "区块：finalized"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_block_number",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "0x1"
+    ],
+    "description": "区块：指定区块号 0x1"
+  },
+  {
+    "name": "eth_estimateTotalFee_with_nonce",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "nonce": "0x0"
+      }
+    ],
+    "description": "正常：指定 nonce"
+  },
+  {
+    "name": "eth_estimateTotalFee_boundary_value_one_wei",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "value": "0x1"
+      }
+    ],
+    "description": "边界：value 1 wei"
+  },
+  {
+    "name": "eth_estimateTotalFee_complex_legacy_full",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x5208",
+        "gasPrice": "0x3b9aca00",
+        "value": "0x0",
+        "data": "0x"
+      }
+    ],
+    "description": "复杂：Legacy 全参数"
+  },
+  {
+    "name": "eth_estimateTotalFee_complex_eip1559_full",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x5208",
+        "maxFeePerGas": "0x77359400",
+        "maxPriorityFeePerGas": "0x3b9aca00",
+        "value": "0x0",
+        "data": "0x"
+      }
+    ],
+    "description": "复杂：EIP-1559 全参数"
+  },
+  {
+    "name": "eth_estimateTotalFee_contract_creation_minimal",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": null,
+        "data": "0x600a600c600039600a6000f3602a60005260206000f3"
+      }
+    ],
+    "description": "正常：合约部署（to 为 null，最小部署字节码）"
+  },
+  {
+    "name": "eth_estimateTotalFee_contract_creation_with_gasPrice",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": null,
+        "gasPrice": "0x2540be400",
+        "data": "0x600a600c600039600a6000f3602a60005260206000f3"
+      }
+    ],
+    "description": "正常：合约部署 + Legacy gasPrice"
+  },
+  {
+    "name": "eth_estimateTotalFee_contract_creation_with_maxFeePerGas",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": null,
+        "maxFeePerGas": "0x2540be400",
+        "data": "0x600a600c600039600a6000f3602a60005260206000f3"
+      }
+    ],
+    "description": "正常：合约部署 + EIP-1559 仅 maxFeePerGas"
+  },
+  {
+    "name": "eth_estimateTotalFee_contract_creation_with_maxFeePerGas_and_priority",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": null,
+        "maxFeePerGas": "0x2540be400",
+        "maxPriorityFeePerGas": "0x3b9aca00",
+        "data": "0x600a600c600039600a6000f3602a60005260206000f3"
+      }
+    ],
+    "description": "正常：合约部署 + EIP-1559 maxFeePerGas/maxPriorityFeePerGas"
+  },
+  {
+    "name": "eth_estimateTotalFee_contract_creation_with_gas_and_nonce",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": null,
+        "gas": "0x186a0",
+        "nonce": "0x0",
+        "maxFeePerGas": "0x2540be400",
+        "maxPriorityFeePerGas": "0x3b9aca00",
+        "data": "0x600a600c600039600a6000f3602a60005260206000f3"
+      }
+    ],
+    "description": "正常：合约部署 + 显式 gas/nonce + EIP-1559"
+  },
+  {
+    "name": "error_eth_estimateTotalFee_invalid_to",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0xinvalid"
+      }
+    ],
+    "description": "异常：无效 to 地址"
+  },
+  {
+    "name": "error_eth_estimateTotalFee_invalid_data",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0xzz"
+      }
+    ],
+    "description": "异常：无效 data 格式"
+  },
+  {
+    "name": "error_eth_estimateTotalFee_invalid_value",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "value": "not_hex"
+      }
+    ],
+    "description": "异常：无效 value 格式"
+  },
+  {
+    "name": "error_eth_estimateTotalFee_invalid_block",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "invalid_block_tag"
+    ],
+    "description": "异常：无效 block 标签"
+  },
+  {
+    "name": "error_eth_estimateTotalFee_insufficient_balance",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000001",
+        "to": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "value": "0xde0b6b3a7640000"
+      }
+    ],
+    "description": "异常：from 余额不足（大 value）"
+  },
+  {
+    "name": "eth_estimateTotalFee_legacy_gasprice_large",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gasPrice": "0x4131655a0"
+      }
+    ],
+    "description": "回归：Legacy gasPrice=0x4131655a0（与 bug report 完全一致，baseFee 链上必须走 EIP-1559 编码路径）"
+  },
+  {
+    "name": "eth_estimateTotalFee_legacy_gasprice_with_nonce",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gasPrice": "0x4131655a0",
+        "nonce": "0x56"
+      }
+    ],
+    "description": "回归：Legacy gasPrice + nonce=0x56（精确还原 bug report 现场，含 nonce 字段）"
+  },
+  {
+    "name": "eth_estimateTotalFee_legacy_gasprice_with_data",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gasPrice": "0x3b9aca00",
+        "data": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+      }
+    ],
+    "description": "回归：Legacy gasPrice + 长 data（L1 费差异最大场景，最易暴露编码类型不一致）"
+  },
+  {
+    "name": "eth_estimateTotalFee_legacy_gasprice_contract_creation",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": null,
+        "gasPrice": "0x3b9aca00",
+        "data": "0x6080604052348015600e575f80fd5b5060405160c538038060c5833981016040819052602b91604e565b5f55605d565b5f60208284031215605e575f80fd5b5051919050565b6060806069835f395ff3fe6080604052348015600e575f80fd5b50600436106026575f3560e01c80632096525514602a575b5f80fd5b60306044565b604051603b91906059565b60405180910390f35b5f5481565b5f8190565b6053816071565b82525050565b5f60208201905060666001835b60488357909260208660200392830192019091919060600390600185831c02601891908790921c0260205b91a0925050509056fea2646970667358221220c9bcc548c90f3e8d3a8cce82b14b43cb8f64df4e2ab73cc1862e5fc8de0b4f1e64736f6c634300081c0033"
+      }
+    ],
+    "description": "回归：合约部署 + Legacy gasPrice（to=null，baseFee 链上需清除 gas_price 走 EIP-1559）"
+  },
+  {
+    "name": "eth_estimateTotalFee_legacy_gasprice_zero",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gasPrice": "0x0"
+      }
+    ],
+    "description": "边界：gasPrice=0（零值 gas_price 与 geth 行为对齐，应 fallback 到 baseFee+tip 计费）"
+  },
+  {
+    "name": "eth_estimateTotalFee_legacy_gasprice_gas_capped",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x5000000000001",
+        "gasPrice": "0x3b9aca00"
+      }
+    ],
+    "description": "边界：gasPrice + gas 超过 GETH_MANTLE_RPC_GAS_CAP（验证 capped_l1_gas_limit 与 geth 对齐）"
+  },
+  {
+    "name": "eth_estimateTotalFee_no_fee_fields",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "value": "0x1",
+        "data": "0x"
+      }
+    ],
+    "description": "正常：无任何 fee 字段（纯 fallback 路径 baseFee+suggestedTip，与 geth 默认行为对齐）"
+  },
+  {
+    "name": "eth_estimateTotalFee_legacy_gasprice_full_fields",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x5208",
+        "gasPrice": "0x4131655a0",
+        "nonce": "0x56",
+        "value": "0x0",
+        "data": "0x6080604052"
+      }
+    ],
+    "description": "回归：Legacy 全字段（gasPrice + gas + nonce + value + data，最完整的 bug 复现场景）"
+  },
+  {
+    "name": "eth_estimateTotalFee_legacy_gasprice_with_data_finalized",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gasPrice": "0x3b9aca00",
+        "data": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+      },
+      "finalized"
+    ],
+    "description": "回归（稳定块）：Legacy gasPrice + 256 字节 data + finalized 块。finalized 不随时间漂移，是 should_use_l1_legacy_path 修复的稳定回归测试"
+  },
+  {
+    "name": "eth_estimateTotalFee_legacy_gasprice_zero_with_data",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gasPrice": "0x0",
+        "data": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+      }
+    ],
+    "description": "边界：gasPrice=0（Option::Some(0)）+ 256 字节 data。验证 is_some() 对零值的处理：gas_price=0 也应走 Legacy 编码路径"
+  },
+  {
+    "name": "eth_estimateTotalFee_gasPrice_with_maxFeePerGas",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gasPrice": "0x3b9aca00",
+        "maxFeePerGas": "0x2540be400",
+        "data": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+      }
+    ],
+    "description": "防回归：gasPrice 与 maxFeePerGas 同时设置。max_fee_per_gas.is_some() 使 should_use_l1_legacy_path 返回 false，应走 EIP-1559 编码路径，与修复前行为一致"
+  },
+  {
+    "name": "eth_estimateTotalFee_lists_baseline",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "value": "0x0",
+        "maxFeePerGas": "0x3b9aca00",
+        "maxPriorityFeePerGas": "0x186a0"
+      },
+      "latest"
+    ],
+    "description": "EIP-1559 request without access or authorization lists"
+  },
+  {
+    "name": "eth_estimateTotalFee_preserves_access_list",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "value": "0x0",
+        "maxFeePerGas": "0x3b9aca00",
+        "maxPriorityFeePerGas": "0x186a0",
+        "accessList": [
+          {
+            "address": "0x0000000000000000000000000000000000000001",
+            "storageKeys": [
+              "0x0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          }
+        ]
+      },
+      "latest"
+    ],
+    "description": "EIP-1559 proxy envelope preserves the access list"
+  },
+  {
+    "name": "eth_estimateTotalFee_preserves_authorization_list",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "value": "0x0",
+        "maxFeePerGas": "0x3b9aca00",
+        "maxPriorityFeePerGas": "0x186a0",
+        "authorizationList": [
+          {
+            "chainId": "0x539",
+            "address": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+            "nonce": "0x0",
+            "yParity": "0x0",
+            "r": "0x34d61486d455c4f7703345e9ee989310774af70e1546e8c64ab3ca08c8575afe",
+            "s": "0x5793b45fbb8162cf1e29e831d05e363b80387493861d01af5cc941e64835f605"
+          }
+        ]
+      },
+      "latest"
+    ],
+    "description": "Authorization list selects an EIP-7702 proxy envelope"
+  },
+  {
+    "name": "eth_estimateTotalFee_preserves_access_and_authorization_lists",
+    "method": "eth_estimateTotalFee",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "value": "0x0",
+        "maxFeePerGas": "0x3b9aca00",
+        "maxPriorityFeePerGas": "0x186a0",
+        "accessList": [
+          {
+            "address": "0x0000000000000000000000000000000000000001",
+            "storageKeys": [
+              "0x0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          }
+        ],
+        "authorizationList": [
+          {
+            "chainId": "0x539",
+            "address": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+            "nonce": "0x0",
+            "yParity": "0x0",
+            "r": "0x34d61486d455c4f7703345e9ee989310774af70e1546e8c64ab3ca08c8575afe",
+            "s": "0x5793b45fbb8162cf1e29e831d05e363b80387493861d01af5cc941e64835f605"
+          }
+        ]
+      },
+      "latest"
+    ],
+    "description": "EIP-7702 proxy envelope preserves access and authorization lists"
+  }
+]

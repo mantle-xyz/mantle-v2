@@ -1,0 +1,32 @@
+[
+  {
+    "name": "rollup_getInfo",
+    "method": "rollup_getInfo",
+    "params": [],
+    "description": "获取 Rollup 信息 (Optimism)"
+  },
+  {
+    "name": "rollup_gasPrices",
+    "method": "rollup_gasPrices",
+    "params": [],
+    "description": "获取 Rollup gas 价格 (Optimism)"
+  },
+  {
+    "name": "eth_getBlockRange_0_to_5",
+    "method": "eth_getBlockRange",
+    "params": ["0x0", "0x5", false],
+    "description": "获取区块范围 0-5 (Optimism)"
+  },
+  {
+    "name": "eth_getBlockRange_0_to_5_full",
+    "method": "eth_getBlockRange",
+    "params": ["0x0", "0x5", true],
+    "description": "获取区块范围 0-5 含完整交易 (Optimism)"
+  },
+  {
+    "name": "eth_getBlockRange_0_to_1",
+    "method": "eth_getBlockRange",
+    "params": ["0x0", "0x1", false],
+    "description": "获取区块范围 0-1 (Optimism)"
+  }
+]

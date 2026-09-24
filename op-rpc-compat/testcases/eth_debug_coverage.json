@@ -1,0 +1,111 @@
+[
+  {
+    "name": "debug_getRawTransaction_latest",
+    "method": "debug_getRawTransaction",
+    "params": [
+      "{{latest_tx_hash}}"
+    ],
+    "description": "最新交易的原始 RLP(两端应逐字节一致)"
+  },
+  {
+    "name": "debug_getRawTransaction_not_found",
+    "method": "debug_getRawTransaction",
+    "params": [
+      "0x0000000000000000000000000000000000000000000000000000000000000000"
+    ],
+    "description": "不存在的 tx hash(边界:两端 not-found 表示法)"
+  },
+  {
+    "name": "debug_traceBlockByHash_latest",
+    "method": "debug_traceBlockByHash",
+    "params": [
+      "{{latest_block_hash}}",
+      {}
+    ],
+    "description": "按块 hash 追踪最新区块(默认 structLog tracer)"
+  },
+  {
+    "name": "debug_traceBlockByHash_callTracer",
+    "method": "debug_traceBlockByHash",
+    "params": [
+      "{{latest_block_hash}}",
+      {
+        "tracer": "callTracer"
+      }
+    ],
+    "description": "按块 hash + callTracer 追踪最新区块"
+  },
+  {
+    "name": "debug_traceBlock_block1_rlp",
+    "method": "debug_traceBlock",
+    "params": [
+      "{{block_one_rlp}}",
+      {}
+    ],
+    "description": "按运行时读取的原始 RLP 追踪当前 devnet 区块 1"
+  },
+  {
+    "name": "debug_traceBlock_block1_callTracer",
+    "method": "debug_traceBlock",
+    "params": [
+      "{{block_one_rlp}}",
+      {
+        "tracer": "callTracer"
+      }
+    ],
+    "description": "按运行时读取的区块 1 RLP + callTracer 追踪"
+  },
+  {
+    "name": "eth_getStorageValues_l1block",
+    "method": "eth_getStorageValues",
+    "params": [
+      {
+        "0x4200000000000000000000000000000000000015": [
+          "0x0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      },
+      "{{latest_block_number}}"
+    ],
+    "description": "多地址多槽读取(reth 扩展,geth 也实现)。用 {{latest_block_number}} 锁同块避免竞态(latest 会两端撞不同块;L1Block 槽每块变)"
+  },
+  {
+    "name": "debug_intermediateRoots_latest",
+    "method": "debug_intermediateRoots",
+    "params": [
+      "{{latest_block_hash}}"
+    ],
+    "description": "区块中间状态根。注意:reth 只对最近块可算(旧块被剪→空),故用 latest_block_hash;偶发新块导致 reth 空属已知 flaky"
+  },
+  {
+    "name": "debug_printBlock_stub_diff",
+    "method": "debug_printBlock",
+    "params": [
+      1
+    ],
+    "description": "已知差异:geth 返回 Go 结构体 dump 字符串,reth 未实现返回 null(见 known_diffs)。参数是数字非 hex"
+  },
+  {
+    "name": "eth_config_geth_crash_diff",
+    "method": "eth_config",
+    "params": [],
+    "description": "已知差异:reth 返回链配置对象,geth 该 handler crash(-32603)。语义分歧,见 known_diffs"
+  },
+  {
+    "name": "admin_peers_empty",
+    "method": "admin_peers",
+    "params": [],
+    "description": "对等节点列表。devnet EL 无 P2P(nodiscover),两端应均为 []"
+  },
+  {
+    "name": "debug_freeOSMemory",
+    "method": "debug_freeOSMemory",
+    "params": [],
+    "description": "强制 GC 归还内存。两端均返回 null(无害运维方法)"
+  },
+  {
+    "name": "admin_nodeInfo_structdiff",
+    "method": "admin_nodeInfo",
+    "params": [],
+    "description": "节点信息。结构键相同,但 name/id/enode/protocols 按节点身份天然不同(geth 有 snap、reth 无)→ 已知差异,见 known_diffs"
+  }
+]

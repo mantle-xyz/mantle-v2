@@ -1,0 +1,146 @@
+[
+  {
+    "name": "eth_getBalance_latest",
+    "method": "eth_getBalance",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "latest"],
+    "description": "获取最新余额"
+  },
+  {
+    "name": "eth_getBalance_latest_template",
+    "method": "eth_getBalance",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "{{latest_block_number}}"],
+    "description": "获取最新余额（使用模板变量 latest_block_number）"
+  },
+  {
+    "name": "eth_getBalance_earliest",
+    "method": "eth_getBalance",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "earliest"],
+    "description": "获取最早区块余额"
+  },
+  {
+    "name": "eth_getBalance_pending",
+    "method": "eth_getBalance",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "pending"],
+    "description": "获取 pending 余额"
+  },
+  {
+    "name": "eth_getBalance_by_number",
+    "method": "eth_getBalance",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "0x1"],
+    "description": "获取指定区块余额"
+  },
+  {
+    "name": "eth_getBalance_zero_address",
+    "method": "eth_getBalance",
+    "params": ["0x0000000000000000000000000000000000000000", "latest"],
+    "description": "零地址余额"
+  },
+  {
+    "name": "eth_getBalance_safe",
+    "method": "eth_getBalance",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "safe"],
+    "description": "获取 safe 区块余额"
+  },
+  {
+    "name": "eth_getBalance_finalized",
+    "method": "eth_getBalance",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "finalized"],
+    "description": "获取 finalized 区块余额"
+  },
+  {
+    "name": "eth_getCode_contract",
+    "method": "eth_getCode",
+    "params": ["0x4200000000000000000000000000000000000015", "latest"],
+    "description": "获取合约代码"
+  },
+  {
+    "name": "eth_getCode_latest_template",
+    "method": "eth_getCode",
+    "params": ["0x4200000000000000000000000000000000000015", "{{latest_block_number}}"],
+    "description": "获取合约代码（使用模板变量 latest_block_number）"
+  },
+  {
+    "name": "eth_getCode_eoa",
+    "method": "eth_getCode",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "latest"],
+    "description": "获取 EOA 代码（应为空）"
+  },
+  {
+    "name": "eth_getCode_pending",
+    "method": "eth_getCode",
+    "params": ["0x4200000000000000000000000000000000000015", "pending"],
+    "description": "获取 pending 状态代码"
+  },
+  {
+    "name": "eth_getCode_safe",
+    "method": "eth_getCode",
+    "params": ["0x4200000000000000000000000000000000000015", "safe"],
+    "description": "获取 safe 区块代码"
+  },
+  {
+    "name": "eth_getCode_finalized",
+    "method": "eth_getCode",
+    "params": ["0x4200000000000000000000000000000000000015", "finalized"],
+    "description": "获取 finalized 区块代码"
+  },
+  {
+    "name": "eth_getStorageAt_slot0",
+    "method": "eth_getStorageAt",
+    "params": ["0x4200000000000000000000000000000000000015", "0x0", "latest"],
+    "description": "获取存储槽 0"
+  },
+  {
+    "name": "eth_getStorageAt_pending",
+    "method": "eth_getStorageAt",
+    "params": ["0x4200000000000000000000000000000000000015", "0x0", "pending"],
+    "description": "获取 pending 状态存储"
+  },
+  {
+    "name": "eth_getStorageAt_empty",
+    "method": "eth_getStorageAt",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "0x0", "latest"],
+    "description": "获取空账户存储"
+  },
+  {
+    "name": "eth_getStorageAt_safe",
+    "method": "eth_getStorageAt",
+    "params": ["0x4200000000000000000000000000000000000015", "0x0", "safe"],
+    "description": "获取 safe 区块存储"
+  },
+  {
+    "name": "eth_getStorageAt_finalized",
+    "method": "eth_getStorageAt",
+    "params": ["0x4200000000000000000000000000000000000015", "0x0", "finalized"],
+    "description": "获取 finalized 区块存储"
+  },
+  {
+    "name": "eth_getTransactionCount_latest",
+    "method": "eth_getTransactionCount",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "latest"],
+    "description": "获取最新 nonce"
+  },
+  {
+    "name": "eth_getTransactionCount_pending",
+    "method": "eth_getTransactionCount",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "pending"],
+    "description": "获取 pending nonce"
+  },
+  {
+    "name": "eth_getTransactionCount_earliest",
+    "method": "eth_getTransactionCount",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "earliest"],
+    "description": "获取最早 nonce"
+  },
+  {
+    "name": "eth_getTransactionCount_safe",
+    "method": "eth_getTransactionCount",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "safe"],
+    "description": "获取 safe 区块 nonce"
+  },
+  {
+    "name": "eth_getTransactionCount_finalized",
+    "method": "eth_getTransactionCount",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "finalized"],
+    "description": "获取 finalized 区块 nonce"
+  }
+]

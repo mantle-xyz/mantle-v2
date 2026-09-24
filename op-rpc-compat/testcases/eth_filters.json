@@ -1,0 +1,50 @@
+[
+  {
+    "name": "eth_getFilterLogs_invalid",
+    "method": "eth_getFilterLogs",
+    "params": ["0xffffffff"],
+    "description": "无效的过滤器 ID"
+  },
+  {
+    "name": "eth_getFilterChanges_invalid",
+    "method": "eth_getFilterChanges",
+    "params": ["0xffffffff"],
+    "description": "无效的过滤器 ID"
+  },
+  {
+    "name": "eth_uninstallFilter_invalid",
+    "method": "eth_uninstallFilter",
+    "params": ["0xffffffff"],
+    "description": "卸载无效的过滤器"
+  },
+  {
+    "name": "eth_newBlockFilter",
+    "method": "eth_newBlockFilter",
+    "params": [],
+    "description": "创建新区块过滤器"
+  },
+  {
+    "name": "eth_newFilter",
+    "method": "eth_newFilter",
+    "params": [
+      {}
+    ],
+    "description": "创建新日志过滤器（空参数）"
+  },
+  {
+    "name": "eth_newFilter_with_address",
+    "method": "eth_newFilter",
+    "params": [
+      {
+        "address": "0x0000000000000000000000000000000000000000"
+      }
+    ],
+    "description": "创建新日志过滤器（指定地址）"
+  },
+  {
+    "name": "eth_newPendingTransactionFilter",
+    "method": "eth_newPendingTransactionFilter",
+    "params": [],
+    "description": "创建待处理交易过滤器"
+  }
+]

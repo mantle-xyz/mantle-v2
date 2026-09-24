@@ -1,0 +1,38 @@
+[
+  {
+    "name": "rollup_getInfo",
+    "method": "rollup_getInfo",
+    "params": [],
+    "description": "获取 rollup 信息"
+  },
+  {
+    "name": "rollup_gasPrices",
+    "method": "rollup_gasPrices",
+    "params": [],
+    "description": "获取 rollup gas 价格"
+  },
+  {
+    "name": "eth_getTxStatusByHash_not_found",
+    "method": "eth_getTxStatusByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "不存在的交易状态"
+  },
+  {
+    "name": "eth_getTxStatusByHash_latest_template",
+    "method": "eth_getTxStatusByHash",
+    "params": ["{{latest_tx_hash}}"],
+    "description": "获取最新交易状态（使用模板变量 latest_tx_hash）"
+  },
+  {
+    "name": "eth_getTxStatusDetailByHash_not_found",
+    "method": "eth_getTxStatusDetailByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "不存在的交易详细状态"
+  },
+  {
+    "name": "eth_getTxStatusDetailByHash_latest_template",
+    "method": "eth_getTxStatusDetailByHash",
+    "params": ["{{latest_tx_hash}}"],
+    "description": "获取最新交易详细状态（使用模板变量 latest_tx_hash）"
+  }
+]

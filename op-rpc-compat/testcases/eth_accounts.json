@@ -1,0 +1,110 @@
+[
+  {
+    "name": "eth_getBalance_zero_latest",
+    "method": "eth_getBalance",
+    "params": ["0x0000000000000000000000000000000000000000", "latest"],
+    "description": "获取零地址余额"
+  },
+  {
+    "name": "eth_getBalance_zero_earliest",
+    "method": "eth_getBalance",
+    "params": ["0x0000000000000000000000000000000000000000", "earliest"],
+    "description": "获取零地址在创世块的余额"
+  },
+  {
+    "name": "eth_getBalance_zero_0x1",
+    "method": "eth_getBalance",
+    "params": ["0x0000000000000000000000000000000000000000", "0x1"],
+    "description": "获取零地址在区块 1 的余额"
+  },
+  {
+    "name": "eth_getBalance_zero_pending",
+    "method": "eth_getBalance",
+    "params": ["0x0000000000000000000000000000000000000000", "pending"],
+    "description": "获取零地址的 pending 余额"
+  },
+  {
+    "name": "eth_getCode_zero_latest",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000000", "latest"],
+    "description": "获取零地址代码"
+  },
+  {
+    "name": "eth_getCode_precompile_1",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000001", "latest"],
+    "description": "获取预编译合约 1 (ecrecover) 的代码"
+  },
+  {
+    "name": "eth_getCode_precompile_2",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000002", "latest"],
+    "description": "获取预编译合约 2 (sha256) 的代码"
+  },
+  {
+    "name": "eth_getCode_precompile_3",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000003", "latest"],
+    "description": "获取预编译合约 3 (ripemd160) 的代码"
+  },
+  {
+    "name": "eth_getCode_precompile_4",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000004", "latest"],
+    "description": "获取预编译合约 4 (identity) 的代码"
+  },
+  {
+    "name": "eth_getStorageAt_zero_slot0",
+    "method": "eth_getStorageAt",
+    "params": ["0x0000000000000000000000000000000000000000", "0x0", "latest"],
+    "description": "获取零地址的 storage slot 0"
+  },
+  {
+    "name": "eth_getStorageAt_zero_slot1",
+    "method": "eth_getStorageAt",
+    "params": ["0x0000000000000000000000000000000000000000", "0x1", "latest"],
+    "description": "获取零地址的 storage slot 1"
+  },
+  {
+    "name": "eth_getStorageAt_zero_maxSlot",
+    "method": "eth_getStorageAt",
+    "params": ["0x0000000000000000000000000000000000000000", "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "latest"],
+    "description": "获取零地址的最大 storage slot"
+  },
+  {
+    "name": "eth_getTransactionCount_zero_latest",
+    "method": "eth_getTransactionCount",
+    "params": ["0x0000000000000000000000000000000000000000", "latest"],
+    "description": "获取零地址的 nonce"
+  },
+  {
+    "name": "eth_getTransactionCount_zero_pending",
+    "method": "eth_getTransactionCount",
+    "params": ["0x0000000000000000000000000000000000000000", "pending"],
+    "description": "获取零地址的 pending nonce"
+  },
+  {
+    "name": "eth_getTransactionCount_zero_earliest",
+    "method": "eth_getTransactionCount",
+    "params": ["0x0000000000000000000000000000000000000000", "earliest"],
+    "description": "获取零地址在创世块的 nonce"
+  },
+  {
+    "name": "eth_getProof_zero",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000000", [], "latest"],
+    "description": "获取零地址的 Merkle 证明"
+  },
+  {
+    "name": "eth_getProof_with_storage_keys",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000000", ["0x0000000000000000000000000000000000000000000000000000000000000000"], "latest"],
+    "description": "获取带 storage key 的 Merkle 证明"
+  },
+  {
+    "name": "eth_getProof_multiple_keys",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000000", ["0x0000000000000000000000000000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000000000000000000000000001"], "latest"],
+    "description": "获取带多个 storage key 的 Merkle 证明"
+  }
+]
