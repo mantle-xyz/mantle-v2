@@ -9,8 +9,8 @@ import { FeeVault } from "../universal/FeeVault.sol";
 /// @title OperatorFeeVault
 /// @notice The OperatorFeeVault accumulates the operator portion of the transaction fees.
 contract OperatorFeeVault is FeeVault, Semver {
-    /// @custom:semver 1.0.0
+    /// @custom:semver 1.1.0
     ///
     /// @param _recipient Address that will receive the accumulated fees.
-    constructor(address _recipient) FeeVault(_recipient, 10 ether) Semver(1, 0, 0) { }
+    constructor(address _recipient) FeeVault(_recipient, 10 ether) Semver(1, 1, 0) { }
 }
