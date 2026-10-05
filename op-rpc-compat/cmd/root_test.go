@@ -1,11 +1,27 @@
 package cmd
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 )
+
+func TestCommandHelpIsEnglish(t *testing.T) {
+	han := regexp.MustCompile(`\p{Han}`)
+	for name, command := range map[string]*cobra.Command{
+		"root":    rootCmd,
+		"preconf": preconfCmd,
+		"stream":  streamCmd,
+	} {
+		for _, line := range strings.Split(command.UsageString(), "\n") {
+			if han.MatchString(line) {
+				t.Errorf("%s help contains Chinese: %s", name, line)
+			}
+		}
+	}
+}
 
 func endpointCommandForTest() *cobra.Command {
 	cmd := &cobra.Command{}

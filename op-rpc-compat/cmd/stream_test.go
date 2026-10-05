@@ -219,7 +219,7 @@ func TestSendNonceTracker_AdvanceToHigherChainNonce(t *testing.T) {
 }
 
 func TestIsAlreadyKnownSendError(t *testing.T) {
-	err := fmt.Errorf("发送交易失败: RPC error: code=-32000, message=failed to forward tx to sequencer, err: 'already known'")
+	err := fmt.Errorf("send transaction failed: RPC error: code=-32000, message=failed to forward tx to sequencer, err: 'already known'")
 	if !isAlreadyKnownSendError(err) {
 		t.Fatalf("expected already known error to be detected")
 	}

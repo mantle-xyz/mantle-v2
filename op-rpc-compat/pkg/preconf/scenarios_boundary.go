@@ -37,17 +37,17 @@ func (r *Runner) scenarioWhitelistIdentification(ctx context.Context) {
 	resp, err := r.tester.SendRawTransactionWithPreconf(ctx, r.seq, signed, "whitelist")
 
 	if err == nil {
-		r.record(name, false, "非白名单发送方(Addr3)却被受理: status=%s（应立即拒）", resp.Status)
+		r.record(name, false, "non-allowlisted sender (Addr3) was accepted: status=%s (expected immediate rejection)", resp.Status)
 		return
 	}
 	// Contract: a definitive rejection (whitelist error), NOT a buffered Timeout status. op-geth
 	// returns "can't be submitted as preconf tx". (Wall-time isn't asserted: the RPC harness retries
 	// errors 3× at 1s, which inflates the measured latency independent of the sequencer.)
 	if !strings.Contains(err.Error(), "can't be submitted as preconf") {
-		r.record(name, false, "非白名单被拒，但错误意外（期望 whitelist 定性拒绝）: %v", err)
+		r.record(name, false, "non-allowlisted sender was rejected with an unexpected error; expected whitelist rejection: %v", err)
 		return
 	}
-	r.record(name, true, "非白名单发送方被定性拒绝（非 Timeout status）: %v", err)
+	r.record(name, true, "non-allowlisted sender received a specific rejection rather than a Timeout status: %v", err)
 }
 
 // A4 scenarioSuccessOnchainConsistency: the HARD invariant as a batch post-check — every preconf that
@@ -87,7 +87,7 @@ func (r *Runner) scenarioSuccessOnchainConsistency(ctx context.Context, count in
 		time.Sleep(20 * time.Millisecond)
 	}
 	if _, ok := r.verifyOnChain(ctx, name, ps); ok {
-		r.record(name, true, "%d 笔 Success 全部链上兑现（status=1 + logs 一致）", len(ps))
+		r.record(name, true, "all %d Success responses landed on-chain with status=1 and matching logs", len(ps))
 	}
 }
 
@@ -127,7 +127,7 @@ func (r *Runner) scenarioMultiPreconfSameSlot(ctx context.Context) {
 		resp, err := r.tester.SendRawTransactionWithPreconf(ctx, r.seq, signed, "a7")
 		if err != nil {
 			if strings.Contains(err.Error(), "nonce") || strings.Contains(err.Error(), "gap") {
-				r.recordInconclusive(name, "第 %d 笔被拒(%v) → sequencer 不接纳并发连续 nonce（reth gap 行为？），admit=%d<%d", i, err, len(ps), N)
+				r.recordInconclusive(name, "transaction %d was rejected (%v); sequencer may not accept concurrent consecutive nonces (reth gap behavior), admitted=%d<%d", i, err, len(ps), N)
 				return
 			}
 			r.record(name, false, "tx %d send: %v", i, err)
@@ -153,7 +153,7 @@ func (r *Runner) scenarioMultiPreconfSameSlot(ctx context.Context) {
 	}
 	wantBal := new(big.Int).Mul(smallValue, big.NewInt(int64(N)))
 	if delta := new(big.Int).Sub(afterBal, beforeBal); delta.Cmp(wantBal) != 0 {
-		r.record(name, false, "Addr2 余额 delta=%s != N×value=%s（有笔未生效/污染）", delta, wantBal)
+		r.record(name, false, "Addr2 balance delta=%s differs from N*value=%s; a transaction may be missing or state may be contaminated", delta, wantBal)
 		return
 	}
 	// slot-sharing: how many landed in the busiest block.
@@ -168,9 +168,9 @@ func (r *Runner) scenarioMultiPreconfSameSlot(ctx context.Context) {
 		}
 	}
 	if maxShare >= 2 {
-		r.record(name, true, "%d 笔全部链上兑现 + nonce/余额守恒；最多 %d 笔共 slot（跨 %d 块）", N, maxShare, len(perBlock))
+		r.record(name, true, "all %d transactions landed with nonce and balance conservation; up to %d shared one slot across %d blocks", N, maxShare, len(perBlock))
 	} else {
-		r.recordInconclusive(name, "%d 笔全兑现且守恒，但每笔单独成块（出块太快），未形成同 slot 多笔", N)
+		r.recordInconclusive(name, "all %d transactions landed with conservation, but each landed in a separate block; block production was too fast to test a shared slot", N)
 	}
 }
 
@@ -206,10 +206,10 @@ func (r *Runner) scenarioReplacementProtection(ctx context.Context) {
 	}
 	_, err = r.tester.SendRawTransactionWithPreconf(ctx, r.seq, second, "a10-2")
 	if err == nil {
-		r.record(name, false, "同 nonce 第二笔被受理（应被拒：in-process / nonce too low）")
+		r.record(name, false, "second transaction with the same nonce was accepted; expected in-process or nonce-too-low rejection")
 		return
 	}
-	r.record(name, true, "同 nonce 第二笔被拒: %v", err)
+	r.record(name, true, "second transaction with the same nonce was rejected: %v", err)
 }
 
 // A6 scenarioSuccessReceiptFullParity: a successful, log-emitting preconf call's receipt matches the
@@ -245,15 +245,15 @@ func (r *Runner) scenarioSuccessReceiptFullParity(ctx context.Context) {
 		time.Sleep(time.Second)
 	}
 	if !found {
-		r.record(name, false, "链上无 receipt（假 Success）")
+		r.record(name, false, "no on-chain receipt (false Success)")
 		return
 	}
 	if status != 1 {
-		r.record(name, false, "链上 status=%d（预确认=success）", status)
+		r.record(name, false, "on-chain status=%d but preconfirmation reported success", status)
 		return
 	}
 	if blk != predicted {
-		r.record(name, false, "blockHeight 预测 %d != 实际 %d", predicted, blk)
+		r.record(name, false, "predicted blockHeight %d differs from actual %d", predicted, blk)
 		return
 	}
 	preLogs := receiptLogsRaw(resp)
@@ -261,10 +261,10 @@ func (r *Runner) scenarioSuccessReceiptFullParity(ctx context.Context) {
 	// on-chain (blockNumber/txHash/logIndex/…) and legitimately isn't in the preconf response.
 	preN, chainN := normalizeLogs(preLogs), normalizeLogs(chainLogs)
 	if preN != chainN {
-		r.record(name, false, "logs 内容(addr/topics/data)不一致 pre=%s chain=%s", preN, chainN)
+		r.record(name, false, "log contents (address/topics/data) differ: pre=%s chain=%s", preN, chainN)
 		return
 	}
-	r.record(name, true, "receipt 一致: status=1 · blockHeight==预测(%d) · logs 内容(addr/topics/data)相等[忽略块内定位元数据] · gasUsed=%d", blk, gasUsed)
+	r.record(name, true, "receipt matches: status=1, blockHeight equals predicted %d, log contents match (ignoring block position metadata), gasUsed=%d", blk, gasUsed)
 }
 
 // A8 scenarioTightTimeoutEviction: preconfs that return Timeout must be evicted — NOT on-chain and
@@ -278,7 +278,7 @@ func (r *Runner) scenarioTightTimeoutEviction(ctx context.Context) {
 	// WorstCase (ECMUL loop, ~4.9 ns/gas) at ~38M gas ≈ 190ms — exceeds a 100ms preconftimeout with
 	// margin, unlike GasBurner (sstore, ~3ms) which never reaches a mid-range timeout.
 	if err := r.ensureWorstCase(ctx); err != nil {
-		r.recordInconclusive(name, "无法部署 WorstCase（%v），跳过", err)
+		r.recordInconclusive(name, "could not deploy WorstCase (%v); skipping", err)
 		return
 	}
 	gp, err := r.gasPrice(ctx)
@@ -322,20 +322,20 @@ func (r *Runner) scenarioTightTimeoutEviction(ctx context.Context) {
 			time.Sleep(time.Second)
 		}
 		if onChain {
-			r.record(name, false, "超时的 tx %s 竟上链（未清池，违约）", hash.Hex())
+			r.record(name, false, "timed-out tx %s landed on-chain; it was not evicted as required", hash.Hex())
 			return
 		}
 		if r.txInPool(ctx, r.funder.Address(), hash) {
-			r.record(name, false, "超时的 tx %s 仍在 txpool（未清池，违约）", hash.Hex())
+			r.record(name, false, "timed-out tx %s remains in txpool; it was not evicted as required", hash.Hex())
 			return
 		}
 		evictedOK++
 	}
 	if timedOut == 0 {
-		r.recordInconclusive(name, "%d 笔均未超时（preconftimeout > WorstCase ~190ms）→ 用 100ms profile 才能验证清池", K)
+		r.recordInconclusive(name, "none of %d transactions timed out (preconftimeout exceeds WorstCase ~190ms); a 100ms profile is needed to verify eviction", K)
 		return
 	}
-	r.record(name, true, "%d/%d 超时的 tx 均已清池（不上链且不在池）", evictedOK, timedOut)
+	r.record(name, true, "all %d/%d timed-out transactions were evicted (not on-chain and not in txpool)", evictedOK, timedOut)
 }
 
 // A11 scenarioWorstCaseExecWithinTimeout: the worst gas-per-walltime single tx (bn256 ECMUL loop at
@@ -356,7 +356,7 @@ func (r *Runner) scenarioWorstCaseExecWithinTimeout(ctx context.Context) {
 	gas := lim * 95 / 100 // geth permits nearly the full block gas limit per transaction
 	el, ok := r.ethCallElapsed(ctx, addr, nil, gas)
 	if !ok {
-		r.record(name, false, "eth_call 失败（gas=%d）", gas)
+		r.record(name, false, "eth_call failed (gas=%d)", gas)
 		return
 	}
 	// Anchored to the PRODUCTION preconf timeout (480ms), not whatever test profile is loaded — A11
@@ -366,10 +366,10 @@ func (r *Runner) scenarioWorstCaseExecWithinTimeout(ctx context.Context) {
 	const timeoutMs = 480
 	usedPct := int(el.Milliseconds()) * 100 / timeoutMs
 	if el >= timeoutMs*time.Millisecond {
-		r.record(name, false, "worst-case 单笔(ECMUL, gas=%d) 执行 %v ≥ 生产超时 %dms（DoS 风险）", gas, el.Round(time.Millisecond), timeoutMs)
+		r.record(name, false, "worst-case ECMUL transaction (gas=%d) took %v, meeting or exceeding the production timeout of %dms (DoS risk)", gas, el.Round(time.Millisecond), timeoutMs)
 		return
 	}
-	r.record(name, true, "worst-case 单笔(ECMUL, gas=%d) 执行 %v < 生产超时 %dms（占用 %d%%）；reth 侧 per-tx 2M cap→~10ms≪200ms 更安全", gas, el.Round(time.Millisecond), timeoutMs, usedPct)
+	r.record(name, true, "worst-case ECMUL transaction (gas=%d) took %v, below the %dms production timeout (%d%% used); reth's 2M per-transaction cap limits execution to roughly 10ms", gas, el.Round(time.Millisecond), timeoutMs, usedPct)
 }
 
 // ─── boundary helpers ────────────────────────────────────────────────────────

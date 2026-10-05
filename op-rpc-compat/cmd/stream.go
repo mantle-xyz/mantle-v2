@@ -90,39 +90,39 @@ func init() {
 	}
 
 	streamCmd.Flags().StringVar(&streamRPC, "rpc", "", "RPC endpoint used to send transactions")
-	streamCmd.Flags().BoolVar(&streamSend, "send", true, "持续发送交易（尽量贴近每个区块尾部）")
-	streamCmd.Flags().BoolVar(&streamWatch, "watch", true, "持续监听区块交易并检查 GPO 交易顺序")
+	streamCmd.Flags().BoolVar(&streamSend, "send", true, "Continuously send transactions near the end of each block")
+	streamCmd.Flags().BoolVar(&streamWatch, "watch", true, "Watch blocks and check GPO transaction ordering")
 
-	streamCmd.Flags().StringVar(&streamPrivateKey, "private-key", defaultPrivateKey, "发送交易的私钥（仅 --send 生效）")
-	streamCmd.Flags().StringVar(&streamRecipient, "to", "", "交易接收地址（仅 --send 生效，默认发送给自己）")
-	streamCmd.Flags().StringVar(&streamAmount, "amount", "1", "转账金额（wei，仅 --send 生效）")
-	streamCmd.Flags().Uint64Var(&streamGasLimit, "gas-limit", 21000, "gas limit（仅 --send 生效）")
-	streamCmd.Flags().IntVar(&streamLeadMS, "lead-ms", 1200, "预计下个区块前多少毫秒发送（仅 --send 生效）")
-	streamCmd.Flags().DurationVar(&streamSendPollInterval, "send-poll", 200*time.Millisecond, "发送模式轮询新区块间隔")
-	streamCmd.Flags().DurationVar(&streamFallbackBlockTime, "block-time", 2*time.Second, "发送模式的默认区块时间（用于初始预测）")
+	streamCmd.Flags().StringVar(&streamPrivateKey, "private-key", defaultPrivateKey, "Private key for sending transactions (with --send)")
+	streamCmd.Flags().StringVar(&streamRecipient, "to", "", "Recipient for sent transactions (defaults to sender)")
+	streamCmd.Flags().StringVar(&streamAmount, "amount", "1", "Transfer amount in wei (with --send)")
+	streamCmd.Flags().Uint64Var(&streamGasLimit, "gas-limit", 21000, "Gas limit for sent transactions")
+	streamCmd.Flags().IntVar(&streamLeadMS, "lead-ms", 1200, "Milliseconds before the predicted next block to send (with --send)")
+	streamCmd.Flags().DurationVar(&streamSendPollInterval, "send-poll", 200*time.Millisecond, "Block polling interval in send mode")
+	streamCmd.Flags().DurationVar(&streamFallbackBlockTime, "block-time", 2*time.Second, "Fallback block time for initial send prediction")
 
 	streamCmd.Flags().StringVar(&streamWatchRPC, "watch-rpc", "", "RPC endpoint to monitor (defaults to --rpc)")
-	streamCmd.Flags().StringVar(&streamStartBlock, "start-block", "latest", "监听起始块号（latest/十进制/0x十六进制）")
-	streamCmd.Flags().DurationVar(&streamWatchPollInterval, "watch-poll", 1*time.Second, "监听模式轮询间隔")
-	streamCmd.Flags().StringVar(&streamGPOAddress, "gpo-address", defaultGPOTarget, "GPO 合约地址")
+	streamCmd.Flags().StringVar(&streamStartBlock, "start-block", "latest", "First block to watch (latest, decimal, or 0x-prefixed hex)")
+	streamCmd.Flags().DurationVar(&streamWatchPollInterval, "watch-poll", 1*time.Second, "Block polling interval in watch mode")
+	streamCmd.Flags().StringVar(&streamGPOAddress, "gpo-address", defaultGPOTarget, "GPO contract address")
 }
 
 func runStream() error {
 	if !streamSend && !streamWatch {
-		return fmt.Errorf("至少指定一个模式: --send 或 --watch")
+		return fmt.Errorf("enable at least one mode: --send or --watch")
 	}
 
 	if streamLeadMS < 0 {
-		return fmt.Errorf("--lead-ms 不能小于 0")
+		return fmt.Errorf("--lead-ms must not be negative")
 	}
 	if streamGasLimit == 0 {
-		return fmt.Errorf("--gas-limit 不能为 0")
+		return fmt.Errorf("--gas-limit must be greater than zero")
 	}
 	if streamSendPollInterval <= 0 || streamWatchPollInterval <= 0 {
-		return fmt.Errorf("轮询间隔必须大于 0")
+		return fmt.Errorf("polling intervals must be greater than zero")
 	}
 	if streamFallbackBlockTime <= 0 {
-		return fmt.Errorf("--block-time 必须大于 0")
+		return fmt.Errorf("--block-time must be greater than zero")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -156,7 +156,7 @@ func runStream() error {
 		}
 
 		if !common.IsHexAddress(streamGPOAddress) {
-			return fmt.Errorf("无效的 --gpo-address: %s", streamGPOAddress)
+			return fmt.Errorf("invalid --gpo-address: %s", streamGPOAddress)
 		}
 		gpoAddr := common.HexToAddress(streamGPOAddress)
 
@@ -177,7 +177,7 @@ func runStream() error {
 		}()
 	}
 
-	fmt.Println("stream 已启动，Ctrl+C 退出")
+	fmt.Println("Stream started; press Ctrl+C to stop")
 
 	select {
 	case <-ctx.Done():
@@ -227,16 +227,16 @@ func (t *sendNonceTracker) Reset(chainPendingNonce uint64) {
 func buildSendConfig() (*sendConfig, error) {
 	amount, ok := new(big.Int).SetString(streamAmount, 10)
 	if !ok || amount.Sign() < 0 {
-		return nil, fmt.Errorf("无效的 --amount: %s", streamAmount)
+		return nil, fmt.Errorf("invalid --amount: %s", streamAmount)
 	}
 	if strings.TrimSpace(streamPrivateKey) == "" {
-		return nil, fmt.Errorf("--private-key 不能为空")
+		return nil, fmt.Errorf("--private-key must not be empty")
 	}
 
 	streamPair := rpc.NewClientPair(streamRPC, "stream", streamRPC, "stream", 30*time.Second)
 	tester, err := tx.NewTester(streamPair, streamPrivateKey, nil)
 	if err != nil {
-		return nil, fmt.Errorf("初始化发送器失败: %w", err)
+		return nil, fmt.Errorf("initialize sender: %w", err)
 	}
 
 	to, err := resolveSendRecipient(streamRecipient, tester.Builder().Address())
@@ -258,7 +258,7 @@ func resolveSendRecipient(raw string, sender common.Address) (common.Address, er
 		return sender, nil
 	}
 	if !common.IsHexAddress(trimmed) {
-		return common.Address{}, fmt.Errorf("无效的 --to 地址: %s", raw)
+		return common.Address{}, fmt.Errorf("invalid --to address: %s", raw)
 	}
 	return common.HexToAddress(trimmed), nil
 }
@@ -282,7 +282,7 @@ func runSendLoop(ctx context.Context, cfg *sendConfig) error {
 		case <-ticker.C:
 			head, err := getBlockHeader(ctx, cfg.client, "latest")
 			if err != nil {
-				fmt.Printf("[send] 获取 latest 区块失败: %v\n", err)
+				fmt.Printf("[send] get latest block: %v\n", err)
 				continue
 			}
 			if head == nil {
@@ -322,13 +322,13 @@ func runSendLoop(ctx context.Context, cfg *sendConfig) error {
 			}
 
 			if head.BaseFeePerGas == nil || head.BaseFeePerGas.Sign() <= 0 {
-				fmt.Printf("[send] 区块 %d 无 baseFeePerGas，跳过本轮（需 EIP-1559 链）\n", head.Number)
+				fmt.Printf("[send] block %d has no baseFeePerGas; skipping (EIP-1559 required)\n", head.Number)
 				continue
 			}
 
 			chainPendingNonce, err := cfg.tester.GetNonce(ctx, cfg.client, cfg.tester.Builder().Address())
 			if err != nil {
-				fmt.Printf("[send] 获取 nonce 失败 block=%d err=%v\n", lastBlockNum, err)
+				fmt.Printf("[send] get nonce failed block=%d err=%v\n", lastBlockNum, err)
 				continue
 			}
 			nonce := nonceTracker.Next(chainPendingNonce)
@@ -339,17 +339,17 @@ func runSendLoop(ctx context.Context, cfg *sendConfig) error {
 			if err != nil {
 				if isAlreadyKnownSendError(err) {
 					nonceTracker.MarkAccepted(nonce)
-					fmt.Printf("[send] block=%d nonce=%d err=already known，按已发送处理\n", lastBlockNum, nonce)
+					fmt.Printf("[send] block=%d nonce=%d err=already known; treating as sent\n", lastBlockNum, nonce)
 					continue
 				}
 				if isNonceSyncSendError(err) {
 					refreshedNonce, nonceErr := cfg.tester.GetNonce(ctx, cfg.client, cfg.tester.Builder().Address())
 					if nonceErr == nil {
 						nonceTracker.Reset(refreshedNonce)
-						fmt.Printf("[send] nonce 状态已重置为 %d（发送失败后重同步）\n", refreshedNonce)
+						fmt.Printf("[send] nonce resynchronized to %d after send failure\n", refreshedNonce)
 					}
 				}
-				fmt.Printf("[send] 发送失败 block=%d nonce=%d err=%v\n", lastBlockNum, nonce, err)
+				fmt.Printf("[send] transaction failed block=%d nonce=%d err=%v\n", lastBlockNum, nonce, err)
 				continue
 			}
 
@@ -374,12 +374,12 @@ func sendOneEIP1559TxNoPriorityFee(ctx context.Context, cfg *sendConfig, nonce u
 	}
 	signedTx, err := cfg.tester.Builder().BuildAndSign(tx.TxTypeEIP1559, params)
 	if err != nil {
-		return common.Hash{}, nil, fmt.Errorf("构建交易失败: %w", err)
+		return common.Hash{}, nil, fmt.Errorf("build transaction: %w", err)
 	}
 
 	txHash, err := cfg.tester.SendRawTransaction(ctx, cfg.client, signedTx, "stream_send")
 	if err != nil {
-		return common.Hash{}, nil, fmt.Errorf("发送交易失败: %w", err)
+		return common.Hash{}, nil, fmt.Errorf("send transaction: %w", err)
 	}
 
 	return txHash, baseFee, nil
@@ -435,12 +435,12 @@ func runWatchLoop(ctx context.Context, client *rpc.Client, startAt uint64, gpo c
 	for {
 		latest, err := getLatestBlockNumber(ctx, client)
 		if err != nil {
-			fmt.Printf("[watch] 获取 blockNumber 失败: %v\n", err)
+			fmt.Printf("[watch] get block number: %v\n", err)
 		} else {
 			for next <= latest {
 				block, err := getBlockWithTxs(ctx, client, next)
 				if err != nil {
-					fmt.Printf("[watch] 获取区块 %d 失败: %v\n", next, err)
+					fmt.Printf("[watch] get block %d: %v\n", next, err)
 					break
 				}
 				if block == nil {
@@ -474,13 +474,13 @@ func resolveStartBlock(ctx context.Context, client *rpc.Client, raw string) (uin
 	case "", "latest":
 		latest, err := getLatestBlockNumber(ctx, client)
 		if err != nil {
-			return 0, fmt.Errorf("读取 latest 区块失败: %w", err)
+			return 0, fmt.Errorf("read latest block: %w", err)
 		}
 		return latest + 1, nil
 	default:
 		parsed, err := parseBlockNumber(start)
 		if err != nil {
-			return 0, fmt.Errorf("无效的 --start-block: %s", raw)
+			return 0, fmt.Errorf("invalid --start-block: %s", raw)
 		}
 		return parsed, nil
 	}
@@ -534,11 +534,11 @@ func getLatestBlockNumber(ctx context.Context, client *rpc.Client) (uint64, erro
 
 	var blockHex string
 	if err := json.Unmarshal(resp.Response.Result, &blockHex); err != nil {
-		return 0, fmt.Errorf("解析 blockNumber 失败: %w", err)
+		return 0, fmt.Errorf("decode block number: %w", err)
 	}
 	blockNum, err := hexutil.DecodeUint64(blockHex)
 	if err != nil {
-		return 0, fmt.Errorf("解析 blockNumber(16进制)失败: %w", err)
+		return 0, fmt.Errorf("decode hexadecimal block number: %w", err)
 	}
 	return blockNum, nil
 }
@@ -554,15 +554,15 @@ func getBlockHeader(ctx context.Context, client *rpc.Client, tag string) (*block
 
 	var raw rawBlockHeader
 	if err := json.Unmarshal(resp.Response.Result, &raw); err != nil {
-		return nil, fmt.Errorf("解析区块头失败: %w", err)
+		return nil, fmt.Errorf("decode block header: %w", err)
 	}
 	num, err := hexutil.DecodeUint64(raw.Number)
 	if err != nil {
-		return nil, fmt.Errorf("解析区块号失败: %w", err)
+		return nil, fmt.Errorf("decode block number: %w", err)
 	}
 	ts, err := hexutil.DecodeUint64(raw.Timestamp)
 	if err != nil {
-		return nil, fmt.Errorf("解析区块时间戳失败: %w", err)
+		return nil, fmt.Errorf("decode block timestamp: %w", err)
 	}
 	h := &blockHeader{Number: num, Hash: raw.Hash, Timestamp: ts}
 	if raw.BaseFeePerGas != "" {
@@ -586,16 +586,16 @@ func getBlockWithTxs(ctx context.Context, client *rpc.Client, number uint64) (*b
 
 	var raw rawBlockWithTxs
 	if err := json.Unmarshal(resp.Response.Result, &raw); err != nil {
-		return nil, fmt.Errorf("解析区块交易失败: %w", err)
+		return nil, fmt.Errorf("decode block transactions: %w", err)
 	}
 
 	num, err := hexutil.DecodeUint64(raw.Number)
 	if err != nil {
-		return nil, fmt.Errorf("解析区块号失败: %w", err)
+		return nil, fmt.Errorf("decode block number: %w", err)
 	}
 	ts, err := hexutil.DecodeUint64(raw.Timestamp)
 	if err != nil {
-		return nil, fmt.Errorf("解析区块时间戳失败: %w", err)
+		return nil, fmt.Errorf("decode block timestamp: %w", err)
 	}
 
 	return &blockWithTxs{
@@ -608,13 +608,13 @@ func getBlockWithTxs(ctx context.Context, client *rpc.Client, number uint64) (*b
 
 func unwrapRPCError(resp *rpc.ResponseWithMeta) error {
 	if resp == nil {
-		return fmt.Errorf("空响应")
+		return fmt.Errorf("empty response")
 	}
 	if resp.Error != nil {
 		return resp.Error
 	}
 	if resp.Response == nil {
-		return fmt.Errorf("缺少 RPC 响应体")
+		return fmt.Errorf("missing RPC response body")
 	}
 	if resp.Response.Error != nil {
 		return fmt.Errorf("RPC error: code=%d message=%s", resp.Response.Error.Code, resp.Response.Error.Message)

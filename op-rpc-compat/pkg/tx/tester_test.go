@@ -63,7 +63,7 @@ func TestTxpoolRejectionNamesLogicalClients(t *testing.T) {
 		to := common.Address{}
 		return types.NewTx(&types.LegacyTx{Nonce: nonce, Gas: 21_000, GasPrice: big.NewInt(1), To: &to, Value: big.NewInt(0)}), nil
 	}, "nonce too low")
-	if !strings.Contains(result.Error, "old-reth") || strings.Contains(result.Error, "geth 应该") {
+	if !strings.Contains(result.Error, "old-reth") || strings.Contains(result.Error, "geth should") {
 		t.Fatalf("rejection error = %q", result.Error)
 	}
 }

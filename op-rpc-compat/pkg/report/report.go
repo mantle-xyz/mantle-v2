@@ -275,7 +275,7 @@ func (r *Reporter) AddResult(tc TestCase, compareResult *rpc.CompareResult, diff
 			}}
 		} else {
 			result.Status = StatusFail
-			result.CompareError = fmt.Sprintf("已知差异验证失败: 实际响应与预期不符 (预期: %s)", knownDiff.Reason)
+			result.CompareError = fmt.Sprintf("known difference did not match the current responses (reason: %s)", knownDiff.Reason)
 			result.Passed = false
 		}
 		r.results = append(r.results, result)
@@ -491,15 +491,15 @@ func (r *Reporter) determineStatus(result *TestResult, compareResult *rpc.Compar
 
 			var reasonParts []string
 			if targetExtraCount > 0 {
-				reasonParts = append(reasonParts, fmt.Sprintf("target 有 %d 处额外字段", targetExtraCount))
+				reasonParts = append(reasonParts, fmt.Sprintf("target has %d extra fields", targetExtraCount))
 			}
 			if baselineExtraCount > 0 {
-				reasonParts = append(reasonParts, fmt.Sprintf("baseline 有 %d 处额外字段", baselineExtraCount))
+				reasonParts = append(reasonParts, fmt.Sprintf("baseline has %d extra fields", baselineExtraCount))
 			}
 			if len(reasonParts) > 0 {
-				result.SkipReason = fmt.Sprintf("%s（不影响通过）", strings.Join(reasonParts, "，"))
+				result.SkipReason = fmt.Sprintf("%s (nonfatal)", strings.Join(reasonParts, ", "))
 			} else {
-				result.SkipReason = fmt.Sprintf("发现 %d 处额外字段差异（不影响通过）", diffResult.WarningCount)
+				result.SkipReason = fmt.Sprintf("found %d nonfatal field differences", diffResult.WarningCount)
 			}
 			return StatusWarning
 		}
@@ -569,7 +569,7 @@ func (r *Reporter) checkRPCErrorCompatibility(compareResult *rpc.CompareResult, 
 				Type:     diff.DiffTypeValue,
 				Expected: baselineErr.Code,
 				Actual:   targetErr.Code,
-				Message:  "错误码不同",
+				Message:  "error codes differ",
 			})
 		}
 		if baselineErr.Message != targetErr.Message {
@@ -578,7 +578,7 @@ func (r *Reporter) checkRPCErrorCompatibility(compareResult *rpc.CompareResult, 
 				Type:     diff.DiffTypeValue,
 				Expected: baselineErr.Message,
 				Actual:   targetErr.Message,
-				Message:  "错误消息不同",
+				Message:  "error messages differ",
 			})
 		}
 		return StatusFail, diffs, ""
@@ -617,10 +617,10 @@ func (r *Reporter) printResult(result TestResult) {
 
 	if result.Status == StatusCompatible {
 		if result.SkipReason != "" {
-			fmt.Printf("  %s 已知差异: %s\n", blue("→"), result.SkipReason)
+			fmt.Printf("  %s Known difference: %s\n", blue("→"), result.SkipReason)
 		} else {
 			// Both clients reported an unsupported method.
-			fmt.Printf("  %s 双方都返回错误（方法不存在/未实现），视为兼容\n", blue("→"))
+			fmt.Printf("  %s Both endpoints report an unsupported method\n", blue("→"))
 		}
 	}
 
@@ -628,7 +628,7 @@ func (r *Reporter) printResult(result TestResult) {
 		if result.SkipReason != "" {
 			fmt.Printf("  %s %s\n", yellow("→"), result.SkipReason)
 		} else {
-			fmt.Printf("  %s 发现 %d 处额外字段差异（不影响通过）:\n", yellow("→"), len(result.Differences))
+			fmt.Printf("  %s Found %d nonfatal field differences:\n", yellow("→"), len(result.Differences))
 		}
 		if len(result.Differences) > 0 {
 			r.printDifferences(result.Differences, 5)
@@ -643,15 +643,15 @@ func (r *Reporter) printResult(result TestResult) {
 			fmt.Printf("  %s %s error: %s\n", yellow("→"), r.target.Name, result.TargetError)
 		}
 		if result.BaselineError != "" && result.TargetError != "" {
-			fmt.Printf("  %s 双方错误不兼容:\n", yellow("→"))
+			fmt.Printf("  %s Endpoint errors are incompatible:\n", yellow("→"))
 			fmt.Printf("    %s: %s\n", r.baseline.Name, truncateValue(result.BaselineError, 60))
 			fmt.Printf("    %s: %s\n", r.target.Name, truncateValue(result.TargetError, 60))
 		}
 		if result.CompareError != "" {
-			fmt.Printf("  %s 对比错误: %s\n", yellow("→"), result.CompareError)
+			fmt.Printf("  %s Comparison error: %s\n", yellow("→"), result.CompareError)
 		}
 		if len(result.Differences) > 0 {
-			fmt.Printf("  %s 发现 %d 处差异:\n", yellow("→"), len(result.Differences))
+			fmt.Printf("  %s Found %d differences:\n", yellow("→"), len(result.Differences))
 			r.printDifferences(result.Differences, 5)
 		}
 	}
@@ -677,7 +677,7 @@ func (r *Reporter) printDifferences(diffs []diff.Difference, limit int) {
 		}
 	}
 	if len(diffs) > limit {
-		fmt.Printf("    ... 还有 %d 处差异\n", len(diffs)-limit)
+		fmt.Printf("    ... and %d more differences\n", len(diffs)-limit)
 	}
 }
 
@@ -705,7 +705,7 @@ func (r *Reporter) Generate() *Report {
 		}
 	}
 
-	report.Summary = fmt.Sprintf("总计 %d: %d 通过, %d 兼容, %d 警告, %d 失败",
+	report.Summary = fmt.Sprintf("Total %d: %d passed, %d compatible, %d warnings, %d failed",
 		report.TotalTests, report.PassedTests, report.CompatibleTests,
 		report.WarningTests, report.FailedTests)
 
@@ -718,7 +718,7 @@ func (r *Reporter) PrintSummary() {
 
 	fmt.Println()
 	fmt.Println(strings.Repeat("=", 60))
-	fmt.Println("测试摘要")
+	fmt.Println("Test summary")
 	fmt.Println(strings.Repeat("=", 60))
 
 	green := color.New(color.FgGreen).SprintFunc()
@@ -729,7 +729,7 @@ func (r *Reporter) PrintSummary() {
 
 	fmt.Printf("%s: %s\n", report.Baseline.Name, cyan(report.Baseline.URL))
 	fmt.Printf("%s: %s\n", report.Target.Name, cyan(report.Target.URL))
-	fmt.Printf("耗时: %v\n", time.Since(r.startTime))
+	fmt.Printf("Duration: %v\n", time.Since(r.startTime))
 	fmt.Println()
 
 	methodCounts := make(map[string]int)
@@ -738,7 +738,7 @@ func (r *Reporter) PrintSummary() {
 	}
 	uniqueMethods := len(methodCounts)
 
-	fmt.Printf("方法覆盖: %s 个方法\n", cyan(uniqueMethods))
+	fmt.Printf("Method coverage: %s methods\n", cyan(uniqueMethods))
 
 	var multiCaseMethods []string
 	for method, count := range methodCounts {
@@ -749,14 +749,14 @@ func (r *Reporter) PrintSummary() {
 	if len(multiCaseMethods) > 0 {
 		// Sort methods for stable output.
 		sort.Strings(multiCaseMethods)
-		fmt.Println("多案例方法:")
+		fmt.Println("Methods with multiple cases:")
 		for _, m := range multiCaseMethods {
 			fmt.Printf("  %s\n", m)
 		}
 	}
 	fmt.Println()
 
-	fmt.Printf("总计: %d | 通过: %s | 兼容: %s | 警告: %s | 失败: %s\n",
+	fmt.Printf("Total: %d | Passed: %s | Compatible: %s | Warnings: %s | Failed: %s\n",
 		report.TotalTests,
 		green(report.PassedTests),
 		blue(report.CompatibleTests),
@@ -765,7 +765,7 @@ func (r *Reporter) PrintSummary() {
 
 	if report.CompatibleTests > 0 {
 		fmt.Println()
-		fmt.Println(blue("兼容的测试:"))
+		fmt.Println(blue("Compatible tests:"))
 		for _, result := range report.Results {
 			if result.Status == StatusCompatible {
 				reason := ""
@@ -779,7 +779,7 @@ func (r *Reporter) PrintSummary() {
 
 	if report.WarningTests > 0 {
 		fmt.Println()
-		fmt.Println(yellow("有警告的测试:"))
+		fmt.Println(yellow("Tests with warnings:"))
 		for _, result := range report.Results {
 			if result.Status == StatusWarning {
 				reason := ""
@@ -793,7 +793,7 @@ func (r *Reporter) PrintSummary() {
 
 	if report.FailedTests > 0 {
 		fmt.Println()
-		fmt.Println(red("失败的测试:"))
+		fmt.Println(red("Failed tests:"))
 		for _, result := range report.Results {
 			if result.Status == StatusFail {
 				fmt.Printf("  ✗ %s [%s]\n", result.TestCase.Method, result.TestCase.Name)

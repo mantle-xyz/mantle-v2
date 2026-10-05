@@ -34,11 +34,11 @@ func (r *Runner) scenarioSequencerStallStaleness(ctx context.Context) {
 
 	active, err := r.adminSequencerActive(ctx, opNode)
 	if err != nil {
-		r.recordInconclusive(name, "op-node admin RPC 不可达（%s）: %v", r.cfg.OpNodeURL, err)
+		r.recordInconclusive(name, "op-node admin RPC is unreachable (%s): %v", r.cfg.OpNodeURL, err)
 		return
 	}
 	if !active {
-		r.recordInconclusive(name, "sequencer 已非 active，跳过（先恢复再跑）")
+		r.recordInconclusive(name, "sequencer is not active; restore it before running this scenario")
 		return
 	}
 
@@ -60,7 +60,7 @@ func (r *Runner) scenarioSequencerStallStaleness(ctx context.Context) {
 			return
 		}
 		if _, e := r.adminStartSequencer(ctx, opNode, stopHash); e != nil {
-			r.record(name+"_restart", false, "admin_startSequencer 失败（需人工恢复！hash=%s）: %v", stopHash, e)
+			r.record(name+"_restart", false, "admin_startSequencer failed; manual recovery required (hash=%s): %v", stopHash, e)
 			return
 		}
 		restarted = true
@@ -70,28 +70,28 @@ func (r *Runner) scenarioSequencerStallStaleness(ctx context.Context) {
 	// Phase 1 — within tolerance window: optimistic Success is allowed, but must land after restart.
 	inWindow, err := r.sendPreconfNative(ctx, r.seq, r.funder, Addr2, smallValue)
 	var windowPromise *promise
-	windowNote := "窗内未回 Success（也合规）"
+	windowNote := "no Success response within the grace window (also valid)"
 	if err == nil && inWindow != nil && inWindow.Status == "success" {
 		p := promiseFrom(inWindow)
 		windowPromise = &p
-		windowNote = "窗内乐观回 Success（待恢复后验证兑现）"
+		windowNote = "optimistic Success within the grace window (verify after recovery)"
 	}
 
 	// Phase 2 — wait past the 12s tolerance window, then a preconf must be definitively rejected.
 	time.Sleep(14 * time.Second)
 	_, stErr := r.sendPreconfNative(ctx, r.seq, r.funder, Addr2, smallValue)
 	if stErr == nil {
-		r.record(name, false, ">12s 陈旧仍受理 preconf（应定性拒 checker not ready）")
+		r.record(name, false, "preconfirmation accepted after more than 12s of staleness; expected checker-not-ready rejection")
 		return
 	}
 	if !strings.Contains(stErr.Error(), "not ready") {
-		r.record(name, false, ">12s 陈旧被拒但错误意外（期望 checker not ready）: %v", stErr)
+		r.record(name, false, "stale preconfirmation rejected with unexpected error; expected checker not ready: %v", stErr)
 		return
 	}
 
 	// restart now (also covered by defer) so Phase-1 optimistic tx can settle for verification
 	if _, e := r.adminStartSequencer(ctx, opNode, stopHash); e != nil {
-		r.record(name, false, "admin_startSequencer 恢复失败: %v", e)
+		r.record(name, false, "admin_startSequencer recovery failed: %v", e)
 		return
 	}
 	restarted = true
@@ -103,7 +103,7 @@ func (r *Runner) scenarioSequencerStallStaleness(ctx context.Context) {
 			return // verifyOnChain already recorded the false-Success failure
 		}
 	}
-	r.record(name, true, "staleness gate 正确：%s；>12s 陈旧定性拒 checker-not-ready；恢复后窗内承诺已兑现（reth 无容忍窗，预期直接超时——Part B 差异）", windowNote)
+	r.record(name, true, "staleness gate behaved correctly: %s; after 12s it rejected with checker-not-ready, and any grace-window promise landed after recovery (reth has no grace window and is expected to time out in Part B)", windowNote)
 }
 
 // ─── op-node admin helpers ───────────────────────────────────────────────────
@@ -169,10 +169,10 @@ func (r *Runner) scenarioRecoverModeNoFalseSuccess(ctx context.Context) {
 
 	// preflight: admin reachable + sequencer active
 	if active, err := r.adminSequencerActive(ctx, opNode); err != nil {
-		r.recordInconclusive(name, "op-node admin RPC 不可达: %v", err)
+		r.recordInconclusive(name, "op-node admin RPC is unreachable: %v", err)
 		return
 	} else if !active {
-		r.recordInconclusive(name, "sequencer 非 active，跳过")
+		r.recordInconclusive(name, "sequencer is not active; skipping")
 		return
 	}
 
@@ -187,7 +187,7 @@ func (r *Runner) scenarioRecoverModeNoFalseSuccess(ctx context.Context) {
 			return
 		}
 		if e := r.adminSetRecoverMode(ctx, opNode, false); e != nil {
-			r.record(name+"_restore", false, "admin_setRecoverMode(false) 失败（需人工恢复！）: %v", e)
+			r.record(name+"_restore", false, "admin_setRecoverMode(false) failed; manual recovery required: %v", e)
 			return
 		}
 		recovered = true
@@ -204,11 +204,11 @@ func (r *Runner) scenarioRecoverModeNoFalseSuccess(ctx context.Context) {
 	resp, err := r.sendPreconfNative(ctx, r.seq, r.funder, Addr2, smallValue)
 	if err != nil {
 		// rejected outright — that's a safe outcome (no false Success). Record and finish.
-		r.record(name, true, "recover mode 下 preconf 被拒（安全，无假 Success）: %v", err)
+		r.record(name, true, "preconfirmation rejected in recovery mode (no false Success): %v", err)
 		return
 	}
 	if resp.Status != "success" {
-		r.record(name, true, "recover mode 下 preconf 回非 Success=%q（安全，无假 Success）", resp.Status)
+		r.record(name, true, "preconfirmation returned non-Success status %q in recovery mode (no false Success)", resp.Status)
 		return
 	}
 	// It returned Success → the HARD promise now applies: it MUST eventually land on-chain.
@@ -219,7 +219,7 @@ func (r *Runner) scenarioRecoverModeNoFalseSuccess(ctx context.Context) {
 
 	// exit recover mode and require the Success'd preconf to land.
 	if err := r.adminSetRecoverMode(ctx, opNode, false); err != nil {
-		r.record(name, false, "admin_setRecoverMode(false) 恢复失败: %v", err)
+		r.record(name, false, "admin_setRecoverMode(false) recovery failed: %v", err)
 		return
 	}
 	recovered = true
@@ -234,15 +234,15 @@ func (r *Runner) scenarioRecoverModeNoFalseSuccess(ctx context.Context) {
 		time.Sleep(time.Second)
 	}
 	if !found {
-		r.record(name, false, "假 Success：recover mode 下 preconf 回 Success，恢复后 40s 仍未上链")
+		r.record(name, false, "false Success: preconfirmation returned Success in recovery mode but did not land within 40s after recovery")
 		return
 	}
 	if status != 1 {
-		r.record(name, false, "recover mode 下 Success 的 preconf 链上 status=%d（应成功兑现）", status)
+		r.record(name, false, "preconfirmation returned Success in recovery mode but landed with status=%d (expected success)", status)
 		return
 	}
 	predicted := new(big.Int).SetBytes(common.FromHex(resp.BlockHeight)).Uint64()
-	r.record(name, true, "无假 Success：recover mode 下 preconf 回 Success（recover 期间上链=%v），恢复后确实落块 %d、status=1；预测块 %d（偏移=软保证，硬不变式守住）。reth #2 预期 FAIL", onChainDuring, blk, predicted)
+	r.record(name, true, "no false Success: preconfirmation returned Success in recovery mode (landed during recovery=%v), then landed in block %d with status=1; predicted block %d is a soft guarantee. Reth case #2 is expected to fail", onChainDuring, blk, predicted)
 }
 
 // adminSetRecoverMode toggles op-node recover mode (empty / no_tx_pool blocks).

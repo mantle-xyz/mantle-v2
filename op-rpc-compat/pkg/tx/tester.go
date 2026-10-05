@@ -48,7 +48,7 @@ func NewTester(pair *rpc.ClientPair, privateKeyHex string, reporter *report.Repo
 
 	var chainIDHex string
 	if err := json.Unmarshal(chainIDResp.Response.Result, &chainIDHex); err != nil {
-		return nil, fmt.Errorf("解析 chainID 失败: %w", err)
+		return nil, fmt.Errorf("decode chain ID: %w", err)
 	}
 	chainID, err := hexutil.DecodeBig(chainIDHex)
 	if err != nil {
@@ -235,7 +235,7 @@ func (t *Tester) sendRawTransaction(
 ) (common.Hash, error) {
 	rawTx, err := signedTx.MarshalBinary()
 	if err != nil {
-		return common.Hash{}, fmt.Errorf("序列化交易失败: %w", err)
+		return common.Hash{}, fmt.Errorf("encode transaction: %w", err)
 	}
 
 	req := rpc.NewRequest("eth_sendRawTransaction", []interface{}{hexutil.Encode(rawTx)})
@@ -275,7 +275,7 @@ func (t *Tester) sendRawTransaction(
 			t.reporter.AddCompatibleResult(
 				tc,
 				compareResult,
-				"同一交易已由另一转发节点提交到共享 sequencer；already known 视为幂等受理，后续继续校验本地 txpool 可见性",
+				"another forwarding node submitted this transaction to the shared sequencer; treating already known as idempotent acceptance and checking local txpool visibility",
 			)
 		} else {
 			t.reporter.AddResult(tc, compareResult, nil, nil)
@@ -302,7 +302,7 @@ func (t *Tester) sendRawTransaction(
 func (t *Tester) SendRawTransactionWithPreconf(ctx context.Context, client *rpc.Client, signedTx *types.Transaction, testName string) (*PreconfResponse, error) {
 	rawTx, err := signedTx.MarshalBinary()
 	if err != nil {
-		return nil, fmt.Errorf("序列化交易失败: %w", err)
+		return nil, fmt.Errorf("encode transaction: %w", err)
 	}
 
 	req := rpc.NewRequest("eth_sendRawTransactionWithPreconf", []interface{}{hexutil.Encode(rawTx)})
@@ -398,7 +398,7 @@ func (t *Tester) WaitForReceipt(ctx context.Context, client *rpc.Client, txHash 
 		return receipt, nil
 	}
 
-	return nil, fmt.Errorf("等待交易确认超时: %s", txHash.Hex())
+	return nil, fmt.Errorf("timed out waiting for transaction receipt: %s", txHash.Hex())
 }
 
 // normalizeRawResponse removes the request ID and environment-dependent fields.
@@ -493,7 +493,7 @@ func (t *Tester) CompareReceipts(ctx context.Context, testName string, baselineT
 									Path:     "result.gasUsed",
 									Expected: baselineRes["gasUsed"],
 									Actual:   targetRes["gasUsed"],
-									Message:  "Gas 使用不一致 (强制检查)",
+									Message:  "gas used differs (required field)",
 									Severity: diff.SeverityFail,
 								})
 								diffResult.FailCount++
@@ -514,7 +514,7 @@ func (t *Tester) CompareReceipts(ctx context.Context, testName string, baselineT
 									Path:     "result.status",
 									Expected: baselineRes["status"],
 									Actual:   targetRes["status"],
-									Message:  "交易状态不一致 (强制检查)",
+									Message:  "transaction status differs (required field)",
 									Severity: diff.SeverityFail,
 								})
 								diffResult.FailCount++
@@ -650,7 +650,7 @@ func (t *Tester) WaitForReceiptAndCompare(ctx context.Context, txHash common.Has
 		return receipt, nil
 	}
 
-	return nil, fmt.Errorf("等待交易确认超时: %s", txHash.Hex())
+	return nil, fmt.Errorf("timed out waiting for transaction receipt: %s", txHash.Hex())
 }
 
 // GetProof requests an account proof from one client.
@@ -672,7 +672,7 @@ func (t *Tester) GetProof(ctx context.Context, client *rpc.Client, address commo
 
 // TestNativeTransfer compares native-token transfers sent through both clients.
 func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Address, amount *big.Int, txType TxType, usePreconf bool) *TxTestResult {
-	testName := fmt.Sprintf("原生代币转账_%s", txType.String())
+	testName := fmt.Sprintf("native_transfer_%s", txType.String())
 	if usePreconf {
 		testName += "_preconf"
 	}
@@ -684,19 +684,19 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 
 	initialBalance, err := t.GetBalanceAndCompare(ctx, recipient, "latest", fmt.Sprintf("%s_initial_balance", testName))
 	if err != nil {
-		result.Error = fmt.Sprintf("获取初始余额失败: %v", err)
+		result.Error = fmt.Sprintf("get initial balance: %v", err)
 		return result
 	}
 
 	baselineNonce, err := t.GetNonce(ctx, t.baselineClient, t.builder.Address())
 	if err != nil {
-		result.Error = fmt.Sprintf("获取 Baseline nonce 失败: %v", err)
+		result.Error = fmt.Sprintf("get baseline nonce: %v", err)
 		return result
 	}
 
 	gasPrice, err := t.GetGasPrice(ctx, t.baselineClient)
 	if err != nil {
-		result.Error = fmt.Sprintf("获取 gas 价格失败: %v", err)
+		result.Error = fmt.Sprintf("get gas price: %v", err)
 		return result
 	}
 
@@ -736,7 +736,7 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 		}
 		signedAuth, err := t.builder.SignSetCodeAuth(auth)
 		if err != nil {
-			result.Error = fmt.Sprintf("签名授权失败: %v", err)
+			result.Error = fmt.Sprintf("sign authorization: %v", err)
 			return result
 		}
 		params.AuthList = []types.SetCodeAuthorization{signedAuth}
@@ -744,7 +744,7 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 
 	baselineTx, err := t.builder.BuildAndSign(txType, params)
 	if err != nil {
-		result.Error = fmt.Sprintf("构建 Baseline 交易失败: %v", err)
+		result.Error = fmt.Sprintf("build baseline transaction: %v", err)
 		return result
 	}
 
@@ -752,7 +752,7 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 	if usePreconf {
 		preconfResp, err := t.SendRawTransactionWithPreconf(ctx, t.baselineClient, baselineTx, fmt.Sprintf("%s_send_baseline_preconf", testName))
 		if err != nil {
-			result.Error = fmt.Sprintf("发送 Baseline preconf 交易失败: %v", err)
+			result.Error = fmt.Sprintf("send baseline preconfirmation transaction: %v", err)
 			return result
 		}
 		result.BaselinePreconf = preconfResp
@@ -760,7 +760,7 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 	} else {
 		baselineTxHash, err = t.SendRawTransaction(ctx, t.baselineClient, baselineTx, fmt.Sprintf("%s_send_baseline", testName))
 		if err != nil {
-			result.Error = fmt.Sprintf("发送 Baseline 交易失败: %v", err)
+			result.Error = fmt.Sprintf("send baseline transaction: %v", err)
 			return result
 		}
 	}
@@ -768,14 +768,14 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 
 	baselineReceipt, err := t.WaitForReceipt(ctx, t.baselineClient, baselineTxHash, 60*time.Second)
 	if err != nil {
-		result.Error = fmt.Sprintf("等待 Baseline 交易确认失败: %v", err)
+		result.Error = fmt.Sprintf("wait for baseline transaction receipt: %v", err)
 		return result
 	}
 	result.BaselineReceipt = baselineReceipt
 
 	balanceAfterBaseline, err := t.GetBalanceAndCompare(ctx, recipient, "latest", fmt.Sprintf("%s_after_baseline_balance", testName))
 	if err != nil {
-		result.Error = fmt.Sprintf("获取 Baseline 交易后余额失败: %v", err)
+		result.Error = fmt.Sprintf("get balance after baseline transaction: %v", err)
 		return result
 	}
 	baselineBalanceDelta := new(big.Int).Sub(balanceAfterBaseline, initialBalance)
@@ -792,7 +792,7 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 		}
 		signedAuth, err := t.builder.SignSetCodeAuth(auth)
 		if err != nil {
-			result.Error = fmt.Sprintf("签名 Target 授权失败: %v", err)
+			result.Error = fmt.Sprintf("sign target authorization: %v", err)
 			return result
 		}
 		params.AuthList = []types.SetCodeAuthorization{signedAuth}
@@ -800,7 +800,7 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 
 	targetTx, err := t.builder.BuildAndSign(txType, params)
 	if err != nil {
-		result.Error = fmt.Sprintf("构建 Target 交易失败: %v", err)
+		result.Error = fmt.Sprintf("build target transaction: %v", err)
 		return result
 	}
 
@@ -808,7 +808,7 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 	if usePreconf {
 		preconfResp, err := t.SendRawTransactionWithPreconf(ctx, t.targetClient, targetTx, fmt.Sprintf("%s_send_target_preconf", testName))
 		if err != nil {
-			result.Error = fmt.Sprintf("发送 Target preconf 交易失败: %v", err)
+			result.Error = fmt.Sprintf("send target preconfirmation transaction: %v", err)
 			return result
 		}
 		result.TargetPreconf = preconfResp
@@ -816,7 +816,7 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 	} else {
 		targetTxHash, err = t.SendRawTransaction(ctx, t.targetClient, targetTx, fmt.Sprintf("%s_send_target", testName))
 		if err != nil {
-			result.Error = fmt.Sprintf("发送 Target 交易失败: %v", err)
+			result.Error = fmt.Sprintf("send target transaction: %v", err)
 			return result
 		}
 	}
@@ -824,7 +824,7 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 
 	targetReceipt, err := t.WaitForReceipt(ctx, t.targetClient, targetTxHash, 60*time.Second)
 	if err != nil {
-		result.Error = fmt.Sprintf("等待 Target 交易确认失败: %v", err)
+		result.Error = fmt.Sprintf("wait for target transaction receipt: %v", err)
 		return result
 	}
 	result.TargetReceipt = targetReceipt
@@ -833,7 +833,7 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 
 	balanceAfterTarget, err := t.GetBalanceAndCompare(ctx, recipient, "latest", fmt.Sprintf("%s_after_target_balance", testName))
 	if err != nil {
-		result.Error = fmt.Sprintf("获取 Target 交易后余额失败: %v", err)
+		result.Error = fmt.Sprintf("get balance after target transaction: %v", err)
 		return result
 	}
 	targetBalanceDelta := new(big.Int).Sub(balanceAfterTarget, balanceAfterBaseline)
@@ -852,15 +852,15 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 
 	if !comparison.BalanceMatch {
 		comparison.Differences = append(comparison.Differences,
-			fmt.Sprintf("余额变化不一致: Baseline=%s, Target=%s", baselineBalanceDelta.String(), targetBalanceDelta.String()))
+			fmt.Sprintf("balance delta mismatch: baseline=%s, target=%s", baselineBalanceDelta.String(), targetBalanceDelta.String()))
 	}
 	if !comparison.GasMatch {
 		comparison.Differences = append(comparison.Differences,
-			fmt.Sprintf("Gas 使用不一致: Baseline=%d, Target=%d", baselineReceipt.GasUsed, targetReceipt.GasUsed))
+			fmt.Sprintf("gas used mismatch: baseline=%d, target=%d", baselineReceipt.GasUsed, targetReceipt.GasUsed))
 	}
 	if !comparison.StatusMatch {
 		comparison.Differences = append(comparison.Differences,
-			fmt.Sprintf("交易状态不一致: Baseline=%d, Target=%d", baselineReceipt.Status, targetReceipt.Status))
+			fmt.Sprintf("transaction status mismatch: baseline=%d, target=%d", baselineReceipt.Status, targetReceipt.Status))
 	}
 
 	result.StateComparison = comparison
@@ -872,13 +872,13 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 			errs = append(errs, diffErr.Error())
 		}
 		if !comparison.BalanceMatch {
-			errs = append(errs, "余额不一致")
+			errs = append(errs, "balance mismatch")
 		}
 		if !comparison.StatusMatch {
-			errs = append(errs, "Status不一致")
+			errs = append(errs, "status mismatch")
 		}
 		if !comparison.GasMatch {
-			errs = append(errs, "Gas不一致")
+			errs = append(errs, "gas mismatch")
 		}
 
 		if len(comparison.Differences) > 0 {
@@ -928,19 +928,19 @@ func (t *Tester) TestTxpoolRejection(
 	// Use the reference nonce, as in the other transaction tests.
 	nonce, err := t.GetNonce(ctx, t.baselineClient, t.builder.Address())
 	if err != nil {
-		result.Error = fmt.Sprintf("获取 nonce 失败: %v", err)
+		result.Error = fmt.Sprintf("get nonce: %v", err)
 		return result
 	}
 
 	signedTx, err := buildTx(nonce)
 	if err != nil {
-		result.Error = fmt.Sprintf("构造交易失败: %v", err)
+		result.Error = fmt.Sprintf("build transaction: %v", err)
 		return result
 	}
 
 	rawTx, err := signedTx.MarshalBinary()
 	if err != nil {
-		result.Error = fmt.Sprintf("序列化交易失败: %v", err)
+		result.Error = fmt.Sprintf("encode transaction: %v", err)
 		return result
 	}
 
@@ -1007,7 +1007,7 @@ func (t *Tester) TestTxpoolAcceptance(
 
 	nonce, err := t.GetNonce(ctx, t.baselineClient, t.builder.Address())
 	if err != nil {
-		result.Error = fmt.Sprintf("获取 nonce 失败: %v", err)
+		result.Error = fmt.Sprintf("get nonce: %v", err)
 		return result
 	}
 
@@ -1153,7 +1153,7 @@ func (t *Tester) senderInTxpoolContent(ctx context.Context, client *rpc.Client, 
 		Queued  map[string]json.RawMessage `json:"queued"`
 	}
 	if err := json.Unmarshal(resp.Response.Result, &content); err != nil {
-		return false, fmt.Errorf("解析 txpool_content 失败: %w", err)
+		return false, fmt.Errorf("decode txpool_content: %w", err)
 	}
 
 	// Address keys are compared case-insensitively.

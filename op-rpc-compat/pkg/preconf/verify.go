@@ -82,19 +82,19 @@ func (r *Runner) verifyOnChain(ctx context.Context, name string, ps []promise) (
 			time.Sleep(time.Second)
 		}
 		if !found {
-			r.record(name, false, "tx %s: 已回 Success 但链上无 receipt（假 Success）", p.hash.Hex())
+			r.record(name, false, "tx %s: preconfirmation returned Success but no on-chain receipt exists (false success)", p.hash.Hex())
 			return blocks, false
 		}
 		if status != 1 {
-			r.record(name, false, "tx %s: 链上 status=%d，预确认=success", p.hash.Hex(), status)
+			r.record(name, false, "tx %s: on-chain status=%d, preconfirmation=success", p.hash.Hex(), status)
 			return blocks, false
 		}
 		if !logsEquivalent(p.preLogs, logs) {
-			r.record(name, false, "tx %s: logs 不一致 pre=%q chain=%q", p.hash.Hex(), p.preLogs, logs)
+			r.record(name, false, "tx %s: logs mismatch pre=%q chain=%q", p.hash.Hex(), p.preLogs, logs)
 			return blocks, false
 		}
 		if p.hasGasUsed && gasUsed != p.preGasUsed {
-			r.record(name, false, "tx %s: gasUsed 链上 %d != 预确认 %d", p.hash.Hex(), gasUsed, p.preGasUsed)
+			r.record(name, false, "tx %s: on-chain gasUsed %d differs from preconfirmation %d", p.hash.Hex(), gasUsed, p.preGasUsed)
 			return blocks, false
 		}
 		blocks[p.hash] = blk

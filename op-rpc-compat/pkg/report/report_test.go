@@ -65,7 +65,7 @@ func TestReporterPrintsLogicalEndpointNames(t *testing.T) {
 	if !strings.Contains(string(output), "\n    old-reth:") || !strings.Contains(string(output), "\n    new-reth:") {
 		t.Fatalf("error details must use logical names: %s", output)
 	}
-	if strings.Contains(string(output), "geth 错误") || strings.Contains(string(output), "reth 错误") ||
+	if strings.Contains(string(output), "geth error") || strings.Contains(string(output), "reth error") ||
 		strings.Contains(string(output), "\n    geth:") || strings.Contains(string(output), "\n    reth:") {
 		t.Fatalf("fixed client labels remain: %s", output)
 	}

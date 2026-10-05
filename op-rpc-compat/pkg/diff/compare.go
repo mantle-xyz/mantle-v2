@@ -89,11 +89,11 @@ func Compare(expected, actual []byte, opts *Options) (*CompareResult, error) {
 	var expectedVal, actualVal interface{}
 
 	if err := json.Unmarshal(expected, &expectedVal); err != nil {
-		return nil, fmt.Errorf("解析 expected JSON 失败: %w", err)
+		return nil, fmt.Errorf("decode expected JSON: %w", err)
 	}
 
 	if err := json.Unmarshal(actual, &actualVal); err != nil {
-		return nil, fmt.Errorf("解析 actual JSON 失败: %w", err)
+		return nil, fmt.Errorf("decode actual JSON: %w", err)
 	}
 
 	result := &CompareResult{
@@ -177,7 +177,7 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 					Type:     DiffTypeValue,
 					Expected: expected,
 					Actual:   actual,
-					Message:  "数值不同",
+					Message:  "numeric values differ",
 				})
 			}
 			return
@@ -188,7 +188,7 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 			Type:     DiffTypeType,
 			Expected: fmt.Sprintf("%T", expected),
 			Actual:   fmt.Sprintf("%T", actual),
-			Message:  fmt.Sprintf("类型不同: %T vs %T", expected, actual),
+			Message:  fmt.Sprintf("types differ: %T vs %T", expected, actual),
 		})
 		return
 	}
@@ -214,7 +214,7 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 				Type:     DiffTypeValue,
 				Expected: expected,
 				Actual:   actual,
-				Message:  "字符串值不同",
+				Message:  "string values differ",
 			})
 		}
 
@@ -226,7 +226,7 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 				Type:     DiffTypeValue,
 				Expected: expected,
 				Actual:   actual,
-				Message:  "数值不同",
+				Message:  "numeric values differ",
 			})
 		}
 
@@ -238,7 +238,7 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 				Type:     DiffTypeValue,
 				Expected: expected,
 				Actual:   actual,
-				Message:  "布尔值不同",
+				Message:  "boolean values differ",
 			})
 		}
 
@@ -249,7 +249,7 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 				Type:     DiffTypeValue,
 				Expected: expected,
 				Actual:   actual,
-				Message:  "值不同",
+				Message:  "values differ",
 			})
 		}
 	}
@@ -315,7 +315,7 @@ func compareArrays(path string, expected, actual []interface{}, result *CompareR
 			Type:     DiffTypeValue,
 			Expected: len(expected),
 			Actual:   len(actual),
-			Message:  fmt.Sprintf("数组长度不同: %d vs %d", len(expected), len(actual)),
+			Message:  fmt.Sprintf("array lengths differ: %d vs %d", len(expected), len(actual)),
 		})
 	}
 
@@ -426,7 +426,7 @@ func toFloat64(v interface{}) float64 {
 // FormatDifferences formats differences for human-readable output.
 func FormatDifferences(diffs []Difference) string {
 	if len(diffs) == 0 {
-		return "无差异"
+		return "no differences"
 	}
 
 	var sb strings.Builder
@@ -439,7 +439,7 @@ func FormatDifferences(diffs []Difference) string {
 			sb.WriteString(fmt.Sprintf("   target: %v\n", formatValue(d.Actual)))
 		}
 		if d.Message != "" {
-			sb.WriteString(fmt.Sprintf("   说明: %s\n", d.Message))
+			sb.WriteString(fmt.Sprintf("   Details: %s\n", d.Message))
 		}
 	}
 	return sb.String()

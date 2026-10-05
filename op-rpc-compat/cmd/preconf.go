@@ -85,12 +85,12 @@ func init() {
 	preconfCmd.Flags().StringVar(&preconfBaselineVerURL, "baseline-verifier-url", "", "Baseline verifier RPC endpoint URL")
 	preconfCmd.Flags().StringVar(&preconfOpNodeURL, "op-node-url", "", "Sequencer op-node admin RPC endpoint URL")
 	preconfCmd.Flags().StringVar(&preconfL1URL, "l1-url", "", "L1 RPC endpoint URL")
-	preconfCmd.Flags().StringVar(&preconfFunderKey, "funder-key", preconfEnvOr("PRECONF_FUNDER_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"), "funder 私钥（0xf39F…2266，白名单发送者）")
-	preconfCmd.Flags().StringVar(&preconfAddr1Key, "addr1-key", preconfEnvOr("PRECONF_ADDR1_KEY", "0xe474bfa0d1520cf4b161b382db9f527c39ac16b6d9a8351f091bd406f739a691"), "Addr1 私钥（0x6F18…BDc5，TestPay 调用的白名单发送者）")
-	preconfCmd.Flags().StringVar(&preconfAddr3Key, "addr3-key", preconfEnvOr("PRECONF_ADDR3_KEY", "0x654c6b97f400c2facec28bcb2ae04f2bf99e007bd6e41b2ce221481e30840e49"), "Addr3 私钥（0x918a…EC29，ERC20 token owner，approve TestPay）")
-	preconfCmd.Flags().BoolVar(&preconfHeavy, "heavy", false, "运行重吞吐套件（stress）")
-	preconfCmd.Flags().IntVar(&preconfStressCount, "stress-count", 200, "stress 场景的 preconf 交易笔数（--heavy 时生效）")
-	preconfCmd.Flags().StringVar(&preconfOnly, "only", "", "只跑指定名字的场景（其余跳过；setup 仍执行）。用于短超时 profile 下单跑 A8 等")
+	preconfCmd.Flags().StringVar(&preconfFunderKey, "funder-key", preconfEnvOr("PRECONF_FUNDER_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"), "Funder private key (0xf39F...2266, allowlisted sender)")
+	preconfCmd.Flags().StringVar(&preconfAddr1Key, "addr1-key", preconfEnvOr("PRECONF_ADDR1_KEY", "0xe474bfa0d1520cf4b161b382db9f527c39ac16b6d9a8351f091bd406f739a691"), "Addr1 private key (0x6F18...BDc5, allowlisted TestPay caller)")
+	preconfCmd.Flags().StringVar(&preconfAddr3Key, "addr3-key", preconfEnvOr("PRECONF_ADDR3_KEY", "0x654c6b97f400c2facec28bcb2ae04f2bf99e007bd6e41b2ce221481e30840e49"), "Addr3 private key (0x918a...EC29, ERC20 owner approving TestPay)")
+	preconfCmd.Flags().BoolVar(&preconfHeavy, "heavy", false, "Run additional high-load scenarios")
+	preconfCmd.Flags().IntVar(&preconfStressCount, "stress-count", 200, "Number of preconfirmation transactions in the stress scenario (requires --heavy)")
+	preconfCmd.Flags().StringVar(&preconfOnly, "only", "", "Run only the named scenario; setup still runs (useful for short-timeout profiles)")
 }
 
 func preconfEnvOr(key, def string) string {

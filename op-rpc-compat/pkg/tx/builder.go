@@ -26,13 +26,13 @@ func NewBuilder(chainID *big.Int, privateKeyHex string) (*Builder, error) {
 
 	privateKey, err := crypto.HexToECDSA(privateKeyHex)
 	if err != nil {
-		return nil, fmt.Errorf("解析私钥失败: %w", err)
+		return nil, fmt.Errorf("parse private key: %w", err)
 	}
 
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
-		return nil, fmt.Errorf("无法获取公钥")
+		return nil, fmt.Errorf("public key unavailable")
 	}
 	address := crypto.PubkeyToAddress(*publicKeyECDSA)
 
@@ -84,7 +84,7 @@ func (b *Builder) BuildEIP1559Tx(params *TxParams) (*types.Transaction, error) {
 // BuildEIP7702Tx constructs an EIP-7702 transaction.
 func (b *Builder) BuildEIP7702Tx(params *TxParams) (*types.Transaction, error) {
 	if params.To == nil {
-		return nil, fmt.Errorf("EIP-7702 交易需要指定接收地址")
+		return nil, fmt.Errorf("EIP-7702 transactions require a recipient")
 	}
 
 	tx := types.NewTx(&types.SetCodeTx{
@@ -133,7 +133,7 @@ func (b *Builder) BuildAndSign(txType TxType, params *TxParams) (*types.Transact
 	case TxTypeEIP7702:
 		tx, err = b.BuildEIP7702Tx(params)
 	default:
-		return nil, fmt.Errorf("不支持的交易类型: %v", txType)
+		return nil, fmt.Errorf("unsupported transaction type: %v", txType)
 	}
 
 	if err != nil {

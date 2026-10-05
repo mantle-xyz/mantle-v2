@@ -108,20 +108,20 @@ func (c *Client) Call(ctx context.Context, req *Request) *ResponseWithMeta {
 
 	reqBody, err := json.Marshal(req)
 	if err != nil {
-		result.Error = fmt.Errorf("序列化请求失败: %w", err)
+		result.Error = fmt.Errorf("encode request: %w", err)
 		return result
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.url, bytes.NewReader(reqBody))
 	if err != nil {
-		result.Error = fmt.Errorf("创建 HTTP 请求失败: %w", err)
+		result.Error = fmt.Errorf("create HTTP request: %w", err)
 		return result
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		result.Error = fmt.Errorf("HTTP 请求失败: %w", err)
+		result.Error = fmt.Errorf("HTTP request failed: %w", err)
 		result.Duration = time.Since(start)
 		return result
 	}
@@ -129,7 +129,7 @@ func (c *Client) Call(ctx context.Context, req *Request) *ResponseWithMeta {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		result.Error = fmt.Errorf("读取响应失败: %w", err)
+		result.Error = fmt.Errorf("read response: %w", err)
 		result.Duration = time.Since(start)
 		return result
 	}
@@ -139,7 +139,7 @@ func (c *Client) Call(ctx context.Context, req *Request) *ResponseWithMeta {
 
 	var rpcResp Response
 	if err := json.Unmarshal(body, &rpcResp); err != nil {
-		result.Error = fmt.Errorf("解析响应失败: %w (body: %s)", err, string(body))
+		result.Error = fmt.Errorf("decode response: %w (body: %s)", err, string(body))
 		return result
 	}
 

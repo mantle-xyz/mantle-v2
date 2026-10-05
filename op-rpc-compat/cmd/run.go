@@ -34,7 +34,7 @@ var (
 // runTests executes either the RPC corpus or transaction suite.
 func runTests() error {
 	if txStandardOnly && !txTest {
-		return fmt.Errorf("--tx-standard-only 需与 --tx 同时使用")
+		return fmt.Errorf("--tx-standard-only requires --tx")
 	}
 	ctx := context.Background()
 	clients := rpc.NewClientPair(baselineURL, baselineName, targetURL, targetName, timeout)
@@ -50,10 +50,10 @@ func runTests() error {
 
 	if txTest {
 		fmt.Println(color.CyanString("============================================================"))
-		fmt.Println(color.CyanString("交易测试"))
+		fmt.Println(color.CyanString("Transaction tests"))
 		fmt.Println(color.CyanString("============================================================"))
 		if err := runTransactionTests(clients, baselineMeta, targetMeta); err != nil {
-			fmt.Fprintf(os.Stderr, "交易测试失败: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Transaction tests failed: %v\n", err)
 			os.Exit(1)
 		}
 		return nil
@@ -69,10 +69,10 @@ func runTests() error {
 		corpus = testcaseFS(testcasesDir)
 		files, err := findTestFiles(testcasesDir, excludeFiles)
 		if err != nil {
-			return fmt.Errorf("查找测试文件失败: %w", err)
+			return fmt.Errorf("find testcase files: %w", err)
 		}
 		if len(files) == 0 {
-			return fmt.Errorf("在 %s 目录下未找到测试文件", testcasesDir)
+			return fmt.Errorf("no testcase files found in %s", testcasesDir)
 		}
 		testFiles = files
 	}
@@ -86,24 +86,24 @@ func runTests() error {
 			tests, err = loadTestFileFS(corpus, filepath.Base(file))
 		}
 		if err != nil {
-			return fmt.Errorf("加载测试文件 %s 失败: %w", file, err)
+			return fmt.Errorf("load testcase file %s: %w", file, err)
 		}
 		allTests = append(allTests, tests...)
 	}
 
 	if len(allTests) == 0 {
-		return fmt.Errorf("没有测试用例")
+		return fmt.Errorf("no testcases found")
 	}
 
 	if hasTemplateVars(allTests) {
 		client := clients.Baseline
 		vars, err := fetchTemplateVars(ctx, client)
 		if err != nil {
-			fmt.Printf("警告: 获取模板变量失败: %v\n", err)
+			fmt.Printf("Warning: fetch template variables: %v\n", err)
 		} else {
 			allTests = replaceTemplateVars(allTests, vars)
 			if verbose {
-				fmt.Printf("已替换模板变量:\n")
+				fmt.Printf("Resolved template variables:\n")
 				fmt.Printf("  latest_block_hash: %s\n", vars.LatestBlockHash)
 				fmt.Printf("  latest_block_number: %s\n", vars.LatestBlockNumber)
 				fmt.Printf("  latest_tx_hash: %s\n", vars.LatestTxHash)
@@ -113,14 +113,14 @@ func runTests() error {
 	}
 
 	if testFile != "" {
-		fmt.Printf("运行测试文件: %s (%d 个测试)\n", testFile, len(allTests))
+		fmt.Printf("Running testcase file: %s (%d cases)\n", testFile, len(allTests))
 	} else {
-		fmt.Printf("运行所有测试文件: %d 个文件, %d 个测试\n", len(testFiles), len(allTests))
+		fmt.Printf("Running all testcase files: %d files, %d cases\n", len(testFiles), len(allTests))
 		for _, f := range testFiles {
 			fmt.Printf("  - %s\n", filepath.Base(f))
 		}
 		if len(excludeFiles) > 0 {
-			fmt.Printf("用户排除的文件: %v\n", excludeFiles)
+			fmt.Printf("Excluded files: %v\n", excludeFiles)
 		}
 	}
 
@@ -133,7 +133,7 @@ func runTests() error {
 		return err
 	}
 	if loaded {
-		fmt.Printf("已加载已知差异配置: %s\n", knownDiffsPath)
+		fmt.Printf("Loaded known differences: %s\n", knownDiffsPath)
 	}
 
 	fmt.Printf("\n%s: %s\n", baselineName, baselineURL)
@@ -163,9 +163,9 @@ func runTests() error {
 
 	if outputFile != "" {
 		if err := reporter.SaveJSON(outputFile); err != nil {
-			fmt.Fprintf(os.Stderr, "保存报告失败: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Save report: %v\n", err)
 		} else {
-			fmt.Printf("\n报告已保存到: %s\n", outputFile)
+			fmt.Printf("\nReport saved to: %s\n", outputFile)
 		}
 	}
 
@@ -189,7 +189,7 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 
 	tester, err := tx.NewTester(clients, txPrivateKey, reporter)
 	if err != nil {
-		return fmt.Errorf("创建交易测试器失败: %w", err)
+		return fmt.Errorf("create transaction tester: %w", err)
 	}
 
 	var recipient common.Address
@@ -213,27 +213,27 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 
 	amount, ok := new(big.Int).SetString(txAmount, 10)
 	if !ok {
-		return fmt.Errorf("无效的转账金额: %s", txAmount)
+		return fmt.Errorf("invalid transfer amount: %s", txAmount)
 	}
 
 	balance, err := tester.GetBalance(ctx, tester.BaselineClient(), tester.Builder().Address(), "latest")
 	if err != nil {
-		return fmt.Errorf("获取余额失败: %w", err)
+		return fmt.Errorf("get balance: %w", err)
 	}
 
-	fmt.Printf("发送者地址: %s\n", tester.Builder().Address().Hex())
-	fmt.Printf("发送者余额: %s wei\n", balance.String())
-	fmt.Printf("接收者地址（标准）: %s\n", recipient.Hex())
+	fmt.Printf("Sender address: %s\n", tester.Builder().Address().Hex())
+	fmt.Printf("Sender balance: %s wei\n", balance.String())
+	fmt.Printf("Standard recipient: %s\n", recipient.Hex())
 	if includePreconfTransactions(txStandardOnly) {
-		fmt.Printf("接收者地址（预确认）: %s\n", recipientPreconf.Hex())
+		fmt.Printf("Preconfirmation recipient: %s\n", recipientPreconf.Hex())
 	}
-	fmt.Printf("转账金额: %s wei\n", amount.String())
+	fmt.Printf("Transfer amount: %s wei\n", amount.String())
 	fmt.Println()
 
 	// The sender must fund several test transactions and their gas.
 	minRequired := new(big.Int).Mul(amount, big.NewInt(20)) // EIP-7702 scenarios need additional gas headroom
 	if balance.Cmp(minRequired) < 0 {
-		return fmt.Errorf("余额不足: 当前 %s wei, 需要至少 %s wei", balance.String(), minRequired.String())
+		return fmt.Errorf("insufficient balance: have %s wei, need at least %s wei", balance.String(), minRequired.String())
 	}
 
 	var results []*tx.TxTestResult
@@ -241,13 +241,13 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 	txTypes := []tx.TxType{tx.TxTypeLegacy, tx.TxTypeEIP1559}
 
 	for _, txType := range txTypes {
-		fmt.Printf("📤 测试 %s 交易 (eth_sendRawTransaction)...\n", txType.String())
+		fmt.Printf("Testing %s transaction (eth_sendRawTransaction)...\n", txType.String())
 		result := tester.TestNativeTransfer(ctx, recipient, amount, txType, false)
 		printTxTestResult(result)
 		results = append(results, result)
 
 		if includePreconfTransactions(txStandardOnly) {
-			fmt.Printf("📤 测试 %s 交易 (eth_sendRawTransactionWithPreconf)...\n", txType.String())
+			fmt.Printf("Testing %s transaction (eth_sendRawTransactionWithPreconf)...\n", txType.String())
 			preconfResult := tester.TestNativeTransfer(ctx, recipientPreconf, amount, txType, true)
 			printTxTestResult(preconfResult)
 			results = append(results, preconfResult)
@@ -255,7 +255,7 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 	}
 
 	fmt.Println()
-	fmt.Println(color.YellowString("📜 测试 EIP-7702 交易..."))
+	fmt.Println(color.YellowString("Testing EIP-7702 transactions..."))
 	eip7702Results := testEIP7702Transfer(
 		ctx,
 		tester,
@@ -269,14 +269,14 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 
 	fmt.Println()
 	fmt.Println(color.CyanString("============================================================"))
-	fmt.Println(color.CyanString("合约测试"))
+	fmt.Println(color.CyanString("Contract tests"))
 	fmt.Println(color.CyanString("============================================================"))
 	contractResults := runContractTests(ctx, tester)
 	results = append(results, contractResults...)
 
 	fmt.Println()
 	fmt.Println(color.CyanString("============================================================"))
-	fmt.Println(color.CyanString("Txpool 拒绝测试（MetaTx + EIP-155）"))
+	fmt.Println(color.CyanString("Txpool rejection tests (MetaTx and EIP-155)"))
 	fmt.Println(color.CyanString("============================================================"))
 	rejectionResults := runRejectionTests(ctx, tester)
 	for _, result := range rejectionResults {
@@ -285,7 +285,7 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 	}
 
 	fmt.Println()
-	fmt.Println(color.CyanString("🔍 检查 eth_feeHistory..."))
+	fmt.Println(color.CyanString("Checking eth_feeHistory..."))
 
 	fhReq := rpc.NewRequest("eth_feeHistory", []interface{}{"0x5", "latest", []float64{25, 75}})
 	fhBaselineResp := tester.BaselineClient().Call(ctx, fhReq)
@@ -321,9 +321,9 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 
 	if outputFile != "" {
 		if err := reporter.SaveJSON(outputFile); err != nil {
-			fmt.Fprintf(os.Stderr, "保存报告失败: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Save report: %v\n", err)
 		} else {
-			fmt.Printf("\n报告已保存到: %s\n", outputFile)
+			fmt.Printf("\nReport saved to: %s\n", outputFile)
 		}
 	}
 
@@ -371,7 +371,7 @@ func testEIP7702Transfer(
 // testEIP7702BasicTransfer checks a transfer with an empty authorization list.
 func testEIP7702BasicTransfer(ctx context.Context, tester *tx.Tester, amount *big.Int) *tx.TxTestResult {
 	result := &tx.TxTestResult{
-		TestName: "EIP-7702 基本转账",
+		TestName: "EIP-7702 basic transfer",
 		TxType:   "EIP-7702",
 	}
 
@@ -380,19 +380,19 @@ func testEIP7702BasicTransfer(ctx context.Context, tester *tx.Tester, amount *bi
 
 	initialBalance, err := tester.GetBalance(ctx, tester.BaselineClient(), recipient, "latest")
 	if err != nil {
-		result.Error = fmt.Sprintf("获取初始余额失败: %v", err)
+		result.Error = fmt.Sprintf("get initial balance: %v", err)
 		return result
 	}
 
 	transferResult := tester.TestNativeTransfer(ctx, recipient, amount, tx.TxTypeEIP7702, false)
 	if transferResult.Error != "" {
-		result.Error = fmt.Sprintf("Baseline EIP-7702 交易失败: %s", transferResult.Error)
+		result.Error = fmt.Sprintf("baseline EIP-7702 transaction failed: %s", transferResult.Error)
 		return result
 	}
 
 	finalBalance, err := tester.GetBalance(ctx, tester.BaselineClient(), recipient, "latest")
 	if err != nil {
-		result.Error = fmt.Sprintf("获取最终余额失败: %v", err)
+		result.Error = fmt.Sprintf("get final balance: %v", err)
 		return result
 	}
 
@@ -408,7 +408,7 @@ func testEIP7702BasicTransfer(ctx context.Context, tester *tx.Tester, amount *bi
 	if actualDelta.Cmp(expectedDelta) == 0 {
 		result.Passed = true
 	} else {
-		result.Error = fmt.Sprintf("余额变化不一致: 期望 %s, 实际 %s", expectedDelta.String(), actualDelta.String())
+		result.Error = fmt.Sprintf("balance delta mismatch: expected %s, got %s", expectedDelta.String(), actualDelta.String())
 	}
 
 	return result
@@ -417,7 +417,7 @@ func testEIP7702BasicTransfer(ctx context.Context, tester *tx.Tester, amount *bi
 // testEIP7702BasicTransferPreconf checks an EIP-7702 transfer through preconfirmation.
 func testEIP7702BasicTransferPreconf(ctx context.Context, tester *tx.Tester, amount *big.Int) *tx.TxTestResult {
 	result := &tx.TxTestResult{
-		TestName: "EIP-7702 预确认转账",
+		TestName: "EIP-7702 preconfirmed transfer",
 		TxType:   "EIP-7702",
 	}
 
@@ -426,19 +426,19 @@ func testEIP7702BasicTransferPreconf(ctx context.Context, tester *tx.Tester, amo
 
 	initialBalance, err := tester.GetBalance(ctx, tester.BaselineClient(), recipient, "latest")
 	if err != nil {
-		result.Error = fmt.Sprintf("获取初始余额失败: %v", err)
+		result.Error = fmt.Sprintf("get initial balance: %v", err)
 		return result
 	}
 
 	transferResult := tester.TestNativeTransfer(ctx, recipient, amount, tx.TxTypeEIP7702, true)
 	if transferResult.Error != "" {
-		result.Error = fmt.Sprintf("Baseline EIP-7702 预确认交易失败: %s", transferResult.Error)
+		result.Error = fmt.Sprintf("baseline EIP-7702 preconfirmation failed: %s", transferResult.Error)
 		return result
 	}
 
 	finalBalance, err := tester.GetBalance(ctx, tester.BaselineClient(), recipient, "latest")
 	if err != nil {
-		result.Error = fmt.Sprintf("获取最终余额失败: %v", err)
+		result.Error = fmt.Sprintf("get final balance: %v", err)
 		return result
 	}
 
@@ -456,7 +456,7 @@ func testEIP7702BasicTransferPreconf(ctx context.Context, tester *tx.Tester, amo
 	if actualDelta.Cmp(expectedDelta) == 0 {
 		result.Passed = true
 	} else {
-		result.Error = fmt.Sprintf("余额变化不一致: 期望 %s, 实际 %s", expectedDelta.String(), actualDelta.String())
+		result.Error = fmt.Sprintf("balance delta mismatch: expected %s, got %s", expectedDelta.String(), actualDelta.String())
 	}
 
 	return result
@@ -485,21 +485,21 @@ func printTxTestResult(result *tx.TxTestResult) {
 	if result.StateComparison != nil {
 		sc := result.StateComparison
 		if sc.BalanceMatch {
-			fmt.Printf("    余额变化: %s (一致)\n", color.GreenString(sc.BaselineBalanceDelta.String()))
+			fmt.Printf("    Balance delta: %s (matched)\n", color.GreenString(sc.BaselineBalanceDelta.String()))
 		} else {
-			fmt.Printf("    余额变化: Baseline=%s, Target=%s %s\n",
-				sc.BaselineBalanceDelta.String(), sc.TargetBalanceDelta.String(), color.RedString("(不一致)"))
+			fmt.Printf("    Balance delta: baseline=%s, target=%s %s\n",
+				sc.BaselineBalanceDelta.String(), sc.TargetBalanceDelta.String(), color.RedString("(mismatch)"))
 		}
 		if sc.GasMatch {
-			fmt.Printf("    Gas 使用: %d (一致)\n", sc.BaselineGasUsed)
+			fmt.Printf("    Gas used: %d (matched)\n", sc.BaselineGasUsed)
 		} else {
-			fmt.Printf("    Gas 使用: Baseline=%d, Target=%d %s\n",
-				sc.BaselineGasUsed, sc.TargetGasUsed, color.YellowString("(不一致)"))
+			fmt.Printf("    Gas used: baseline=%d, target=%d %s\n",
+				sc.BaselineGasUsed, sc.TargetGasUsed, color.YellowString("(mismatch)"))
 		}
 	}
 
 	if result.BaselinePreconf != nil && result.TargetPreconf != nil {
-		fmt.Printf("    Preconf 状态: Baseline=%s, Target=%s\n",
+		fmt.Printf("    Preconfirmation status: baseline=%s, target=%s\n",
 			result.BaselinePreconf.Status, result.TargetPreconf.Status)
 	}
 	fmt.Println()
@@ -508,7 +508,7 @@ func printTxTestResult(result *tx.TxTestResult) {
 // printTxTestSummary renders the transaction suite summary.
 func printTxTestSummary(results []*tx.TxTestResult) {
 	fmt.Println(color.CyanString("============================================================"))
-	fmt.Println(color.CyanString("交易测试摘要"))
+	fmt.Println(color.CyanString("Transaction test summary"))
 	fmt.Println(color.CyanString("============================================================"))
 
 	total := len(results)
@@ -523,13 +523,13 @@ func printTxTestSummary(results []*tx.TxTestResult) {
 		}
 	}
 
-	fmt.Printf("总计: %d | 通过: %s | 失败: %s\n",
+	fmt.Printf("Total: %d | Passed: %s | Failed: %s\n",
 		total,
 		color.GreenString("%d", passed),
 		color.RedString("%d", failed))
 
 	if failed > 0 {
-		fmt.Println("\n失败的测试:")
+		fmt.Println("\nFailed tests:")
 		for _, r := range results {
 			if !r.Passed || r.Error != "" {
 				fmt.Printf("  ✗ %s", r.TestName)
@@ -548,13 +548,13 @@ func printTxTestSummary(results []*tx.TxTestResult) {
 func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult {
 	var results []*tx.TxTestResult
 
-	fmt.Println(color.CyanString("📦 测试 SimpleStorage 合约部署..."))
-	deployResult, err := tester.DeployContract(ctx, tx.SimpleStorageBytecode, "SimpleStorage部署")
+	fmt.Println(color.CyanString("Testing SimpleStorage contract deployment..."))
+	deployResult, err := tester.DeployContract(ctx, tx.SimpleStorageBytecode, "SimpleStorage deployment")
 	if err != nil {
 		result := &tx.TxTestResult{
-			TestName: "SimpleStorage部署",
+			TestName: "SimpleStorage deployment",
 			TxType:   "Contract Deploy",
-			Error:    fmt.Sprintf("部署失败: %v", err),
+			Error:    fmt.Sprintf("deployment failed: %v", err),
 			Passed:   false,
 		}
 		fmt.Printf("  %s %s: %s\n", color.RedString("✗ FAIL"), result.TestName, result.Error)
@@ -577,16 +577,16 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 		fmt.Printf("  %s %s\n", color.GreenString("✓ PASS"), deployResult.TestName)
 		fmt.Printf("    Baseline TX: %s\n", deployResult.BaselineTxHash)
 		fmt.Printf("    Target TX: %s\n", deployResult.TargetTxHash)
-		fmt.Printf("    Baseline 合约地址: %s\n", deployResult.BaselineContractAddress)
-		fmt.Printf("    Target 合约地址: %s\n", deployResult.TargetContractAddress)
+		fmt.Printf("    Baseline contract address: %s\n", deployResult.BaselineContractAddress)
+		fmt.Printf("    Target contract address: %s\n", deployResult.TargetContractAddress)
 		if deployResult.BaselineReceipt != nil && deployResult.TargetReceipt != nil {
 			if deployResult.BaselineReceipt.GasUsed == deployResult.TargetReceipt.GasUsed {
-				fmt.Printf("    Gas 使用: %d (一致)\n", deployResult.BaselineReceipt.GasUsed)
+				fmt.Printf("    Gas used: %d (matched)\n", deployResult.BaselineReceipt.GasUsed)
 			} else {
-				fmt.Printf("    Gas 使用: Baseline=%d, Target=%d %s\n",
+				fmt.Printf("    Gas used: baseline=%d, target=%d %s\n",
 					deployResult.BaselineReceipt.GasUsed,
 					deployResult.TargetReceipt.GasUsed,
-					color.YellowString("(不一致)"))
+					color.YellowString("(mismatch)"))
 			}
 		}
 	} else {
@@ -603,15 +603,15 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 	contractAddrTarget := common.HexToAddress(deployResult.TargetContractAddress)
 
 	// The initial stored value should be zero.
-	fmt.Println(color.CyanString("\n📞 测试 SimpleStorage.get() 方法（初始值）..."))
+	fmt.Println(color.CyanString("\nTesting SimpleStorage.get() (initial value)..."))
 	// get() selector: 0x6d4ce63c.
 	getCallData := common.FromHex("0x6d4ce63c")
-	getResult1, err := tester.CallContract(ctx, contractAddrBaseline, contractAddrTarget, getCallData, "SimpleStorage.get()_初始值")
+	getResult1, err := tester.CallContract(ctx, contractAddrBaseline, contractAddrTarget, getCallData, "SimpleStorage.get() initial value")
 	if err != nil {
 		result := &tx.TxTestResult{
-			TestName: "SimpleStorage.get()_初始值",
+			TestName: "SimpleStorage.get() initial value",
 			TxType:   "Contract Call",
-			Error:    fmt.Sprintf("调用失败: %v", err),
+			Error:    fmt.Sprintf("call failed: %v", err),
 			Passed:   false,
 		}
 		fmt.Printf("  %s %s: %s\n", color.RedString("✗ FAIL"), result.TestName, result.Error)
@@ -625,18 +625,18 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 		}
 		if getResult1.Success && getResult1.ResultMatch {
 			fmt.Printf("  %s %s\n", color.GreenString("✓ PASS"), getResult1.TestName)
-			fmt.Printf("    返回值: %s (Baseline 和 Target 一致)\n", getResult1.BaselineResult)
+			fmt.Printf("    Return value: %s (baseline and target match)\n", getResult1.BaselineResult)
 		} else if getResult1.Success {
 			fmt.Printf("  %s %s\n", color.YellowString("⚠ WARNING"), getResult1.TestName)
-			fmt.Printf("    Baseline 返回: %s\n", getResult1.BaselineResult)
-			fmt.Printf("    Target 返回: %s\n", getResult1.TargetResult)
+			fmt.Printf("    Baseline return value: %s\n", getResult1.BaselineResult)
+			fmt.Printf("    Target return value: %s\n", getResult1.TargetResult)
 		} else {
 			fmt.Printf("  %s %s: %s\n", color.RedString("✗ FAIL"), getResult1.TestName, getResult1.Error)
 		}
 		results = append(results, result)
 	}
 
-	fmt.Println(color.CyanString("\n📝 测试 SimpleStorage.set(42) 方法..."))
+	fmt.Println(color.CyanString("\nTesting SimpleStorage.set(42)..."))
 	// set(uint256) selector: 0x60fe47b1; 42 is encoded as a 32-byte argument.
 	setCallData := common.FromHex("0x60fe47b1000000000000000000000000000000000000000000000000000000000000002a")
 	setResult, err := tester.SendContractTransaction(ctx, contractAddrBaseline, contractAddrTarget, setCallData, "SimpleStorage.set(42)")
@@ -644,7 +644,7 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 		result := &tx.TxTestResult{
 			TestName: "SimpleStorage.set(42)",
 			TxType:   "Contract Transaction",
-			Error:    fmt.Sprintf("交易失败: %v", err),
+			Error:    fmt.Sprintf("transaction failed: %v", err),
 			Passed:   false,
 		}
 		fmt.Printf("  %s %s: %s\n", color.RedString("✗ FAIL"), result.TestName, result.Error)
@@ -666,12 +666,12 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 			fmt.Printf("    Target TX: %s\n", setResult.TargetTxHash)
 			if setResult.BaselineReceipt != nil && setResult.TargetReceipt != nil {
 				if setResult.BaselineReceipt.GasUsed == setResult.TargetReceipt.GasUsed {
-					fmt.Printf("    Gas 使用: %d (一致)\n", setResult.BaselineReceipt.GasUsed)
+					fmt.Printf("    Gas used: %d (matched)\n", setResult.BaselineReceipt.GasUsed)
 				} else {
-					fmt.Printf("    Gas 使用: Baseline=%d, Target=%d %s\n",
+					fmt.Printf("    Gas used: baseline=%d, target=%d %s\n",
 						setResult.BaselineReceipt.GasUsed,
 						setResult.TargetReceipt.GasUsed,
-						color.YellowString("(不一致)"))
+						color.YellowString("(mismatch)"))
 				}
 			}
 		} else {
@@ -681,13 +681,13 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 	}
 
 	// The value should now be 42.
-	fmt.Println(color.CyanString("\n📞 测试 SimpleStorage.get() 方法（设置后）..."))
-	getResult2, err := tester.CallContract(ctx, contractAddrBaseline, contractAddrTarget, getCallData, "SimpleStorage.get()_设置后")
+	fmt.Println(color.CyanString("\nTesting SimpleStorage.get() (after set)..."))
+	getResult2, err := tester.CallContract(ctx, contractAddrBaseline, contractAddrTarget, getCallData, "SimpleStorage.get() after set")
 	if err != nil {
 		result := &tx.TxTestResult{
-			TestName: "SimpleStorage.get()_设置后",
+			TestName: "SimpleStorage.get() after set",
 			TxType:   "Contract Call",
-			Error:    fmt.Sprintf("调用失败: %v", err),
+			Error:    fmt.Sprintf("call failed: %v", err),
 			Passed:   false,
 		}
 		fmt.Printf("  %s %s: %s\n", color.RedString("✗ FAIL"), result.TestName, result.Error)
@@ -704,16 +704,16 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 		if getResult2.Success && getResult2.ResultMatch {
 			if getResult2.BaselineResult == expectedValue {
 				fmt.Printf("  %s %s\n", color.GreenString("✓ PASS"), getResult2.TestName)
-				fmt.Printf("    返回值: 42 (0x2a) - Baseline 和 Target 一致\n")
+				fmt.Printf("    Return value: 42 (0x2a) - baseline and target match\n")
 			} else {
 				result.Passed = false
-				result.Error = fmt.Sprintf("返回值不正确: 期望 %s, 实际 %s", expectedValue, getResult2.BaselineResult)
+				result.Error = fmt.Sprintf("unexpected return value: expected %s, got %s", expectedValue, getResult2.BaselineResult)
 				fmt.Printf("  %s %s: %s\n", color.RedString("✗ FAIL"), getResult2.TestName, result.Error)
 			}
 		} else if getResult2.Success {
 			fmt.Printf("  %s %s\n", color.YellowString("⚠ WARNING"), getResult2.TestName)
-			fmt.Printf("    Baseline 返回: %s\n", getResult2.BaselineResult)
-			fmt.Printf("    Target 返回: %s\n", getResult2.TargetResult)
+			fmt.Printf("    Baseline return value: %s\n", getResult2.BaselineResult)
+			fmt.Printf("    Target return value: %s\n", getResult2.TargetResult)
 		} else {
 			fmt.Printf("  %s %s: %s\n", color.RedString("✗ FAIL"), getResult2.TestName, getResult2.Error)
 		}
@@ -825,12 +825,12 @@ func fetchTemplateVars(ctx context.Context, client *rpc.Client) (*TemplateVars, 
 	req := rpc.NewRequest("eth_getBlockByNumber", []interface{}{"latest", false})
 	resp := client.Call(ctx, req)
 	if resp.Error != nil {
-		return nil, fmt.Errorf("获取 latest block 失败: %w", resp.Error)
+		return nil, fmt.Errorf("get latest block: %w", resp.Error)
 	}
 
 	var block map[string]interface{}
 	if err := json.Unmarshal(resp.RawBody, &block); err != nil {
-		return nil, fmt.Errorf("解析 block 响应失败: %w", err)
+		return nil, fmt.Errorf("decode block response: %w", err)
 	}
 
 	if result, ok := block["result"].(map[string]interface{}); ok {

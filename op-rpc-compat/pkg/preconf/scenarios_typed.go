@@ -64,7 +64,7 @@ func (r *Runner) scenarioValid1559Preconf(ctx context.Context) {
 		return
 	}
 	if _, ok := r.verifyOnChain(ctx, name, []promise{promiseFrom(resp)}); ok {
-		r.record(name, true, "EIP-1559 preconf success + 链上兑现 blockHeight=%s", resp.BlockHeight)
+		r.record(name, true, "EIP-1559 preconfirmation succeeded and landed on-chain at blockHeight=%s", resp.BlockHeight)
 	}
 }
 
@@ -123,7 +123,7 @@ func (r *Runner) scenarioValid7702Preconf(ctx context.Context) {
 	}
 	resp, err := r.tester.SendRawTransactionWithPreconf(ctx, r.seq, signed, "7702")
 	if err != nil {
-		r.recordInconclusive(name, "7702 preconf 被拒（fork 未启用或类型不 eligible）: %v", err)
+		r.recordInconclusive(name, "EIP-7702 preconfirmation rejected (fork may be inactive or type ineligible): %v", err)
 		return
 	}
 	if resp.Status != "success" {
@@ -131,7 +131,7 @@ func (r *Runner) scenarioValid7702Preconf(ctx context.Context) {
 		return
 	}
 	if _, ok := r.verifyOnChain(ctx, name, []promise{promiseFrom(resp)}); ok {
-		r.record(name, true, "EIP-7702 preconf success + 链上兑现 blockHeight=%s（授权委托到 throwaway，funder 未被毒化）", resp.BlockHeight)
+		r.record(name, true, "EIP-7702 preconfirmation landed at blockHeight=%s (authorization delegated to a throwaway account; funder unchanged)", resp.BlockHeight)
 	}
 }
 
@@ -169,14 +169,14 @@ func (r *Runner) scenarioPreconfNonceGap(ctx context.Context) {
 		if _, ok := r.verifyOnChain(ctx, name, []promise{promiseFrom(resp)}); !ok {
 			return
 		}
-		r.record(name, true, "geth 对 gapped nonce 回 success 且补齐后确实上链（非假 Success）")
+		r.record(name, true, "geth accepted a nonce gap and the transaction landed after the gap was filled (not a false Success)")
 		return
 	}
 	got := "error: " + errStr(err)
 	if err == nil {
 		got = "status=" + resp.Status
 	}
-	r.record(name, true, "geth 对 gapped nonce 未发假 Success（%s）；reth 预期同步 NonceGap 拒", got)
+	r.record(name, true, "geth did not return a false Success for the nonce gap (%s); reth is expected to reject it with NonceGap", got)
 }
 
 // A15 preconf_gas_cap_over_2m: a preconf whose gas LIMIT exceeds reth's 2M per-tx cap. geth has no
@@ -201,15 +201,15 @@ func (r *Runner) scenarioPreconfGasCapOver2M(ctx context.Context) {
 	}
 	resp, err := r.tester.SendRawTransactionWithPreconf(ctx, r.seq, signed, "gascap")
 	if err != nil {
-		r.record(name, true, "geth 拒 3M-gas preconf（与预期不符，记录）: %v", err)
+		r.record(name, true, "geth rejected the 3M-gas preconfirmation (unexpected, recorded for comparison): %v", err)
 		return
 	}
 	if resp.Status != "success" {
-		r.record(name, false, "3M-gas 原生 preconf 未 success: status=%s reason=%q", resp.Status, derefReason(resp))
+		r.record(name, false, "3M-gas native preconfirmation did not succeed: status=%s reason=%q", resp.Status, derefReason(resp))
 		return
 	}
 	if _, ok := r.verifyOnChain(ctx, name, []promise{promiseFrom(resp)}); ok {
-		r.record(name, true, "geth 无 per-tx gas cap：3M-gas 原生 preconf 被接纳并兑现（reth 2M cap 预期拒）")
+		r.record(name, true, "geth has no per-transaction gas cap: the 3M-gas native preconfirmation landed (reth's 2M cap is expected to reject it)")
 	}
 }
 
@@ -235,14 +235,14 @@ func (r *Runner) scenarioPreconfCreateRejected(ctx context.Context) {
 	}
 	_, err = r.tester.SendRawTransactionWithPreconf(ctx, r.seq, signed, "create")
 	if err == nil {
-		r.record(name, false, "CREATE(to=nil) preconf 被受理（应因 nil-to 非 preconf 而拒）")
+		r.record(name, false, "CREATE(to=nil) preconfirmation was accepted; nil-to transactions should be rejected")
 		return
 	}
 	if !strings.Contains(err.Error(), "can't be submitted as preconf") {
-		r.record(name, false, "CREATE 被拒但错误意外: %v", err)
+		r.record(name, false, "CREATE was rejected with an unexpected error: %v", err)
 		return
 	}
-	r.record(name, true, "CREATE(to=nil) preconf 被拒（nil-to guard）: %v", err)
+	r.record(name, true, "CREATE(to=nil) preconfirmation was rejected by the nil-to guard: %v", err)
 }
 
 // B verifier_forward_parity compares two verifiers forwarding to the same sequencer,

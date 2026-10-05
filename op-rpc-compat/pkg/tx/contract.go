@@ -39,12 +39,12 @@ func (t *Tester) DeployContract(ctx context.Context, bytecode string, testName s
 
 	baselineNonce, err := t.GetNonce(ctx, t.baselineClient, t.builder.Address())
 	if err != nil {
-		return nil, fmt.Errorf("获取 Baseline nonce 失败: %w", err)
+		return nil, fmt.Errorf("get baseline nonce: %w", err)
 	}
 
 	gasPrice, err := t.GetGasPrice(ctx, t.baselineClient)
 	if err != nil {
-		return nil, fmt.Errorf("获取 gas 价格失败: %w", err)
+		return nil, fmt.Errorf("get gas price: %w", err)
 	}
 
 	bytecodeBytes := common.FromHex(bytecode)
@@ -53,7 +53,7 @@ func (t *Tester) DeployContract(ctx context.Context, bytecode string, testName s
 		"data": hexutil.Encode(bytecodeBytes),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("预估 gas 失败: %w", err)
+		return nil, fmt.Errorf("estimate gas: %w", err)
 	}
 	gasLimit := estimatedGas + 100000 // allow for estimation variance
 
@@ -74,24 +74,24 @@ func (t *Tester) DeployContract(ctx context.Context, bytecode string, testName s
 	signer := types.NewCancunSigner(t.chainID)
 	baselineSignedTx, err := types.SignTx(baselineTx, signer, t.builder.privateKey)
 	if err != nil {
-		return nil, fmt.Errorf("签名 Baseline 交易失败: %w", err)
+		return nil, fmt.Errorf("sign baseline transaction: %w", err)
 	}
 
 	baselineTxHash, err := t.SendRawTransaction(ctx, t.baselineClient, baselineSignedTx, fmt.Sprintf("%s_deploy_baseline", testName))
 	if err != nil {
-		return nil, fmt.Errorf("发送 Baseline 部署交易失败: %w", err)
+		return nil, fmt.Errorf("send baseline deployment transaction: %w", err)
 	}
 	result.BaselineTxHash = baselineTxHash.Hex()
 
 	baselineReceipt, err := t.WaitForReceipt(ctx, t.baselineClient, baselineTxHash, 60*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("等待 Baseline 部署确认失败: %w", err)
+		return nil, fmt.Errorf("wait for baseline deployment receipt: %w", err)
 	}
 	result.BaselineReceipt = baselineReceipt
 	result.BaselineContractAddress = baselineReceipt.ContractAddress
 
 	if baselineReceipt.Status != 1 {
-		return nil, fmt.Errorf("Baseline 合约部署失败: status=%d", baselineReceipt.Status)
+		return nil, fmt.Errorf("baseline contract deployment failed: status=%d", baselineReceipt.Status)
 	}
 
 	targetNonce := baselineNonce + 1
@@ -109,24 +109,24 @@ func (t *Tester) DeployContract(ctx context.Context, bytecode string, testName s
 
 	targetSignedTx, err := types.SignTx(targetTx, signer, t.builder.privateKey)
 	if err != nil {
-		return nil, fmt.Errorf("签名 Target 交易失败: %w", err)
+		return nil, fmt.Errorf("sign target transaction: %w", err)
 	}
 
 	targetTxHash, err := t.SendRawTransaction(ctx, t.targetClient, targetSignedTx, fmt.Sprintf("%s_deploy_target", testName))
 	if err != nil {
-		return nil, fmt.Errorf("发送 Target 部署交易失败: %w", err)
+		return nil, fmt.Errorf("send target deployment transaction: %w", err)
 	}
 	result.TargetTxHash = targetTxHash.Hex()
 
 	targetReceipt, err := t.WaitForReceipt(ctx, t.targetClient, targetTxHash, 60*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("等待 Target 部署确认失败: %w", err)
+		return nil, fmt.Errorf("wait for target deployment receipt: %w", err)
 	}
 	result.TargetReceipt = targetReceipt
 	result.TargetContractAddress = targetReceipt.ContractAddress
 
 	if targetReceipt.Status != 1 {
-		return nil, fmt.Errorf("❌ Target 合约部署失败: status=%d", targetReceipt.Status)
+		return nil, fmt.Errorf("target contract deployment failed: status=%d", targetReceipt.Status)
 	}
 
 	match, diffErr := t.CompareReceipts(ctx, testName, baselineTxHash, targetTxHash)
@@ -211,7 +211,7 @@ func (t *Tester) CallContract(ctx context.Context, baselineContractAddr, targetC
 	}
 
 	if baselineResp.Error != nil {
-		return nil, fmt.Errorf("❌ Baseline eth_call 失败: %w", baselineResp.Error)
+		return nil, fmt.Errorf("baseline eth_call failed: %w", baselineResp.Error)
 	}
 	if baselineResp.Response.Error != nil {
 		return nil, fmt.Errorf("❌ Baseline RPC error: %s", baselineResp.Response.Error.Message)
@@ -219,7 +219,7 @@ func (t *Tester) CallContract(ctx context.Context, baselineContractAddr, targetC
 
 	var baselineResultHex string
 	if err := json.Unmarshal(baselineResp.Response.Result, &baselineResultHex); err != nil {
-		return nil, fmt.Errorf("解析 Baseline 响应失败: %w", err)
+		return nil, fmt.Errorf("decode baseline response: %w", err)
 	}
 	result.BaselineResult = baselineResultHex
 
@@ -245,12 +245,12 @@ func (t *Tester) SendContractTransaction(ctx context.Context, baselineContractAd
 
 	baselineNonce, err := t.GetNonce(ctx, t.baselineClient, t.builder.Address())
 	if err != nil {
-		return nil, fmt.Errorf("获取 Baseline nonce 失败: %w", err)
+		return nil, fmt.Errorf("get baseline nonce: %w", err)
 	}
 
 	gasPrice, err := t.GetGasPrice(ctx, t.baselineClient)
 	if err != nil {
-		return nil, fmt.Errorf("获取 gas 价格失败: %w", err)
+		return nil, fmt.Errorf("get gas price: %w", err)
 	}
 
 	estimatedGas, err := t.EstimateGas(ctx, t.baselineClient, map[string]interface{}{
@@ -259,7 +259,7 @@ func (t *Tester) SendContractTransaction(ctx context.Context, baselineContractAd
 		"data": hexutil.Encode(callData),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("预估 gas 失败: %w", err)
+		return nil, fmt.Errorf("estimate gas: %w", err)
 	}
 	gasLimit := estimatedGas + 50000
 
@@ -280,18 +280,18 @@ func (t *Tester) SendContractTransaction(ctx context.Context, baselineContractAd
 	signer := types.NewCancunSigner(t.chainID)
 	baselineSignedTx, err := types.SignTx(baselineTx, signer, t.builder.privateKey)
 	if err != nil {
-		return nil, fmt.Errorf("签名 Baseline 交易失败: %w", err)
+		return nil, fmt.Errorf("sign baseline transaction: %w", err)
 	}
 
 	baselineTxHash, err := t.SendRawTransaction(ctx, t.baselineClient, baselineSignedTx, fmt.Sprintf("%s_baseline", testName))
 	if err != nil {
-		return nil, fmt.Errorf("发送 Baseline 交易失败: %w", err)
+		return nil, fmt.Errorf("send baseline transaction: %w", err)
 	}
 	result.BaselineTxHash = baselineTxHash.Hex()
 
 	baselineReceipt, err := t.WaitForReceipt(ctx, t.baselineClient, baselineTxHash, 60*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("等待 Baseline 交易确认失败: %w", err)
+		return nil, fmt.Errorf("wait for baseline transaction receipt: %w", err)
 	}
 	result.BaselineReceipt = baselineReceipt
 
@@ -310,18 +310,18 @@ func (t *Tester) SendContractTransaction(ctx context.Context, baselineContractAd
 
 	targetSignedTx, err := types.SignTx(targetTx, signer, t.builder.privateKey)
 	if err != nil {
-		return nil, fmt.Errorf("签名 Target 交易失败: %w", err)
+		return nil, fmt.Errorf("sign target transaction: %w", err)
 	}
 
 	targetTxHash, err := t.SendRawTransaction(ctx, t.targetClient, targetSignedTx, fmt.Sprintf("%s_target", testName))
 	if err != nil {
-		return nil, fmt.Errorf("发送 Target 交易失败: %w", err)
+		return nil, fmt.Errorf("send target transaction: %w", err)
 	}
 	result.TargetTxHash = targetTxHash.Hex()
 
 	targetReceipt, err := t.WaitForReceipt(ctx, t.targetClient, targetTxHash, 60*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("等待 Target 交易确认失败: %w", err)
+		return nil, fmt.Errorf("wait for target transaction receipt: %w", err)
 	}
 	result.TargetReceipt = targetReceipt
 
