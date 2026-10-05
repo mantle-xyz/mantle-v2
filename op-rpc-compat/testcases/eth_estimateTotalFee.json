@@ -7,7 +7,7 @@
         "to": "0x0000000000000000000000000000000000000000"
       }
     ],
-    "description": "正常：最小参数，仅 to"
+    "description": "Valid: minimal parameters, only to"
   },
   {
     "name": "eth_estimateTotalFee_with_from",
@@ -18,7 +18,7 @@
         "to": "0x0000000000000000000000000000000000000000"
       }
     ],
-    "description": "正常：指定 from"
+    "description": "Valid: specify from"
   },
   {
     "name": "eth_estimateTotalFee_with_value_zero",
@@ -29,7 +29,7 @@
         "value": "0x0"
       }
     ],
-    "description": "正常：value 为 0"
+    "description": "Valid: value is zero"
   },
   {
     "name": "eth_estimateTotalFee_with_value_nonzero",
@@ -41,7 +41,7 @@
         "value": "0xde0b6b3a7640000"
       }
     ],
-    "description": "正常：value 1 ETH"
+    "description": "Valid: value is 1 ETH"
   },
   {
     "name": "eth_estimateTotalFee_simple_transfer",
@@ -53,7 +53,7 @@
         "value": "0x1"
       }
     ],
-    "description": "正常：简单转账 1 wei"
+    "description": "Valid: simple transfer of 1 wei"
   },
   {
     "name": "eth_estimateTotalFee_with_data_empty",
@@ -64,7 +64,7 @@
         "data": "0x"
       }
     ],
-    "description": "正常：data 空"
+    "description": "Valid: empty data"
   },
   {
     "name": "eth_estimateTotalFee_with_data_short",
@@ -75,7 +75,7 @@
         "data": "0x12345678"
       }
     ],
-    "description": "正常：data 4 字节"
+    "description": "Valid: 4-byte data"
   },
   {
     "name": "eth_estimateTotalFee_with_data_long",
@@ -86,7 +86,7 @@
         "data": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
       }
     ],
-    "description": "正常：长 data（约 512 字节），覆盖 L1 费"
+    "description": "Valid: long data (about 512 bytes) to cover L1 fee calculation"
   },
   {
     "name": "eth_estimateTotalFee_with_gas",
@@ -97,7 +97,7 @@
         "gas": "0x5208"
       }
     ],
-    "description": "正常：指定 gas"
+    "description": "Valid: specify gas"
   },
   {
     "name": "eth_estimateTotalFee_with_gasPrice",
@@ -109,7 +109,7 @@
         "gasPrice": "0x2540be400"
       }
     ],
-    "description": "正常：Legacy gasPrice 10 gwei"
+    "description": "Valid: legacy gasPrice of 10 gwei"
   },
   {
     "name": "eth_estimateTotalFee_with_maxFeePerGas",
@@ -121,7 +121,7 @@
         "maxFeePerGas": "0x2540be400"
       }
     ],
-    "description": "正常：EIP-1559 仅 maxFeePerGas"
+    "description": "Valid: EIP-1559 with only maxFeePerGas"
   },
   {
     "name": "eth_estimateTotalFee_with_maxFeePerGas_latest",
@@ -136,7 +136,7 @@
       },
       "latest"
     ],
-    "description": "正常：EIP-1559 + 长 data + block latest"
+    "description": "Valid: EIP-1559 with long data at latest block"
   },
   {
     "name": "eth_estimateTotalFee_with_maxFeePerGas_safe_no_data",
@@ -150,7 +150,7 @@
       },
       "safe"
     ],
-    "description": "正常：EIP-1559 + block safe + 无 data"
+    "description": "Valid: EIP-1559 at safe block without data"
   },
   {
     "name": "eth_estimateTotalFee_with_maxFeePerGas_safe",
@@ -165,7 +165,7 @@
       },
       "safe"
     ],
-    "description": "正常：EIP-1559 + block safe"
+    "description": "Valid: EIP-1559 at safe block"
   },
   {
     "name": "eth_estimateTotalFee_with_maxFeePerGas_finalized",
@@ -180,7 +180,7 @@
       },
       "finalized"
     ],
-    "description": "正常：EIP-1559 + block finalized"
+    "description": "Valid: EIP-1559 at finalized block"
   },
   {
     "name": "eth_estimateTotalFee_no_block",
@@ -190,7 +190,7 @@
         "to": "0x0000000000000000000000000000000000000000"
       }
     ],
-    "description": "正常：不传 block（默认 latest）"
+    "description": "Valid: omit block (defaults to latest)"
   },
   {
     "name": "eth_estimateTotalFee_with_block_pending",
@@ -201,7 +201,7 @@
       },
       "pending"
     ],
-    "description": "区块：pending（reth 非 sequencer 可能 Block not found）"
+    "description": "Block: pending (reth may return Block not found when not sequencing)"
   },
   {
     "name": "eth_estimateTotalFee_with_block_earliest",
@@ -212,7 +212,7 @@
       },
       "earliest"
     ],
-    "description": "区块：earliest（可能无 L1 信息，L1 费为 0）"
+    "description": "Block: earliest (L1 information may be absent, resulting in zero L1 fee)"
   },
   {
     "name": "eth_estimateTotalFee_with_block_safe",
@@ -223,7 +223,7 @@
       },
       "safe"
     ],
-    "description": "区块：safe"
+    "description": "Block: safe"
   },
   {
     "name": "eth_estimateTotalFee_with_block_finalized",
@@ -234,7 +234,7 @@
       },
       "finalized"
     ],
-    "description": "区块：finalized"
+    "description": "Block: finalized"
   },
   {
     "name": "eth_estimateTotalFee_with_block_number",
@@ -245,7 +245,7 @@
       },
       "0x1"
     ],
-    "description": "区块：指定区块号 0x1"
+    "description": "Block: specify block number 0x1"
   },
   {
     "name": "eth_estimateTotalFee_with_nonce",
@@ -257,7 +257,7 @@
         "nonce": "0x0"
       }
     ],
-    "description": "正常：指定 nonce"
+    "description": "Valid: specify nonce"
   },
   {
     "name": "eth_estimateTotalFee_boundary_value_one_wei",
@@ -269,7 +269,7 @@
         "value": "0x1"
       }
     ],
-    "description": "边界：value 1 wei"
+    "description": "Boundary: value is 1 wei"
   },
   {
     "name": "eth_estimateTotalFee_complex_legacy_full",
@@ -284,7 +284,7 @@
         "data": "0x"
       }
     ],
-    "description": "复杂：Legacy 全参数"
+    "description": "Complex: all legacy parameters"
   },
   {
     "name": "eth_estimateTotalFee_complex_eip1559_full",
@@ -300,7 +300,7 @@
         "data": "0x"
       }
     ],
-    "description": "复杂：EIP-1559 全参数"
+    "description": "Complex: all EIP-1559 parameters"
   },
   {
     "name": "eth_estimateTotalFee_contract_creation_minimal",
@@ -312,7 +312,7 @@
         "data": "0x600a600c600039600a6000f3602a60005260206000f3"
       }
     ],
-    "description": "正常：合约部署（to 为 null，最小部署字节码）"
+    "description": "Valid: contract deployment (null to, minimal deployment bytecode)"
   },
   {
     "name": "eth_estimateTotalFee_contract_creation_with_gasPrice",
@@ -325,7 +325,7 @@
         "data": "0x600a600c600039600a6000f3602a60005260206000f3"
       }
     ],
-    "description": "正常：合约部署 + Legacy gasPrice"
+    "description": "Valid: contract deployment with legacy gasPrice"
   },
   {
     "name": "eth_estimateTotalFee_contract_creation_with_maxFeePerGas",
@@ -338,7 +338,7 @@
         "data": "0x600a600c600039600a6000f3602a60005260206000f3"
       }
     ],
-    "description": "正常：合约部署 + EIP-1559 仅 maxFeePerGas"
+    "description": "Valid: contract deployment with EIP-1559 maxFeePerGas only"
   },
   {
     "name": "eth_estimateTotalFee_contract_creation_with_maxFeePerGas_and_priority",
@@ -352,7 +352,7 @@
         "data": "0x600a600c600039600a6000f3602a60005260206000f3"
       }
     ],
-    "description": "正常：合约部署 + EIP-1559 maxFeePerGas/maxPriorityFeePerGas"
+    "description": "Valid: contract deployment with EIP-1559 maxFeePerGas and maxPriorityFeePerGas"
   },
   {
     "name": "eth_estimateTotalFee_contract_creation_with_gas_and_nonce",
@@ -368,7 +368,7 @@
         "data": "0x600a600c600039600a6000f3602a60005260206000f3"
       }
     ],
-    "description": "正常：合约部署 + 显式 gas/nonce + EIP-1559"
+    "description": "Valid: contract deployment with explicit gas and nonce under EIP-1559"
   },
   {
     "name": "error_eth_estimateTotalFee_invalid_to",
@@ -378,7 +378,7 @@
         "to": "0xinvalid"
       }
     ],
-    "description": "异常：无效 to 地址"
+    "description": "Invalid: malformed to address"
   },
   {
     "name": "error_eth_estimateTotalFee_invalid_data",
@@ -389,7 +389,7 @@
         "data": "0xzz"
       }
     ],
-    "description": "异常：无效 data 格式"
+    "description": "Invalid: malformed data"
   },
   {
     "name": "error_eth_estimateTotalFee_invalid_value",
@@ -400,7 +400,7 @@
         "value": "not_hex"
       }
     ],
-    "description": "异常：无效 value 格式"
+    "description": "Invalid: malformed value"
   },
   {
     "name": "error_eth_estimateTotalFee_invalid_block",
@@ -411,7 +411,7 @@
       },
       "invalid_block_tag"
     ],
-    "description": "异常：无效 block 标签"
+    "description": "Invalid: unsupported block tag"
   },
   {
     "name": "error_eth_estimateTotalFee_insufficient_balance",
@@ -423,7 +423,7 @@
         "value": "0xde0b6b3a7640000"
       }
     ],
-    "description": "异常：from 余额不足（大 value）"
+    "description": "Invalid: insufficient from balance for a large value"
   },
   {
     "name": "eth_estimateTotalFee_legacy_gasprice_large",
@@ -435,7 +435,7 @@
         "gasPrice": "0x4131655a0"
       }
     ],
-    "description": "回归：Legacy gasPrice=0x4131655a0（与 bug report 完全一致，baseFee 链上必须走 EIP-1559 编码路径）"
+    "description": "Regression: legacy gasPrice=0x4131655a0 (exact bug report input; baseFee chains must use EIP-1559 encoding)"
   },
   {
     "name": "eth_estimateTotalFee_legacy_gasprice_with_nonce",
@@ -448,7 +448,7 @@
         "nonce": "0x56"
       }
     ],
-    "description": "回归：Legacy gasPrice + nonce=0x56（精确还原 bug report 现场，含 nonce 字段）"
+    "description": "Regression: legacy gasPrice with nonce=0x56 (reproduces the bug report including nonce)"
   },
   {
     "name": "eth_estimateTotalFee_legacy_gasprice_with_data",
@@ -461,7 +461,7 @@
         "data": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
       }
     ],
-    "description": "回归：Legacy gasPrice + 长 data（L1 费差异最大场景，最易暴露编码类型不一致）"
+    "description": "Regression: legacy gasPrice with long data (amplifies L1 fee differences caused by inconsistent encoding)"
   },
   {
     "name": "eth_estimateTotalFee_legacy_gasprice_contract_creation",
@@ -474,7 +474,7 @@
         "data": "0x6080604052348015600e575f80fd5b5060405160c538038060c5833981016040819052602b91604e565b5f55605d565b5f60208284031215605e575f80fd5b5051919050565b6060806069835f395ff3fe6080604052348015600e575f80fd5b50600436106026575f3560e01c80632096525514602a575b5f80fd5b60306044565b604051603b91906059565b60405180910390f35b5f5481565b5f8190565b6053816071565b82525050565b5f60208201905060666001835b60488357909260208660200392830192019091919060600390600185831c02601891908790921c0260205b91a0925050509056fea2646970667358221220c9bcc548c90f3e8d3a8cce82b14b43cb8f64df4e2ab73cc1862e5fc8de0b4f1e64736f6c634300081c0033"
       }
     ],
-    "description": "回归：合约部署 + Legacy gasPrice（to=null，baseFee 链上需清除 gas_price 走 EIP-1559）"
+    "description": "Regression: contract deployment with legacy gasPrice (null to; clear gas_price for EIP-1559 encoding on baseFee chains)"
   },
   {
     "name": "eth_estimateTotalFee_legacy_gasprice_zero",
@@ -486,7 +486,7 @@
         "gasPrice": "0x0"
       }
     ],
-    "description": "边界：gasPrice=0（零值 gas_price 与 geth 行为对齐，应 fallback 到 baseFee+tip 计费）"
+    "description": "Boundary: gasPrice=0 (match geth by falling back to baseFee plus tip for fee calculation)"
   },
   {
     "name": "eth_estimateTotalFee_legacy_gasprice_gas_capped",
@@ -499,7 +499,7 @@
         "gasPrice": "0x3b9aca00"
       }
     ],
-    "description": "边界：gasPrice + gas 超过 GETH_MANTLE_RPC_GAS_CAP（验证 capped_l1_gas_limit 与 geth 对齐）"
+    "description": "Boundary: gasPrice with gas above GETH_MANTLE_RPC_GAS_CAP (verify capped_l1_gas_limit matches geth)"
   },
   {
     "name": "eth_estimateTotalFee_no_fee_fields",
@@ -512,7 +512,7 @@
         "data": "0x"
       }
     ],
-    "description": "正常：无任何 fee 字段（纯 fallback 路径 baseFee+suggestedTip，与 geth 默认行为对齐）"
+    "description": "Valid: no fee fields (fallback to baseFee plus suggestedTip, matching geth's default behavior)"
   },
   {
     "name": "eth_estimateTotalFee_legacy_gasprice_full_fields",
@@ -528,7 +528,7 @@
         "data": "0x6080604052"
       }
     ],
-    "description": "回归：Legacy 全字段（gasPrice + gas + nonce + value + data，最完整的 bug 复现场景）"
+    "description": "Regression: all legacy fields (gasPrice, gas, nonce, value, and data) for a complete bug reproduction"
   },
   {
     "name": "eth_estimateTotalFee_legacy_gasprice_with_data_finalized",
@@ -542,7 +542,7 @@
       },
       "finalized"
     ],
-    "description": "回归（稳定块）：Legacy gasPrice + 256 字节 data + finalized 块。finalized 不随时间漂移，是 should_use_l1_legacy_path 修复的稳定回归测试"
+    "description": "Regression at a stable block: legacy gasPrice with 256-byte data at finalized; finalized does not drift over time, making this a stable test for the should_use_l1_legacy_path fix"
   },
   {
     "name": "eth_estimateTotalFee_legacy_gasprice_zero_with_data",
@@ -555,7 +555,7 @@
         "data": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
       }
     ],
-    "description": "边界：gasPrice=0（Option::Some(0)）+ 256 字节 data。验证 is_some() 对零值的处理：gas_price=0 也应走 Legacy 编码路径"
+    "description": "Boundary: gasPrice=0 (Option::Some(0)) with 256-byte data; verify is_some() treats zero as present and selects legacy encoding"
   },
   {
     "name": "eth_estimateTotalFee_gasPrice_with_maxFeePerGas",
@@ -569,7 +569,7 @@
         "data": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
       }
     ],
-    "description": "防回归：gasPrice 与 maxFeePerGas 同时设置。max_fee_per_gas.is_some() 使 should_use_l1_legacy_path 返回 false，应走 EIP-1559 编码路径，与修复前行为一致"
+    "description": "Regression guard: both gasPrice and maxFeePerGas are set; max_fee_per_gas.is_some() makes should_use_l1_legacy_path return false, selecting EIP-1559 encoding as before the fix"
   },
   {
     "name": "eth_estimateTotalFee_lists_baseline",

@@ -9,7 +9,7 @@
       },
       "latest"
     ],
-    "description": "简单的 eth_call 到零地址"
+    "description": "Simple eth_call to the zero address"
   },
   {
     "name": "eth_call_latest_template",
@@ -21,7 +21,7 @@
       },
       "{{latest_block_number}}"
     ],
-    "description": "简单的 eth_call（使用模板变量 latest_block_number）"
+    "description": "Simple eth_call using the latest_block_number template variable"
   },
   {
     "name": "eth_call_with_value",
@@ -34,7 +34,7 @@
       },
       "latest"
     ],
-    "description": "带 value 的 eth_call"
+    "description": "eth_call with value"
   },
   {
     "name": "eth_call_with_gas",
@@ -47,7 +47,7 @@
       },
       "latest"
     ],
-    "description": "带 gas 限制的 eth_call（30000 足够执行）"
+    "description": "eth_call with a gas limit (30000 is sufficient for execution)"
   },
   {
     "name": "eth_call_block_0x1",
@@ -59,7 +59,7 @@
       },
       "0x1"
     ],
-    "description": "在区块 1 执行 eth_call"
+    "description": "Execute eth_call at block 1"
   },
   {
     "name": "eth_estimateGas_simple",
@@ -70,7 +70,7 @@
         "data": "0x"
       }
     ],
-    "description": "简单的 gas 估算"
+    "description": "Simple gas estimation"
   },
   {
     "name": "eth_estimateGas_transfer",
@@ -82,7 +82,7 @@
         "value": "0x1"
       }
     ],
-    "description": "ETH 转账 gas 估算"
+    "description": "Gas estimation for an ETH transfer"
   },
   {
     "name": "eth_createAccessList_simple",
@@ -94,6 +94,6 @@
       },
       "latest"
     ],
-    "description": "创建访问列表"
+    "description": "Create an access list"
   }
 ]

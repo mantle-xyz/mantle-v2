@@ -8,7 +8,7 @@
         "toBlock": "latest"
       }
     ],
-    "description": "获取最新区块的日志"
+    "description": "Get logs from the latest block"
   },
   {
     "name": "eth_getLogs_block_range",
@@ -19,7 +19,7 @@
         "toBlock": "0x10"
       }
     ],
-    "description": "获取区块范围内的日志"
+    "description": "Get logs within a block range"
   },
   {
     "name": "eth_getLogs_single_block",
@@ -31,7 +31,7 @@
         "toBlock": "0x1"
       }
     ],
-    "description": "获取单个区块的日志"
+    "description": "Get logs from a single block"
   },
   {
     "name": "eth_getLogs_with_address",
@@ -43,7 +43,7 @@
         "address": "0x0000000000000000000000000000000000000000"
       }
     ],
-    "description": "按地址过滤日志"
+    "description": "Filter logs by address"
   },
   {
     "name": "eth_getLogs_with_topics",
@@ -55,18 +55,18 @@
         "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000"]
       }
     ],
-    "description": "按 topic 过滤日志"
+    "description": "Filter logs by topic"
   },
   {
     "name": "eth_getFilterChanges_invalid",
     "method": "eth_getFilterChanges",
     "params": ["0x1"],
-    "description": "获取不存在的过滤器变化"
+    "description": "Get changes for a nonexistent filter"
   },
   {
     "name": "eth_uninstallFilter_invalid",
     "method": "eth_uninstallFilter",
     "params": ["0x1"],
-    "description": "卸载不存在的过滤器"
+    "description": "Uninstall a nonexistent filter"
   }
 ]

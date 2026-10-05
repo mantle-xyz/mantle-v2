@@ -3,49 +3,49 @@
     "name": "invalid_method",
     "method": "eth_invalidMethod",
     "params": [],
-    "description": "调用不存在的方法"
+    "description": "Call a nonexistent method"
   },
   {
     "name": "invalid_block_tag",
     "method": "eth_getBlockByNumber",
     "params": ["invalid", false],
-    "description": "无效的区块标签"
+    "description": "Invalid block tag"
   },
   {
     "name": "invalid_hex_number",
     "method": "eth_getBlockByNumber",
     "params": ["0xGGG", false],
-    "description": "无效的十六进制数"
+    "description": "Invalid hexadecimal number"
   },
   {
     "name": "missing_required_param",
     "method": "eth_getBalance",
     "params": [],
-    "description": "缺少必需参数"
+    "description": "Missing required parameter"
   },
   {
     "name": "wrong_param_count",
     "method": "eth_getBlockByNumber",
     "params": ["0x1"],
-    "description": "参数数量不足"
+    "description": "Too few parameters"
   },
   {
     "name": "invalid_address_format",
     "method": "eth_getBalance",
     "params": ["not_an_address", "latest"],
-    "description": "无效的地址格式"
+    "description": "Invalid address format"
   },
   {
     "name": "invalid_address_length",
     "method": "eth_getBalance",
     "params": ["0x123", "latest"],
-    "description": "地址长度不正确"
+    "description": "Incorrect address length"
   },
   {
     "name": "future_block",
     "method": "eth_getBlockByNumber",
     "params": ["0xffffffff", false],
-    "description": "请求未来区块"
+    "description": "Request a future block"
   },
   {
     "name": "eth_call_revert",
@@ -57,7 +57,7 @@
       },
       "latest"
     ],
-    "description": "可能导致 revert 的调用"
+    "description": "Call that may revert"
   },
   {
     "name": "eth_estimateGas_oog",
@@ -69,7 +69,7 @@
         "data": "0x"
       }
     ],
-    "description": "gas 不足的估算"
+    "description": "Estimate gas with insufficient gas"
   },
   {
     "name": "null_to_address",
@@ -81,6 +81,6 @@
       },
       "latest"
     ],
-    "description": "to 地址为 null（合约创建）"
+    "description": "Null destination address (contract creation)"
   }
 ]

@@ -3,115 +3,115 @@
     "name": "eth_chainId",
     "method": "eth_chainId",
     "params": [],
-    "description": "获取链 ID"
+    "description": "Get the chain ID"
   },
   {
     "name": "eth_blockNumber",
     "method": "eth_blockNumber",
     "params": [],
-    "description": "获取最新区块号"
+    "description": "Get the latest block number"
   },
   {
     "name": "eth_gasPrice",
     "method": "eth_gasPrice",
     "params": [],
-    "description": "获取当前 gas 价格"
+    "description": "Get the current gas price"
   },
   {
     "name": "eth_protocolVersion",
     "method": "eth_protocolVersion",
     "params": [],
-    "description": "获取协议版本"
+    "description": "Get the protocol version"
   },
   {
     "name": "eth_coinbase",
     "method": "eth_coinbase",
     "params": [],
-    "description": "获取 coinbase 地址"
+    "description": "Get the coinbase address"
   },
   {
     "name": "eth_mining",
     "method": "eth_mining",
     "params": [],
-    "description": "检查是否在挖矿"
+    "description": "Check whether mining is active"
   },
   {
     "name": "eth_hashrate",
     "method": "eth_hashrate",
     "params": [],
-    "description": "获取挖矿算力"
+    "description": "Get the mining hashrate"
   },
   {
     "name": "eth_accounts",
     "method": "eth_accounts",
     "params": [],
-    "description": "获取账户列表"
+    "description": "Get the account list"
   },
   {
     "name": "eth_maxPriorityFeePerGas",
     "method": "eth_maxPriorityFeePerGas",
     "params": [],
-    "description": "获取建议的 maxPriorityFeePerGas"
+    "description": "Get the suggested maxPriorityFeePerGas"
   },
   {
     "name": "eth_blobBaseFee",
     "method": "eth_blobBaseFee",
     "params": [],
-    "description": "获取 blob base fee (EIP-4844)"
+    "description": "Get the blob base fee (EIP-4844)"
   },
   {
     "name": "net_version",
     "method": "net_version",
     "params": [],
-    "description": "获取网络版本"
+    "description": "Get the network version"
   },
   {
     "name": "net_listening",
     "method": "net_listening",
     "params": [],
-    "description": "检查是否正在监听"
+    "description": "Check whether the node is listening"
   },
   {
     "name": "net_peerCount",
     "method": "net_peerCount",
     "params": [],
-    "description": "获取对等节点数量"
+    "description": "Get the peer count"
   },
   {
     "name": "web3_clientVersion",
     "method": "web3_clientVersion",
     "params": [],
-    "description": "获取客户端版本"
+    "description": "Get the client version"
   },
   {
     "name": "web3_sha3",
     "method": "web3_sha3",
     "params": ["0x68656c6c6f20776f726c64"],
-    "description": "计算 Keccak-256 哈希"
+    "description": "Compute a Keccak-256 hash"
   },
   {
     "name": "web3_sha3_hello",
     "method": "web3_sha3",
     "params": ["0x68656c6c6f"],
-    "description": "计算 'hello' 的 Keccak-256"
+    "description": "Compute Keccak-256 of 'hello'"
   },
   {
     "name": "web3_sha3_empty",
     "method": "web3_sha3",
     "params": ["0x"],
-    "description": "计算空字符串的 Keccak-256"
+    "description": "Compute Keccak-256 of the empty string"
   },
   {
     "name": "rpc_modules",
     "method": "rpc_modules",
     "params": [],
-    "description": "获取可用的 RPC 模块"
+    "description": "Get the available RPC modules"
   },
   {
     "name": "eth_syncing",
     "method": "eth_syncing",
     "params": [],
-    "description": "获取同步状态"
+    "description": "Get the synchronization status"
   },
   {
     "name": "eth_fillTransaction_minimal",
@@ -123,7 +123,7 @@
         "value": "0x0"
       }
     ],
-    "description": "填充交易参数（需要 from 地址）"
+    "description": "Fill transaction parameters (requires a from address)"
   },
   {
     "name": "eth_fillTransaction_with_from",
@@ -135,7 +135,7 @@
         "value": "0x0"
       }
     ],
-    "description": "填充交易参数（包含 from 地址）"
+    "description": "Fill transaction parameters with a from address"
   },
   {
     "name": "eth_sign_invalid_account",
@@ -144,7 +144,7 @@
       "0x0000000000000000000000000000000000000000",
       "0x68656c6c6f"
     ],
-    "description": "签名消息（可能因账户未解锁而失败）"
+    "description": "Sign a message (may fail if the account is locked)"
   },
   {
     "name": "eth_signTransaction_invalid",
@@ -156,7 +156,7 @@
         "value": "0x0"
       }
     ],
-    "description": "签名交易（可能因账户未解锁而失败）"
+    "description": "Sign a transaction (may fail if the account is locked)"
   },
   {
     "name": "eth_simulateV1_simple",
@@ -172,7 +172,7 @@
       },
       "latest"
     ],
-    "description": "模拟交易执行（简单场景，参数格式为对象）"
+    "description": "Simulate a simple transaction execution with object parameters"
   },
   {
     "name": "eth_simulateV1_with_value",
@@ -189,6 +189,6 @@
       },
       "latest"
     ],
-    "description": "模拟交易执行（带 value，参数格式为对象）"
+    "description": "Simulate transaction execution with value and object parameters"
   }
 ]

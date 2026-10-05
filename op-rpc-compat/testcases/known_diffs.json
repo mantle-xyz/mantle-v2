@@ -1,9 +1,9 @@
 {
-  "description": "已知差异配置文件 - 这些测试用例的差异是预期的，不会被修复。每个条目包含 geth 和 reth 的实际响应示例，方便审查。",
+  "description": "Known differences: these testcase divergences are expected and will not be fixed. Each entry includes example geth and reth responses for review.",
   "known_diffs": [
     {
       "test_name": "eth_hashrate",
-      "reason": "eth_hashrate 在 PoS 链上已弃用。geth 返回方法不存在错误，reth 返回 0x0 作为默认值",
+      "reason": "eth_hashrate is deprecated on PoS chains. Geth returns a method-not-found error; reth returns 0x0 as its default.",
       "baseline_example": {
         "error": {
           "code": -32601,
@@ -24,7 +24,7 @@
     },
     {
       "test_name": "eth_mining",
-      "reason": "eth_mining 在 PoS 链上已弃用。双方都返回错误，但错误码不同：geth 使用 -32601（方法不存在），reth 使用 -32603（未实现）",
+      "reason": "eth_mining is deprecated on PoS chains. Both clients return errors, but geth uses -32601 (method not found) and reth uses -32603 (unimplemented).",
       "baseline_example": {
         "error": {
           "code": -32601,
@@ -48,7 +48,7 @@
     },
     {
       "test_name": "eth_coinbase",
-      "reason": "eth_coinbase 在 PoS 链上已弃用。双方都返回错误，但错误码不同：geth 使用 -32601（方法不存在），reth 使用 -32603（未实现）",
+      "reason": "eth_coinbase is deprecated on PoS chains. Both clients return errors, but geth uses -32601 (method not found) and reth uses -32603 (unimplemented).",
       "baseline_example": {
         "error": {
           "code": -32601,
@@ -72,7 +72,7 @@
     },
     {
       "test_name": "eth_protocolVersion",
-      "reason": "geth 不支持此方法返回错误，reth 返回协议版本号。这是实现差异，不影响实际功能",
+      "reason": "Geth does not support this method and returns an error; reth returns the protocol version. This implementation difference does not affect normal operation.",
       "baseline_example": {
         "error": {
           "code": -32601,
@@ -93,7 +93,7 @@
     },
     {
       "test_name": "rollup_getInfo",
-      "reason": "rollup_getInfo 双方均未实现，错误消息格式不同。geth 返回完整描述，reth 返回简短 Method not found",
+      "reason": "Neither client implements rollup_getInfo. Geth returns a detailed error message; reth returns the shorter 'Method not found'.",
       "baseline_example": {
         "error": {
           "code": -32601,
@@ -117,7 +117,7 @@
     },
     {
       "test_name": "rollup_gasPrices",
-      "reason": "rollup_gasPrices 双方均未实现，错误消息格式不同。geth 返回完整描述，reth 返回简短 Method not found",
+      "reason": "Neither client implements rollup_gasPrices. Geth returns a detailed error message; reth returns the shorter 'Method not found'.",
       "baseline_example": {
         "error": {
           "code": -32601,
@@ -141,7 +141,7 @@
     },
     {
       "test_name": "rpc_modules",
-      "reason": "rpc_modules 返回各客户端支持的模块列表，本身就应该不同。geth 返回支持的模块，reth 未实现此方法",
+      "reason": "rpc_modules lists modules supported by each client, so the responses are expected to differ. Geth returns its modules; reth does not implement the method.",
       "baseline_example": {
         "result": {
           "admin": "1.0",
@@ -170,7 +170,7 @@
     },
     {
       "test_name": "web3_clientVersion",
-      "reason": "web3_clientVersion 返回各客户端版本信息，本身就应该不同",
+      "reason": "web3_clientVersion reports each client's version, so the values are expected to differ.",
       "baseline_example": {
         "result": "Geth/v1.16.5-stable-6fd041a8/darwin-arm64/go1.24.9"
       },
@@ -180,7 +180,7 @@
     },
     {
       "test_name": "error_empty_method",
-      "reason": "空方法名错误处理不同：geth 返回 -32600 invalid request，reth 返回 -32601 Method not found",
+      "reason": "The clients handle an empty method name differently: geth returns -32600 (invalid request); reth returns -32601 (Method not found).",
       "baseline_example": {
         "error": {
           "code": -32600,
@@ -204,7 +204,7 @@
     },
     {
       "test_name": "error_missing_required_param",
-      "reason": "缺少必需参数的错误消息格式不同：geth 返回 missing value for required argument，reth 返回 Invalid params 带 data 字段",
+      "reason": "Error formats differ for a missing required parameter: geth reports 'missing value for required argument'; reth returns 'Invalid params' with a data field.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -229,7 +229,7 @@
     },
     {
       "test_name": "error_insufficient_params",
-      "reason": "参数不足的错误消息格式不同：geth 返回 missing value for required argument，reth 返回 Invalid params 带 data 字段",
+      "reason": "Error formats differ for too few parameters: geth reports 'missing value for required argument'; reth returns 'Invalid params' with a data field.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -254,7 +254,7 @@
     },
     {
       "test_name": "error_too_many_params",
-      "reason": "参数过多时行为不同：geth 返回错误，reth 忽略多余参数并返回结果",
+      "reason": "The clients handle extra parameters differently: geth returns an error; reth ignores them and returns a result.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -275,7 +275,7 @@
     },
     {
       "test_name": "error_invalid_block_tag",
-      "reason": "无效区块标签的错误消息格式不同",
+      "reason": "Error message formats differ for an invalid block tag.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -299,7 +299,7 @@
     },
     {
       "test_name": "error_invalid_hex_number",
-      "reason": "无效十六进制数的错误消息格式不同",
+      "reason": "Error message formats differ for an invalid hexadecimal number.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -323,7 +323,7 @@
     },
     {
       "test_name": "error_negative_block_number",
-      "reason": "负数区块号的错误消息格式不同",
+      "reason": "Error message formats differ for a negative block number.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -347,7 +347,7 @@
     },
     {
       "test_name": "error_very_large_block",
-      "reason": "超大区块号时行为不同：geth 返回参数错误，reth 视为有效参数并返回 null（区块不存在）",
+      "reason": "The clients handle an excessively large block number differently: geth returns a parameter error; reth accepts it and returns null because the block does not exist.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -368,7 +368,7 @@
     },
     {
       "test_name": "error_invalid_address_format",
-      "reason": "无效地址格式的错误消息格式不同：geth 返回具体的 Go 类型转换错误，reth 返回通用的 Invalid params",
+      "reason": "Error formats differ for an invalid address: geth returns a specific Go type conversion error; reth returns a generic 'Invalid params' error.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -393,7 +393,7 @@
     },
     {
       "test_name": "error_invalid_address_length_short",
-      "reason": "地址长度过短的错误消息格式不同",
+      "reason": "Error message formats differ for an address that is too short.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -417,7 +417,7 @@
     },
     {
       "test_name": "error_invalid_address_length_long",
-      "reason": "地址长度过长的错误消息格式不同",
+      "reason": "Error message formats differ for an address that is too long.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -441,7 +441,7 @@
     },
     {
       "test_name": "error_address_without_0x",
-      "reason": "地址缺少 0x 前缀时行为不同：geth 返回错误，reth 自动补全前缀并返回结果",
+      "reason": "The clients handle an address without the 0x prefix differently: geth returns an error; reth adds the prefix and returns a result.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -462,7 +462,7 @@
     },
     {
       "test_name": "error_invalid_hash_format",
-      "reason": "无效哈希格式的错误消息格式不同",
+      "reason": "Error message formats differ for an invalid hash.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -486,7 +486,7 @@
     },
     {
       "test_name": "error_invalid_hash_length",
-      "reason": "哈希长度错误的错误消息格式不同",
+      "reason": "Error message formats differ for a hash of incorrect length.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -510,7 +510,7 @@
     },
     {
       "test_name": "error_eth_call_invalid_to",
-      "reason": "eth_call 无效 to 地址的错误消息格式不同",
+      "reason": "Error message formats differ for eth_call with an invalid to address.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -534,7 +534,7 @@
     },
     {
       "test_name": "error_eth_call_invalid_data",
-      "reason": "eth_call 无效 data 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_call with invalid data.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -558,7 +558,7 @@
     },
     {
       "test_name": "error_eth_call_invalid_value",
-      "reason": "eth_call 无效 value 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_call with an invalid value.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -582,7 +582,7 @@
     },
     {
       "test_name": "error_eth_call_invalid_gas",
-      "reason": "eth_call 无效 gas 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_call with an invalid gas value.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -606,7 +606,7 @@
     },
     {
       "test_name": "error_eth_call_negative_gas",
-      "reason": "eth_call 负数 gas 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_call with a negative gas value.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -630,7 +630,7 @@
     },
     {
       "test_name": "error_eth_call_oog",
-      "reason": "eth_call intrinsic gas too low:两边现均 -32000,仅 geth 附带 have/want 细节。",
+      "reason": "For eth_call with intrinsic gas too low, both clients now return -32000; only geth includes have/want details.",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -654,7 +654,7 @@
     },
     {
       "test_name": "error_eth_estimateGas_invalid_to",
-      "reason": "eth_estimateGas 无效 to 地址的错误消息格式不同",
+      "reason": "Error message formats differ for eth_estimateGas with an invalid to address.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -678,7 +678,7 @@
     },
     {
       "test_name": "error_eth_estimateGas_invalid_data",
-      "reason": "eth_estimateGas 无效 data 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_estimateGas with invalid data.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -702,7 +702,7 @@
     },
     {
       "test_name": "error_eth_estimateGas_invalid_value",
-      "reason": "eth_estimateGas 无效 value 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_estimateGas with an invalid value.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -726,7 +726,7 @@
     },
     {
       "test_name": "error_eth_estimateGas_insufficient_funds",
-      "reason": "上游 reth v2.2.x 将余额不足错误改为 -32003 \"EVM error: OutOfFunds\"（geth 仍 -32000 \"insufficient funds for transfer\"）。非共识,cosmetic。",
+      "reason": "Upstream reth v2.2.x changed insufficient-funds errors to -32003 \"EVM error: OutOfFunds\"; geth still returns -32000 \"insufficient funds for transfer\". This is a cosmetic, non-consensus difference.",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -750,7 +750,7 @@
     },
     {
       "test_name": "eth_getLogs_pending",
-      "reason": "pending logs：geth 返回 -32602 不支持，reth 返回空数组",
+      "reason": "For pending logs, geth returns -32602 (unsupported), while reth returns an empty array.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -771,7 +771,7 @@
     },
     {
       "test_name": "error_eth_getLogs_invalid_fromBlock",
-      "reason": "eth_getLogs 无效 fromBlock 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getLogs with an invalid fromBlock.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -795,7 +795,7 @@
     },
     {
       "test_name": "error_eth_getLogs_invalid_toBlock",
-      "reason": "eth_getLogs 无效 toBlock 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getLogs with an invalid toBlock.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -819,7 +819,7 @@
     },
     {
       "test_name": "error_eth_getLogs_invalid_address",
-      "reason": "eth_getLogs 无效 address 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getLogs with an invalid address.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -843,7 +843,7 @@
     },
     {
       "test_name": "error_eth_getLogs_invalid_topic",
-      "reason": "eth_getLogs 无效 topic 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getLogs with an invalid topic.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -867,7 +867,7 @@
     },
     {
       "test_name": "error_eth_getLogs_invalid_blockhash",
-      "reason": "eth_getLogs 无效 blockhash 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getLogs with an invalid blockHash.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -891,7 +891,7 @@
     },
     {
       "test_name": "error_eth_getLogs_blockhash_with_range",
-      "reason": "eth_getLogs blockhash 与区块范围同时使用的错误消息不同",
+      "reason": "Error messages differ when eth_getLogs specifies both blockHash and a block range.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -915,7 +915,7 @@
     },
     {
       "test_name": "error_eth_getLogs_range_too_large",
-      "reason": "eth_getLogs 超过当前链头：两端均返回 -32602，仅错误详情不同",
+      "reason": "For an eth_getLogs range beyond the chain head, both clients return -32602; only the error details differ.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -939,7 +939,7 @@
     },
     {
       "test_name": "error_eth_getLogs_from_greater_than_head",
-      "reason": "eth_getLogs fromBlock 大于链头：geth 返回 -32602，reth 返回空数组",
+      "reason": "When eth_getLogs fromBlock is beyond the chain head, geth returns -32602 and reth returns an empty array.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -960,7 +960,7 @@
     },
     {
       "test_name": "error_eth_getStorageAt_invalid_position",
-      "reason": "无效 storage key：两端均返回 -32602，仅错误详情不同",
+      "reason": "For an invalid storage key, both clients return -32602; only the error details differ.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -984,7 +984,7 @@
     },
     {
       "test_name": "error_eth_getStorageAt_invalid_address",
-      "reason": "eth_getStorageAt 无效 address 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getStorageAt with an invalid address.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1008,7 +1008,7 @@
     },
     {
       "test_name": "error_eth_getCode_invalid_address",
-      "reason": "eth_getCode 无效 address 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getCode with an invalid address.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1032,7 +1032,7 @@
     },
     {
       "test_name": "error_eth_getCode_invalid_block",
-      "reason": "eth_getCode 无效 block 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getCode with an invalid block.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1056,7 +1056,7 @@
     },
     {
       "test_name": "error_eth_getTransactionCount_invalid_address",
-      "reason": "eth_getTransactionCount 无效 address 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getTransactionCount with an invalid address.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1080,7 +1080,7 @@
     },
     {
       "test_name": "error_eth_getTransactionCount_invalid_block",
-      "reason": "eth_getTransactionCount 无效 block 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getTransactionCount with an invalid block.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1104,7 +1104,7 @@
     },
     {
       "test_name": "error_eth_getBlockTransactionCountByNumber_invalid",
-      "reason": "eth_getBlockTransactionCountByNumber 无效参数的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getBlockTransactionCountByNumber with an invalid parameter.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1128,7 +1128,7 @@
     },
     {
       "test_name": "error_eth_getBlockTransactionCountByHash_invalid",
-      "reason": "eth_getBlockTransactionCountByHash 无效参数的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getBlockTransactionCountByHash with an invalid parameter.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1152,7 +1152,7 @@
     },
     {
       "test_name": "error_eth_getTransactionByBlockNumberAndIndex_invalid_block",
-      "reason": "eth_getTransactionByBlockNumberAndIndex 无效区块的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getTransactionByBlockNumberAndIndex with an invalid block.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1176,7 +1176,7 @@
     },
     {
       "test_name": "error_eth_getTransactionByBlockNumberAndIndex_invalid_index",
-      "reason": "eth_getTransactionByBlockNumberAndIndex 无效索引的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getTransactionByBlockNumberAndIndex with an invalid index.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1200,7 +1200,7 @@
     },
     {
       "test_name": "error_eth_feeHistory_invalid_block_count",
-      "reason": "eth_feeHistory 无效 block count 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_feeHistory with an invalid block count.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1224,7 +1224,7 @@
     },
     {
       "test_name": "error_eth_feeHistory_invalid_percentiles",
-      "reason": "eth_feeHistory percentile>100 时错误码不同：geth 返回 -32000，reth 返回 -32602",
+      "reason": "For an eth_feeHistory percentile above 100, geth returns -32000 and reth returns -32602.",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -1248,7 +1248,7 @@
     },
     {
       "test_name": "error_eth_feeHistory_negative_percentiles",
-      "reason": "eth_feeHistory percentile 为负数时错误码不同：geth 返回 -32000，reth 返回 -32602",
+      "reason": "For a negative eth_feeHistory percentile, geth returns -32000 and reth returns -32602.",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -1272,7 +1272,7 @@
     },
     {
       "test_name": "error_eth_getProof_invalid_address",
-      "reason": "eth_getProof 无效 address 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getProof with an invalid address.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1296,7 +1296,7 @@
     },
     {
       "test_name": "error_eth_getProof_invalid_storage_key",
-      "reason": "eth_getProof 无效 storage key：两端均返回 -32602，仅错误详情不同",
+      "reason": "For eth_getProof with an invalid storage key, both clients return -32602; only the error details differ.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1320,7 +1320,7 @@
     },
     {
       "test_name": "error_eth_getProof_invalid_block",
-      "reason": "eth_getProof 无效 block 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_getProof with an invalid block.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1344,7 +1344,7 @@
     },
     {
       "test_name": "eth_getProof_pending",
-      "reason": "reth 无 pending 块，对 pending 返回 'block not found' 是正确行为；geth 有 pending 时返回成功的 Merkle 证明，无 pending 时回退到latest block proof，属于实现/环境差异",
+      "reason": "Reth has no pending block, so 'block not found' for pending is expected. Geth returns a Merkle proof when it has a pending block, or falls back to the latest block's proof otherwise. This depends on the implementation and environment.",
       "baseline_example": {
         "result": {
           "address": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
@@ -1375,7 +1375,7 @@
     },
     {
       "test_name": "error_eth_createAccessList_invalid_to",
-      "reason": "eth_createAccessList 无效 to 地址的错误消息格式不同",
+      "reason": "Error message formats differ for eth_createAccessList with an invalid to address.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1399,7 +1399,7 @@
     },
     {
       "test_name": "error_eth_createAccessList_invalid_block",
-      "reason": "eth_createAccessList 无效 block 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_createAccessList with an invalid block.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1423,7 +1423,7 @@
     },
     {
       "test_name": "error_web3_sha3_invalid_hex",
-      "reason": "web3_sha3 无效 hex 的错误消息格式不同",
+      "reason": "Error message formats differ for web3_sha3 with invalid hexadecimal input.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1447,7 +1447,7 @@
     },
     {
       "test_name": "error_type_string_instead_of_number",
-      "reason": "类型错误（字符串代替数字）的错误消息格式不同",
+      "reason": "Error message formats differ when a string is supplied instead of a number.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1471,7 +1471,7 @@
     },
     {
       "test_name": "error_type_number_instead_of_bool",
-      "reason": "类型错误（数字代替布尔值）的错误消息格式不同",
+      "reason": "Error message formats differ when a number is supplied instead of a boolean.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1495,7 +1495,7 @@
     },
     {
       "test_name": "error_type_array_instead_of_object",
-      "reason": "类型错误（数组代替对象）的错误消息格式不同",
+      "reason": "Error message formats differ when an array is supplied instead of an object.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1519,7 +1519,7 @@
     },
     {
       "test_name": "error_type_null_required_param",
-      "reason": "必需参数为 null 的错误消息格式不同",
+      "reason": "Error message formats differ when a required parameter is null.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1543,7 +1543,7 @@
     },
     {
       "test_name": "invalid_block_tag",
-      "reason": "无效区块标签的错误消息格式不同",
+      "reason": "Error message formats differ for an invalid block tag.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1567,7 +1567,7 @@
     },
     {
       "test_name": "invalid_hex_number",
-      "reason": "无效十六进制数的错误消息格式不同",
+      "reason": "Error message formats differ for an invalid hexadecimal number.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1591,7 +1591,7 @@
     },
     {
       "test_name": "missing_required_param",
-      "reason": "缺少必需参数的错误消息格式不同",
+      "reason": "Error message formats differ for a missing required parameter.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1616,7 +1616,7 @@
     },
     {
       "test_name": "wrong_param_count",
-      "reason": "参数数量错误的错误消息格式不同",
+      "reason": "Error message formats differ for an incorrect number of parameters.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1640,7 +1640,7 @@
     },
     {
       "test_name": "invalid_address_format",
-      "reason": "无效地址格式的错误消息格式不同",
+      "reason": "Error message formats differ for an invalid address.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1665,7 +1665,7 @@
     },
     {
       "test_name": "invalid_address_length",
-      "reason": "地址长度错误的错误消息格式不同",
+      "reason": "Error message formats differ for an address of incorrect length.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1689,7 +1689,7 @@
     },
     {
       "test_name": "error_eth_call_gas_zero",
-      "reason": "eth_call gas=0:两边现均 -32000,仅 geth 附带 have/want 细节。",
+      "reason": "For eth_call with gas=0, both clients now return -32000; only geth includes have/want details.",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -1713,7 +1713,7 @@
     },
     {
       "test_name": "error_eth_call_value_overflow",
-      "reason": "上游 reth v2.2.x 将余额不足错误改为 -32003 \"EVM error: OutOfFunds\"（geth 仍 -32000 \"insufficient funds for transfer\"）。非共识,cosmetic。",
+      "reason": "Upstream reth v2.2.x changed insufficient-funds errors to -32003 \"EVM error: OutOfFunds\"; geth still returns -32000 \"insufficient funds for transfer\". This is a cosmetic, non-consensus difference.",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -1737,7 +1737,7 @@
     },
     {
       "test_name": "error_eth_estimateGas_insufficient_balance",
-      "reason": "上游 reth v2.2.x 将余额不足错误改为 -32003 \"EVM error: OutOfFunds\"（geth 仍 -32000 \"insufficient funds for transfer\"）。非共识,cosmetic。",
+      "reason": "Upstream reth v2.2.x changed insufficient-funds errors to -32003 \"EVM error: OutOfFunds\"; geth still returns -32000 \"insufficient funds for transfer\". This is a cosmetic, non-consensus difference.",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -1761,7 +1761,7 @@
     },
     {
       "test_name": "error_eth_estimateGas_value_overflow",
-      "reason": "上游 reth v2.2.x 将余额不足错误改为 -32003 \"EVM error: OutOfFunds\"（geth 仍 -32000 \"insufficient funds for transfer\"）。非共识,cosmetic。",
+      "reason": "Upstream reth v2.2.x changed insufficient-funds errors to -32003 \"EVM error: OutOfFunds\"; geth still returns -32000 \"insufficient funds for transfer\". This is a cosmetic, non-consensus difference.",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -1785,7 +1785,7 @@
     },
     {
       "test_name": "eth_estimateTotalFee_with_block_pending",
-      "reason": "reth 非 sequencer 节点无 pending 块，对 pending 返回 Block not found 是正确行为；geth 有 pending 时返回成功，属于实现/环境差异",
+      "reason": "A non-sequencer reth node has no pending block, so 'Block not found' for pending is expected. Geth succeeds when it has a pending block. This difference depends on the implementation and environment.",
       "baseline_example": {
         "result": "0x1e96f107290"
       },
@@ -1806,7 +1806,7 @@
     },
     {
       "test_name": "error_eth_estimateTotalFee_invalid_to",
-      "reason": "eth_estimateTotalFee 无效 to 的错误消息格式不同：geth 返回详细 unmarshal 描述，reth 返回 Invalid params",
+      "reason": "Error formats differ for eth_estimateTotalFee with an invalid to address: geth returns a detailed unmarshal error; reth returns 'Invalid params'.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1830,7 +1830,7 @@
     },
     {
       "test_name": "error_eth_estimateTotalFee_invalid_data",
-      "reason": "eth_estimateTotalFee 无效 data 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_estimateTotalFee with invalid data.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1854,7 +1854,7 @@
     },
     {
       "test_name": "error_eth_estimateTotalFee_invalid_value",
-      "reason": "eth_estimateTotalFee 无效 value 的错误消息格式不同",
+      "reason": "Error message formats differ for eth_estimateTotalFee with an invalid value.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1878,7 +1878,7 @@
     },
     {
       "test_name": "error_eth_estimateTotalFee_invalid_block",
-      "reason": "eth_estimateTotalFee 无效区块标签的错误消息格式不同",
+      "reason": "Error message formats differ for eth_estimateTotalFee with an invalid block tag.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1902,7 +1902,7 @@
     },
     {
       "test_name": "eth_getRawTransactionByHash_not_found",
-      "reason": "不存在的交易哈希：geth 返回 0x，reth 返回 null",
+      "reason": "For a nonexistent transaction hash, geth returns 0x while reth returns null.",
       "baseline_example": {
         "result": "0x"
       },
@@ -1920,7 +1920,7 @@
     },
     {
       "test_name": "eth_simulateV1_simple",
-      "reason": "eth_simulateV1 空 calls：两端均返回 -32602，仅错误文案不同",
+      "reason": "For eth_simulateV1 with empty calls, both clients return -32602; only the error wording differs.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1944,7 +1944,7 @@
     },
     {
       "test_name": "eth_simulateV1_with_value",
-      "reason": "eth_simulateV1 空 calls：两端均返回 -32602，仅错误文案不同",
+      "reason": "For eth_simulateV1 with empty calls, both clients return -32602; only the error wording differs.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1968,7 +1968,7 @@
     },
     {
       "test_name": "debug_dbAncient",
-      "reason": "debug_dbAncient 缺少必需参数时的错误消息格式不同：geth 返回 missing value for required argument，reth 返回 Invalid params",
+      "reason": "Error formats differ when debug_dbAncient lacks a required parameter: geth reports 'missing value for required argument'; reth returns 'Invalid params'.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -1993,7 +1993,7 @@
     },
     {
       "test_name": "debug_dbGet_valid",
-      "reason": "debug_dbGet 的底层 key 格式错误：geth 返回 -32000，reth 返回 -32602",
+      "reason": "For a malformed underlying debug_dbGet key, geth returns -32000 and reth returns -32602.",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -2017,7 +2017,7 @@
     },
     {
       "test_name": "debug_dbGet_invalid",
-      "reason": "debug_dbGet 的底层 key 格式错误：geth 返回 -32000，reth 返回 -32602",
+      "reason": "For a malformed underlying debug_dbGet key, geth returns -32000 and reth returns -32602.",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -2041,7 +2041,7 @@
     },
     {
       "test_name": "debug_executionWitness_latest",
-      "reason": "debug_executionWitness 返回的执行见证内容不同，这是正常的实现差异（不同的 Merkle 树路径和状态表示）",
+      "reason": "debug_executionWitness returns different witness contents because the clients use different Merkle tree paths and state representations. This is an expected implementation difference.",
       "baseline_example": {
         "result": {}
       },
@@ -2059,7 +2059,7 @@
     },
     {
       "test_name": "debug_executionWitness_0x1",
-      "reason": "debug_executionWitness 返回的执行见证内容不同，这是正常的实现差异（不同的 Merkle 树路径和状态表示）",
+      "reason": "debug_executionWitness returns different witness contents because the clients use different Merkle tree paths and state representations. This is an expected implementation difference.",
       "baseline_example": {
         "result": {}
       },
@@ -2077,7 +2077,7 @@
     },
     {
       "test_name": "debug_getModifiedAccountsByHash_latest",
-      "reason": "debug_getModifiedAccountsByHash 缺少必需参数时的错误消息格式不同：geth 返回 missing value for required argument，reth 返回 Invalid params",
+      "reason": "Error formats differ when debug_getModifiedAccountsByHash lacks a required parameter: geth reports 'missing value for required argument'; reth returns 'Invalid params'.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -2102,7 +2102,7 @@
     },
     {
       "test_name": "debug_getModifiedAccountsByHash_invalid",
-      "reason": "debug_getModifiedAccountsByHash 行为不同：geth 返回错误（-32000 start block not found），reth 返回 null",
+      "reason": "debug_getModifiedAccountsByHash behaves differently: geth returns -32000 ('start block not found'); reth returns null.",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -2123,7 +2123,7 @@
     },
     {
       "test_name": "debug_getModifiedAccountsByNumber_0x1",
-      "reason": "debug_getModifiedAccountsByNumber 缺少必需参数时的错误消息格式不同：geth 返回 missing value for required argument，reth 返回 Invalid params",
+      "reason": "Error formats differ when debug_getModifiedAccountsByNumber lacks a required parameter: geth reports 'missing value for required argument'; reth returns 'Invalid params'.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -2148,7 +2148,7 @@
     },
     {
       "test_name": "debug_getModifiedAccountsByNumber_latest",
-      "reason": "debug_getModifiedAccountsByNumber 缺少必需参数时的错误消息格式不同：geth 返回 missing value for required argument，reth 返回 Invalid params",
+      "reason": "Error formats differ when debug_getModifiedAccountsByNumber lacks a required parameter: geth reports 'missing value for required argument'; reth returns 'Invalid params'.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -2173,7 +2173,7 @@
     },
     {
       "test_name": "debug_preimage_valid",
-      "reason": "debug_preimage 行为不同：geth 返回错误（-32000 unknown preimage），reth 返回 null（表示未找到）",
+      "reason": "debug_preimage behaves differently: geth returns -32000 ('unknown preimage'); reth returns null to indicate it was not found.",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -2194,7 +2194,7 @@
     },
     {
       "test_name": "debug_preimage_invalid",
-      "reason": "debug_preimage 行为不同：geth 返回错误（-32000 unknown preimage），reth 返回 null（表示未找到）",
+      "reason": "debug_preimage behaves differently: geth returns -32000 ('unknown preimage'); reth returns null to indicate it was not found.",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -2215,7 +2215,7 @@
     },
     {
       "test_name": "eth_newBlockFilter",
-      "reason": "eth_newBlockFilter 返回的过滤器 ID 不同，这是正常的（每次调用都会生成新的唯一 ID）",
+      "reason": "eth_newBlockFilter returns different filter IDs, as expected: each call generates a new unique ID.",
       "baseline_example": {
         "result": "0x327f979f05b9777fd4acf263af4fc092"
       },
@@ -2225,7 +2225,7 @@
     },
     {
       "test_name": "eth_newFilter",
-      "reason": "eth_newFilter 返回的过滤器 ID 不同，这是正常的（每次调用都会生成新的唯一 ID）",
+      "reason": "eth_newFilter returns different filter IDs, as expected: each call generates a new unique ID.",
       "baseline_example": {
         "result": "0x40558b0250bb39af56047e5d8089f5b3"
       },
@@ -2235,7 +2235,7 @@
     },
     {
       "test_name": "eth_newFilter_with_address",
-      "reason": "eth_newFilter 返回的过滤器 ID 不同，这是正常的（每次调用都会生成新的唯一 ID）",
+      "reason": "eth_newFilter returns different filter IDs, as expected: each call generates a new unique ID.",
       "baseline_example": {
         "result": "0x..."
       },
@@ -2245,7 +2245,7 @@
     },
     {
       "test_name": "eth_newPendingTransactionFilter",
-      "reason": "eth_newPendingTransactionFilter 返回的过滤器 ID 不同，这是正常的（每次调用都会生成新的唯一 ID）",
+      "reason": "eth_newPendingTransactionFilter returns different filter IDs, as expected: each call generates a new unique ID.",
       "baseline_example": {
         "result": "0x..."
       },
@@ -2255,7 +2255,7 @@
     },
     {
       "test_name": "eth_signTransaction_invalid",
-      "reason": "eth_signTransaction 无法签名：geth 先报缺 gas(-32000)，reth 先报 unknown account(-32602)",
+      "reason": "eth_signTransaction cannot sign: geth first reports missing gas (-32000); reth first reports an unknown account (-32602).",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -2279,7 +2279,7 @@
     },
     {
       "test_name": "debug_getAccessibleState_latest",
-      "reason": "debug_getAccessibleState 行为不同：geth 返回数字（区块号），reth 返回 null（未实现或返回格式不同）",
+      "reason": "debug_getAccessibleState behaves differently: geth returns a block number, while reth returns null (either unimplemented or a different response format).",
       "baseline_example": {
         "result": 0
       },
@@ -2297,7 +2297,7 @@
     },
     {
       "test_name": "debug_getAccessibleState_0x1",
-      "reason": "debug_getAccessibleState 行为不同：geth 返回数字（区块号），reth 返回 null（未实现或返回格式不同）",
+      "reason": "debug_getAccessibleState behaves differently: geth returns a block number, while reth returns null (either unimplemented or a different response format).",
       "baseline_example": {
         "result": 0
       },
@@ -2315,7 +2315,7 @@
     },
     {
       "test_name": "error_eth_estimateTotalFee_insufficient_balance",
-      "reason": "余额不足:estimateTotalFee 包裹底层 eth_estimateGas 的错误。上游 reth v2.2.x 将其改为 \"EVM error: OutOfFunds\"(码 -32000,estimateTotalFee wrapper 统一 -32000);geth 为 \"insufficient funds for transfer\"。非共识,cosmetic。详见 docs/op-reth-rc5-backlog.md。",
+      "reason": "For insufficient funds, estimateTotalFee wraps the underlying eth_estimateGas error. Upstream reth v2.2.x changed it to \"EVM error: OutOfFunds\" (code -32000 because the estimateTotalFee wrapper normalizes it); geth returns \"insufficient funds for transfer\". This is a cosmetic, non-consensus difference. See docs/op-reth-rc5-backlog.md.",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -2339,7 +2339,7 @@
     },
     {
       "test_name": "debug_verbosity_wrong_type",
-      "reason": "debug_verbosity 参数类型错误(字符串)。两端都拒绝且错误码都是 -32602 Invalid params，仅措辞不同(geth: Go unmarshal 报错；reth: serde 报错)——属客户端实现差异，行为一致。",
+      "reason": "debug_verbosity receives a string instead of the expected type. Both clients reject it with -32602 (Invalid params); only the wording differs (geth: Go unmarshal error; reth: serde error). The behavior is equivalent.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -2363,7 +2363,7 @@
     },
     {
       "test_name": "debug_verbosity_missing_param",
-      "reason": "debug_verbosity 缺少必填参数。两端都 -32602，仅措辞不同(geth: missing value；reth: No more params)——行为一致。",
+      "reason": "debug_verbosity lacks a required parameter. Both clients return -32602; only the wording differs (geth: missing value; reth: No more params). The behavior is equivalent.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -2387,7 +2387,7 @@
     },
     {
       "test_name": "debug_verbosity_negative",
-      "reason": "debug_verbosity 负数 level。geth 接受(int)返回 null；reth 参数类型为 usize，拒绝负数返回 -32602。真实语义差异,不影响正常用法。",
+      "reason": "For a negative debug_verbosity level, geth accepts the int and returns null; reth expects a usize and rejects the negative value with -32602. This is a semantic difference that does not affect normal use.",
       "baseline_example": {
         "result": null
       },
@@ -2408,7 +2408,7 @@
     },
     {
       "test_name": "debug_verbosity_extra_params",
-      "reason": "debug_verbosity 多余参数。geth 严格校验参数个数报 -32602 too many arguments；reth 忽略多余参数、用首个返回 null。真实语义差异。",
+      "reason": "With extra debug_verbosity parameters, geth strictly checks the count and returns -32602 ('too many arguments'); reth ignores the extra parameters and returns null using the first one. This is a semantic difference.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -2429,7 +2429,7 @@
     },
     {
       "test_name": "debug_vmodule_wrong_type",
-      "reason": "debug_vmodule 参数类型错误(整数)。两端都 -32602，仅措辞不同——行为一致。",
+      "reason": "debug_vmodule receives an integer instead of the expected type. Both clients return -32602; only the wording differs, so the behavior is equivalent.",
       "baseline_example": {
         "error": {
           "code": -32602,
@@ -2453,7 +2453,7 @@
     },
     {
       "test_name": "debug_vmodule_geth_incompatible_syntax",
-      "reason": "debug_vmodule 使用级别名 pattern(reth::rpc=debug)。reth 的 tracing EnvFilter 接受级别名返回 null；geth 只认 filename=N(数字级别)报 -32000。两者 vmodule pattern 语法不同源,这是预期差异。",
+      "reason": "debug_vmodule receives a named-level pattern (reth::rpc=debug). Reth's tracing EnvFilter accepts the level name and returns null; geth accepts only filename=N with a numeric level and returns -32000. The clients use different vmodule pattern syntax, so this difference is expected.",
       "baseline_example": {
         "error": {
           "code": -32000,
@@ -2474,7 +2474,7 @@
     },
     {
       "test_name": "debug_printBlock_stub_diff",
-      "reason": "debug_printBlock:geth 返回 Go 结构体调试 dump 字符串(*types.Block(...)),reth 未实现该方法返回 null。纯调试输出,非共识数据,语义分歧可接受。",
+      "reason": "debug_printBlock returns a Go struct debug dump string (*types.Block(...)) on geth; reth does not implement the method and returns null. This is debug output rather than consensus data, so the semantic difference is acceptable.",
       "baseline_example": {
         "result": "(*types.Block)(0x...)"
       },
@@ -2492,7 +2492,7 @@
     },
     {
       "test_name": "eth_config_geth_crash_diff",
-      "reason": "eth_config:reth 返回链配置对象(current/next forkId 等),geth 该 RPC handler 崩溃返回 -32603 method handler crashed(geth 未正确实现)。语义分歧,记录待 geth 侧修复。",
+      "reason": "eth_config returns a chain configuration object (including current/next forkId) on reth. Geth's RPC handler crashes and returns -32603 ('method handler crashed'), indicating that geth does not implement it correctly. This semantic difference is recorded pending a geth-side fix.",
       "baseline_example": {
         "error": {
           "code": -32603,
@@ -2515,7 +2515,7 @@
     },
     {
       "test_name": "admin_nodeInfo_structdiff",
-      "reason": "admin_nodeInfo:两端顶层键相同(enode/enr/id/ip/listenAddr/name/ports/protocols),但值按节点身份天然不同——geth name='Geth/...'含 snap 协议,reth name='op-reth-rpc2'仅 eth。属节点自述信息,值差异预期。",
+      "reason": "admin_nodeInfo has the same top-level keys (enode/enr/id/ip/listenAddr/name/ports/protocols) on both clients, but values naturally differ by node identity: geth reports name='Geth/...' and the snap protocol, while reth reports name='op-reth-rpc2' and only eth. These are expected differences in node self-description.",
       "baseline_example": {
         "result": {
           "name": "Geth/v1.17.x",
@@ -2544,14 +2544,14 @@
     },
     {
       "test_name": "debug_setHead_divergence",
-      "reason": "debug_setHead(已实测,tools/rpc_sethead_test.py):geth 真回退链头——setHead 到当前头-2,head 从 N 真降到 N-2、返回 null;reth 是 no-op 空实现——同样调用头纹丝不动、返回 null。行为根本不同。geth follower 回退后其 op-node derivation 会卡在 'failed to retrieve L2 parent block' 不自愈,需 `task restart -- op-node-rpc1` 恢复。",
+      "reason": "debug_setHead was tested with tools/rpc_sethead_test.py: geth actually rewinds the head from N to N-2 and returns null when setHead targets N-2; reth's no-op stub leaves the head unchanged and also returns null. The behavior differs substantially. After the geth follower rewinds, its op-node derivation stalls at 'failed to retrieve L2 parent block' and does not recover on its own; run `task restart -- op-node-rpc1` to restore it.",
       "baseline_example": {
         "result": null,
-        "_note": "head 真回退 N->N-2"
+        "_note": "Head actually rewinds from N to N-2"
       },
       "target_example": {
         "result": null,
-        "_note": "head 不变(no-op stub)"
+        "_note": "Head remains unchanged (no-op stub)"
       },
       "applies_to": {
         "baseline": {
@@ -2564,7 +2564,7 @@
     },
     {
       "test_name": "eth_estimateTotalFee_legacy_gasprice_contract_creation",
-      "reason": "合约创建执行失败：两端均返回 -32000 InvalidJump，仅 EVM 错误文案不同",
+      "reason": "Contract creation fails on both clients with -32000 (InvalidJump); only the EVM error wording differs.",
       "baseline_example": {
         "error": {
           "code": -32000,
