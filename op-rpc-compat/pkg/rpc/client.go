@@ -136,6 +136,14 @@ func (c *Client) Call(ctx context.Context, req *Request) *ResponseWithMeta {
 
 	result.RawBody = body
 	result.Duration = time.Since(start)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		result.Error = fmt.Errorf("HTTP status %d", resp.StatusCode)
+		return result
+	}
+	if err := validateResponse(body, req.ID); err != nil {
+		result.Error = fmt.Errorf("invalid JSON-RPC response: %w", err)
+		return result
+	}
 
 	var rpcResp Response
 	if err := json.Unmarshal(body, &rpcResp); err != nil {
@@ -145,6 +153,56 @@ func (c *Client) Call(ctx context.Context, req *Request) *ResponseWithMeta {
 
 	result.Response = &rpcResp
 	return result
+}
+
+func validateResponse(body []byte, requestID int) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return err
+	}
+	if fields == nil {
+		return fmt.Errorf("response is not an object")
+	}
+	var version string
+	if err := json.Unmarshal(fields["jsonrpc"], &version); err != nil || version != "2.0" {
+		return fmt.Errorf("jsonrpc must be 2.0")
+	}
+	var responseID int
+	if err := json.Unmarshal(fields["id"], &responseID); err != nil || responseID != requestID {
+		return fmt.Errorf("response id does not match request")
+	}
+	result, hasResult := fields["result"]
+	rpcError, hasError := fields["error"]
+	if hasResult == hasError {
+		return fmt.Errorf("response must contain exactly one of result or error")
+	}
+	if hasResult {
+		if len(result) == 0 {
+			return fmt.Errorf("result is invalid")
+		}
+		return nil
+	}
+	var errorFields map[string]json.RawMessage
+	if err := json.Unmarshal(rpcError, &errorFields); err != nil || errorFields == nil {
+		return fmt.Errorf("error must be an object")
+	}
+	var code int
+	codeJSON := bytes.TrimSpace(errorFields["code"])
+	if len(codeJSON) == 0 || bytes.Equal(codeJSON, []byte("null")) {
+		return fmt.Errorf("error.code must be an integer")
+	}
+	if err := json.Unmarshal(codeJSON, &code); err != nil {
+		return fmt.Errorf("error.code must be an integer")
+	}
+	var message string
+	messageJSON := bytes.TrimSpace(errorFields["message"])
+	if len(messageJSON) == 0 || messageJSON[0] != '"' {
+		return fmt.Errorf("error.message must be a string")
+	}
+	if err := json.Unmarshal(messageJSON, &message); err != nil {
+		return fmt.Errorf("error.message must be a string")
+	}
+	return nil
 }
 
 // CallWithRetry retries a JSON-RPC request after transport failures.

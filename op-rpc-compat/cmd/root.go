@@ -11,17 +11,17 @@ import (
 )
 
 type clientConfig struct {
-	BaselineURL  string
-	TargetURL    string
-	BaselineName string
-	TargetName   string
+	BaselineURL string
+	TargetURL   string
+	DiffPolicy  string
 }
 
 var (
 	baselineURL  string
 	targetURL    string
-	baselineName string
-	targetName   string
+	baselineName = "baseline"
+	targetName   = "target"
+	diffPolicy   = "accepted"
 	timeout      time.Duration
 	verbose      bool
 	outputFile   string
@@ -48,7 +48,7 @@ Both endpoints must serve the same chain.`,
 			return err
 		}
 		baselineURL, targetURL = config.BaselineURL, config.TargetURL
-		baselineName, targetName = config.BaselineName, config.TargetName
+		diffPolicy = config.DiffPolicy
 		return runTests()
 	},
 }
@@ -62,20 +62,17 @@ func resolveClientConfig(cmd *cobra.Command) (clientConfig, error) {
 	if config.TargetURL, err = endpointFlagValue(cmd, "target-url", "TARGET_RPC_URL"); err != nil {
 		return config, err
 	}
-	if config.BaselineName, err = endpointFlagValue(cmd, "baseline-name", "BASELINE_NAME"); err != nil {
+	if config.DiffPolicy, err = cmd.Flags().GetString("diff-policy"); err != nil {
 		return config, err
 	}
-	if config.TargetName, err = endpointFlagValue(cmd, "target-name", "TARGET_NAME"); err != nil {
-		return config, err
+	if config.DiffPolicy != "accepted" && config.DiffPolicy != "strict" {
+		return config, fmt.Errorf("unknown diff policy %q", config.DiffPolicy)
 	}
 	if config.BaselineURL == "" {
 		return config, fmt.Errorf("baseline URL is required (--baseline-url or BASELINE_RPC_URL)")
 	}
 	if config.TargetURL == "" {
 		return config, fmt.Errorf("target URL is required (--target-url or TARGET_RPC_URL)")
-	}
-	if config.BaselineName == "" || config.TargetName == "" {
-		return config, fmt.Errorf("baseline and target names must be nonempty")
 	}
 	return config, nil
 }
@@ -107,8 +104,7 @@ func init() {
 
 	rootCmd.Flags().StringVar(&baselineURL, "baseline-url", "", "Baseline RPC endpoint URL")
 	rootCmd.Flags().StringVar(&targetURL, "target-url", "", "Target RPC endpoint URL")
-	rootCmd.Flags().StringVar(&baselineName, "baseline-name", "baseline", "Baseline name in reports")
-	rootCmd.Flags().StringVar(&targetName, "target-name", "target", "Target name in reports")
+	rootCmd.Flags().StringVar(&diffPolicy, "diff-policy", "accepted", "Difference policy: accepted or strict")
 	rootCmd.Flags().DurationVar(&timeout, "timeout", 30*time.Second, "Timeout for each RPC request")
 	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed output")
 	rootCmd.Flags().StringVarP(&outputFile, "output", "o", "report.json", "JSON report output path")

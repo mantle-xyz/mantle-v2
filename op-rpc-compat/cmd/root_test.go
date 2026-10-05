@@ -27,29 +27,49 @@ func endpointCommandForTest() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Flags().String("baseline-url", "", "")
 	cmd.Flags().String("target-url", "", "")
-	cmd.Flags().String("baseline-name", "baseline", "")
-	cmd.Flags().String("target-name", "target", "")
+	cmd.Flags().String("diff-policy", "accepted", "")
 	return cmd
 }
 
 func TestClientFlags(t *testing.T) {
-	for _, name := range []string{"baseline-url", "target-url", "baseline-name", "target-name"} {
+	for _, name := range []string{"baseline-url", "target-url", "diff-policy"} {
 		if rootCmd.Flags().Lookup(name) == nil {
 			t.Errorf("missing --%s", name)
 		}
 	}
-	for _, name := range []string{"geth", "reth"} {
+	for _, name := range []string{"geth", "reth", "baseline-name", "target-name"} {
 		if rootCmd.Flags().Lookup(name) != nil {
-			t.Errorf("legacy --%s must not be registered", name)
+			t.Errorf("--%s must not be registered", name)
 		}
+	}
+}
+
+func TestDiffPolicyMode(t *testing.T) {
+	t.Setenv("BASELINE_RPC_URL", "http://baseline.example")
+	t.Setenv("TARGET_RPC_URL", "http://target.example")
+	cmd := endpointCommandForTest()
+	config, err := resolveClientConfig(cmd)
+	if err != nil || config.DiffPolicy != "accepted" {
+		t.Fatalf("default policy = %q, error = %v", config.DiffPolicy, err)
+	}
+	if err := cmd.Flags().Set("diff-policy", "strict"); err != nil {
+		t.Fatal(err)
+	}
+	config, err = resolveClientConfig(cmd)
+	if err != nil || config.DiffPolicy != "strict" {
+		t.Fatalf("strict policy = %q, error = %v", config.DiffPolicy, err)
+	}
+	if err := cmd.Flags().Set("diff-policy", "permissive"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveClientConfig(cmd); err == nil {
+		t.Fatal("unknown diff policy was accepted")
 	}
 }
 
 func TestClientEnvironment(t *testing.T) {
 	t.Setenv("BASELINE_RPC_URL", "http://baseline.example")
 	t.Setenv("TARGET_RPC_URL", "http://target.example")
-	t.Setenv("BASELINE_NAME", "old-reth")
-	t.Setenv("TARGET_NAME", "new-reth")
 	config, err := resolveClientConfig(endpointCommandForTest())
 	if err != nil {
 		t.Fatal(err)
@@ -57,22 +77,15 @@ func TestClientEnvironment(t *testing.T) {
 	if config.BaselineURL != "http://baseline.example" || config.TargetURL != "http://target.example" {
 		t.Fatalf("URLs = %q, %q", config.BaselineURL, config.TargetURL)
 	}
-	if config.BaselineName != "old-reth" || config.TargetName != "new-reth" {
-		t.Fatalf("names = %q, %q", config.BaselineName, config.TargetName)
-	}
 }
 
 func TestClientFlagsOverrideEnvironment(t *testing.T) {
 	t.Setenv("BASELINE_RPC_URL", "http://env-baseline.example")
 	t.Setenv("TARGET_RPC_URL", "http://env-target.example")
-	t.Setenv("BASELINE_NAME", "env-baseline")
-	t.Setenv("TARGET_NAME", "env-target")
 	cmd := endpointCommandForTest()
 	for name, value := range map[string]string{
-		"baseline-url":  "http://flag-baseline.example",
-		"target-url":    "http://flag-target.example",
-		"baseline-name": "flag-baseline",
-		"target-name":   "flag-target",
+		"baseline-url": "http://flag-baseline.example",
+		"target-url":   "http://flag-target.example",
 	} {
 		if err := cmd.Flags().Set(name, value); err != nil {
 			t.Fatal(err)
@@ -84,9 +97,6 @@ func TestClientFlagsOverrideEnvironment(t *testing.T) {
 	}
 	if config.BaselineURL != "http://flag-baseline.example" || config.TargetURL != "http://flag-target.example" {
 		t.Fatalf("URLs = %q, %q", config.BaselineURL, config.TargetURL)
-	}
-	if config.BaselineName != "flag-baseline" || config.TargetName != "flag-target" {
-		t.Fatalf("names = %q, %q", config.BaselineName, config.TargetName)
 	}
 }
 

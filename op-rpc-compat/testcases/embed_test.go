@@ -8,8 +8,8 @@ import (
 	"unicode"
 )
 
-func TestDefaultCorpusIncludesCasesAndKnownDiffs(t *testing.T) {
-	for _, name := range []string{"eth_basic.json", "known_diffs.json"} {
+func TestDefaultCorpusExcludesLegacyKnownDiffs(t *testing.T) {
+	for _, name := range []string{"eth_basic.json"} {
 		data, err := fs.ReadFile(FS, name)
 		if err != nil {
 			t.Errorf("read %s: %v", name, err)
@@ -18,6 +18,9 @@ func TestDefaultCorpusIncludesCasesAndKnownDiffs(t *testing.T) {
 		if !json.Valid(data) {
 			t.Errorf("%s is not valid JSON", name)
 		}
+	}
+	if _, err := fs.ReadFile(FS, "known_diffs.json"); err == nil {
+		t.Fatal("legacy known differences must not be embedded")
 	}
 }
 

@@ -20,19 +20,18 @@ make op-rpc-compat
 
 ./op-rpc-compat/bin/op-rpc-compat \
   --baseline-url http://127.0.0.1:19545 \
-  --baseline-name op-geth \
-  --target-url http://127.0.0.1:29545 \
-  --target-name op-reth
+  --target-url http://127.0.0.1:29545
 ```
 
 The URLs have no defaults. `BASELINE_RPC_URL` and `TARGET_RPC_URL` can supply
-them; `BASELINE_NAME` and `TARGET_NAME` can supply logical names. Explicit flags
-take precedence over environment variables. Names default to `baseline` and
-`target` when omitted. Use stable names such as `op-geth` and `op-reth` when
-client-specific known differences should apply.
+them; explicit flags take precedence over environment variables. The two sides
+are identified as `baseline` and `target` in reports. Their observed
+`web3_clientVersion` values are recorded separately. Caller-selected names do
+not determine which differences are accepted.
 
 This is a breaking CLI change from the RDE v3 tool. There are no `--geth`,
-`--reth`, `GETH_RPC_URL`, or `RETH_RPC_URL` compatibility aliases.
+`--reth`, `--baseline-name`, `--target-name`, or corresponding legacy environment
+variable aliases.
 
 After RDE v3 updates its `src/mantle-v2` gitlink to a commit containing this
 component, the same run can start from the RDE workspace:
@@ -40,9 +39,7 @@ component, the same run can start from the RDE workspace:
 ```bash
 go -C src/mantle-v2 run ./op-rpc-compat \
   --baseline-url http://127.0.0.1:19545 \
-  --baseline-name op-geth \
-  --target-url http://127.0.0.1:29545 \
-  --target-name op-reth
+  --target-url http://127.0.0.1:29545
 ```
 
 The same binary can compare two reth versions. The caller supplies endpoints
@@ -51,9 +48,7 @@ from its own network configuration:
 ```bash
 go -C src/mantle-v2 run ./op-rpc-compat \
   --baseline-url "$OLD_RETH_RPC_URL" \
-  --baseline-name old-reth \
-  --target-url "$NEW_RETH_RPC_URL" \
-  --target-name new-reth
+  --target-url "$NEW_RETH_RPC_URL"
 ```
 
 RDE v4 profile endpoints and integration have not been validated here. That
@@ -61,9 +56,10 @@ work is separate from this component.
 
 ## Cases And Reports
 
-The default JSON testcase corpus and `known_diffs.json` are embedded, so the
-binary can run from any working directory. `--file PATH` loads one explicit OS
-file. `--testcases-dir DIR` replaces the embedded corpus with JSON files from an
+The default JSON testcase corpus and the reviewed policy registry are embedded,
+so the binary can run from any working directory. The 113 historical rules are
+archived at `policies/archive/legacy-known-diffs.json` and are never loaded.
+`--file PATH` loads one explicit OS file. `--testcases-dir DIR` replaces the embedded corpus with JSON files from an
 OS directory. `--exclude FILENAME` removes a file from a corpus run and can be
 repeated. Generated reports default to `report.json`; `--output ""` disables
 report writing.
@@ -71,56 +67,55 @@ report writing.
 The default corpus covers standard `eth_*` queries, Mantle RPC extensions,
 error cases, txpool, and debug methods. It does not submit chain transactions,
 although methods such as `eth_newFilter` create temporary node-local state. A
-live chain can change between the two requests: cases using `latest` or
-`pending` may need a fixed block for a stable comparison.
+live chain can change between the two requests. For `latest`, `safe`, and
+`finalized`, the tool checks both endpoints' block hashes before and after the
+case. It reports an unestablished snapshot as `INCONCLUSIVE`. `pending` has no
+shared canonical block and is currently `INCONCLUSIVE`. Filter creation cases
+create, query, and uninstall each endpoint's own filter; generated IDs are not
+compared. `web3_clientVersion` is collected during preflight, not compared as a
+testcase value.
 
-Results have four statuses:
+Results have these statuses:
 
 | Status | Meaning | Fails the run |
 |---|---|---|
 | `PASS` | Responses match | No |
-| `COMPATIBLE` | An applicable known difference matches, or both endpoints report an unsupported method | No |
-| `WARNING` | Only nonfatal differences were found, or a known-diff baseline error message differs from its recorded example | No |
+| `WARNING` | Every difference was matched by an exact reviewed rule in accepted mode | No |
 | `FAIL` | Responses differ or a request failed | Yes |
+| `INCONCLUSIVE` | A comparable snapshot could not be established | Yes |
+| `NOT_APPLICABLE` | The case is handled as preflight metadata | Does not count as a passing case |
+| `COMPATIBLE` | Reserved for explicitly asserted transaction scenarios | No |
 
-Reports use schema version 2 and record both endpoint names, URLs, client
-versions, and actual responses:
+The default `--diff-policy accepted` applies only reviewed, directional,
+per-difference rules from the embedded registry. That registry is initially
+empty. `--diff-policy strict` shows the same raw differences without downgrading
+them. Unknown build identity never matches a build-specific rule. The current
+`mantle-v1.6.1` and development reth binaries report the same RPC version when
+`--identity` is omitted, so neither is identified by that string alone.
+
+Reports use schema version 3 and record raw and effective outcomes, the
+registry ID and digest, endpoint versions and identity sources, and actual
+responses. Invalid response bodies are retained losslessly in
+`baseline_raw_body_base64` or `target_raw_body_base64` so a malformed RPC reply
+cannot prevent the report from being saved:
 
 ```json
 {
-  "schema_version": 2,
-  "baseline": {"name": "op-geth", "url": "http://127.0.0.1:19545", "client_version": "Geth/..."},
-  "target": {"name": "op-reth", "url": "http://127.0.0.1:29545", "client_version": "mantle-reth/..."},
+  "schema_version": 3,
+  "policy_mode": "accepted",
+  "registry_id": "accepted-rpc-differences",
+  "baseline": {"name": "baseline", "url": "http://127.0.0.1:19545", "client_version": "Geth/..."},
+  "target": {"name": "target", "url": "http://127.0.0.1:29545", "client_version": "mantle-reth/..."},
   "results": [
-    {"status": "PASS", "baseline_response": {"result": "0x1"}, "target_response": {"result": "0x1"}}
+    {"observed_status": "PASS", "status": "PASS", "baseline_response": {"result": "0x1"}, "target_response": {"result": "0x1"}}
   ]
 }
 ```
 
-Known differences are matched against the current baseline and target, not
-unconditionally skipped. A client-specific rule can select logical names and
-optionally `web3_clientVersion` with regular expressions:
-
-```json
-{
-  "test_name": "eth_hashrate",
-  "applies_to": {
-    "baseline": {"name_pattern": "^op-geth$"},
-    "target": {"name_pattern": "^op-reth$"}
-  },
-  "baseline_example": {"error": {"code": -32601, "message": "method not found"}},
-  "target_example": {"result": "0x0"},
-  "reason": "Different responses from this client pair"
-}
-```
-
-If the endpoint names or versions do not match `applies_to`, the difference is
-reported normally. Rules without `applies_to` describe implementation-independent
-dynamic values such as client versions and generated filter IDs.
-If a known difference disappears, the result is `PASS`. Recorded successful
-result objects require their listed fields but allow additional fields and
-changing values. A changed baseline error message is visible as `WARNING`;
-target response drift and transport failures are `FAIL`.
+Rules bind the comparison direction, reviewed build pair, chain, corpus,
+method, request digest, JSON Pointer, difference type, presence, and exact
+values. External corpora cannot claim the embedded corpus identity. A rule
+whose expected difference disappears is listed as stale in the report.
 
 ## Stateful Modes
 
@@ -134,12 +129,18 @@ is a public local-devnet test key and must not be used on a funded network.
 The full preconfirmation parity scenario is calibrated for an op-geth sequencer;
 use standard-only mode on a reth sequencer.
 The JSON report includes each transaction assertion alongside its underlying
-RPC comparisons. Any failed assertion makes the command exit with status 1.
+RPC comparisons. Balance, contract-call, and fee-history checks using `latest`
+require the same canonical block on both endpoints before and after the call;
+an unestablished snapshot is `INCONCLUSIVE` and exits nonzero. Distinct
+transaction receipts exclude only inclusion identifiers such as transaction
+hash and block position; fee, gas, status, and other receipt fields remain
+comparable, and both raw responses are retained. Any failed assertion makes
+the command exit with status 1.
 
 ```bash
 go run ./op-rpc-compat \
-  --baseline-url "$BASELINE_RPC_URL" --baseline-name op-geth \
-  --target-url "$TARGET_RPC_URL" --target-name op-reth \
+  --baseline-url "$BASELINE_RPC_URL" \
+  --target-url "$TARGET_RPC_URL" \
   --tx --tx-standard-only
 ```
 

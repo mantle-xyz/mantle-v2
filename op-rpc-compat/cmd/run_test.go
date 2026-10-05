@@ -1,10 +1,15 @@
 package cmd
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/report"
@@ -42,6 +47,9 @@ func TestExplicitTestcaseDirectoryUsesOSFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "custom.json"), []byte("[]"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, knownDiffsFileName), []byte(`{"known_diffs":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	files, err := findTestFiles(dir, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -65,6 +73,20 @@ func TestExplicitTestFileUsesOSPath(t *testing.T) {
 	}
 }
 
+func TestExternalCorpusCannotClaimEmbeddedIdentity(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "custom.json")
+	if err := os.WriteFile(file, []byte(`[{"name":"reviewed-case","method":"eth_chainId","params":[],"corpus_id":"embedded"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cases, err := loadTestFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cases) != 1 || !strings.HasPrefix(cases[0].CorpusID, "sha256:") {
+		t.Fatalf("external corpus identity = %+v", cases)
+	}
+}
+
 func TestEmbeddedTestcaseLoadsOutsideRepository(t *testing.T) {
 	t.Chdir(t.TempDir())
 	tests, err := loadTestFileFS(testcases.FS, "eth_basic.json")
@@ -73,43 +95,6 @@ func TestEmbeddedTestcaseLoadsOutsideRepository(t *testing.T) {
 	}
 	if len(tests) == 0 {
 		t.Fatal("embedded eth_basic.json contains no testcases")
-	}
-}
-
-func TestDefaultKnownDiffsLoadOutsideRepository(t *testing.T) {
-	t.Chdir(t.TempDir())
-	r := report.NewReporter(report.EndpointMetadata{Name: "op-geth", URL: "baseline"}, report.EndpointMetadata{Name: "op-reth", URL: "target"}, false)
-	if err := loadKnownDiffsFS(r, testcaseFS("")); err != nil {
-		t.Fatal(err)
-	}
-	if r.GetKnownDiff("eth_hashrate") == nil {
-		t.Fatal("embedded known differences missing eth_hashrate")
-	}
-}
-
-func TestCustomKnownDiffsUseSelectedDirectory(t *testing.T) {
-	dir := t.TempDir()
-	data := []byte(`{"known_diffs":[{"test_name":"custom","reason":"custom corpus"}]}`)
-	if err := os.WriteFile(filepath.Join(dir, knownDiffsFileName), data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	r := report.NewReporter(report.EndpointMetadata{Name: "baseline", URL: "baseline"}, report.EndpointMetadata{Name: "target", URL: "target"}, false)
-	if err := loadKnownDiffsFS(r, testcaseFS(dir)); err != nil {
-		t.Fatal(err)
-	}
-	if got := r.GetKnownDiff("custom"); got == nil || got.Reason != "custom corpus" {
-		t.Fatalf("known difference = %+v", got)
-	}
-}
-
-func TestMalformedKnownDiffsAreRejected(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, knownDiffsFileName), []byte(`{"known_diffs":`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	r := report.NewReporter(report.EndpointMetadata{}, report.EndpointMetadata{}, false)
-	if _, err := loadSelectedKnownDiffs(r, dir); err == nil {
-		t.Fatal("malformed known differences must stop the run")
 	}
 }
 
@@ -128,6 +113,17 @@ func TestTransactionFailuresAppearInReport(t *testing.T) {
 	}
 }
 
+func TestInconclusiveTransactionDoesNotAddFailure(t *testing.T) {
+	r := report.NewReporter(report.EndpointMetadata{}, report.EndpointMetadata{}, false)
+	r.AddInconclusiveResult(report.TestCase{Name: "native_initial_balance", Method: "eth_getBalance"}, nil, "heads differ")
+	failed := recordTransactionResults(r, []*tx.TxTestResult{{TestName: "native", TxType: "Legacy",
+		Inconclusive: true, Error: "heads differ"}})
+	generated := r.Generate()
+	if failed != 0 || generated.InconclusiveTests != 1 || generated.FailedTests != 0 || !r.HasFailures() {
+		t.Fatalf("inconclusive transaction summary = failed %d, report %+v", failed, generated)
+	}
+}
+
 func TestReplaceTemplateVarsBlockOneRLP(t *testing.T) {
 	tests := []report.TestCase{{
 		Name:   "raw-block",
@@ -142,6 +138,96 @@ func TestReplaceTemplateVarsBlockOneRLP(t *testing.T) {
 	}
 	if params[0] != "0xf90123" {
 		t.Fatalf("raw block template = %v, want 0xf90123", params[0])
+	}
+}
+
+func TestTemplateSubstitutionPreservesProvenanceAndLargeNumbers(t *testing.T) {
+	tests := []report.TestCase{{
+		Name: "template", Method: "eth_call", CorpusID: "embedded",
+		RequestTemplateSHA256: "original-template-digest",
+		Params:                []any{json.Number("9007199254740993"), "{{latest_block_number}}"},
+	}}
+	resolved := replaceTemplateVars(tests, &TemplateVars{LatestBlockNumber: "0x190"})
+	params := resolved[0].Params.([]any)
+	if resolved[0].CorpusID != "embedded" || resolved[0].RequestTemplateSHA256 != "original-template-digest" ||
+		params[0] != json.Number("9007199254740993") || params[1] != "0x190" || resolved[0].TemplateError != "" {
+		t.Fatalf("template result = %+v", resolved[0])
+	}
+	if tags := caseDynamicTags(resolved[0]); len(tags) != 1 || tags[0] != "latest" {
+		t.Fatalf("template snapshot provenance = %v", tags)
+	}
+	unresolved := replaceTemplateVars(tests, &TemplateVars{})
+	if unresolved[0].TemplateError == "" {
+		t.Fatal("missing template variable was not recorded")
+	}
+}
+
+func TestUnresolvedTemplateDoesNotSendTestRPC(t *testing.T) {
+	if os.Getenv("RPC_TEMPLATE_CHILD") == "1" {
+		baselineURL = os.Getenv("RPC_TEMPLATE_URL")
+		targetURL = baselineURL
+		testFile = os.Getenv("RPC_TEMPLATE_FILE")
+		outputFile = os.Getenv("RPC_TEMPLATE_REPORT")
+		_ = runTests()
+		return
+	}
+	var testCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			ID     int    `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		response := map[string]any{"jsonrpc": "2.0", "id": request.ID}
+		switch request.Method {
+		case "eth_chainId":
+			response["result"] = "0x539"
+		case "eth_getBlockByNumber":
+			response["result"] = map[string]any{"hash": "0x" + strings.Repeat("11", 32), "number": "0x1", "transactions": []any{}}
+		case "web3_clientVersion":
+			response["result"] = "client/v1"
+		case "debug_getRawBlock":
+			response["error"] = map[string]any{"code": -32601, "message": "method not found"}
+		case "eth_getTransactionByHash":
+			testCalls.Add(1)
+			response["result"] = nil
+		default:
+			t.Errorf("unexpected method %q", request.Method)
+			response["error"] = map[string]any{"code": -32601, "message": "method not found"}
+		}
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+	file := filepath.Join(t.TempDir(), "case.json")
+	if err := os.WriteFile(file, []byte(`[{"name":"templated","method":"eth_getTransactionByHash","params":["{{latest_tx_hash}}"]}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reportPath := filepath.Join(t.TempDir(), "report.json")
+	command := exec.Command(os.Args[0], "-test.run=^TestUnresolvedTemplateDoesNotSendTestRPC$")
+	command.Env = append(os.Environ(), "RPC_TEMPLATE_CHILD=1", "RPC_TEMPLATE_URL="+server.URL,
+		"RPC_TEMPLATE_FILE="+file, "RPC_TEMPLATE_REPORT="+reportPath)
+	if err := command.Run(); err == nil {
+		t.Fatal("unresolved template exited successfully")
+	}
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved struct {
+		Results []struct {
+			Status     string `json:"status"`
+			SkipReason string `json:"skip_reason"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if testCalls.Load() != 0 || saved.Results[0].Status != "INCONCLUSIVE" ||
+		!strings.Contains(saved.Results[0].SkipReason, "latest_tx_hash") {
+		t.Fatalf("unresolved template: calls=%d report=%s", testCalls.Load(), data)
 	}
 }
 

@@ -3,6 +3,7 @@ package tx
 
 import (
 	"encoding/json"
+	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -75,6 +76,7 @@ type TxTestResult struct {
 	TestName        string     `json:"test_name"`
 	TxType          string     `json:"tx_type"`
 	Passed          bool       `json:"passed"`
+	Inconclusive    bool       `json:"inconclusive,omitempty"`
 	BaselineTxHash  string     `json:"baseline_tx_hash,omitempty"`
 	TargetTxHash    string     `json:"target_tx_hash,omitempty"`
 	Error           string     `json:"error,omitempty"`
@@ -87,6 +89,17 @@ type TxTestResult struct {
 	// Preconfirmation responses, when applicable.
 	BaselinePreconf *PreconfResponse `json:"baseline_preconf,omitempty"`
 	TargetPreconf   *PreconfResponse `json:"target_preconf,omitempty"`
+}
+
+type InconclusiveError struct {
+	Reason string
+}
+
+func (e *InconclusiveError) Error() string { return e.Reason }
+
+func IsInconclusive(err error) bool {
+	var inconclusive *InconclusiveError
+	return errors.As(err, &inconclusive)
 }
 
 // TxReceipt contains the receipt fields needed for comparison.

@@ -2,10 +2,14 @@
 package diff
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math/big"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -17,6 +21,7 @@ const (
 	DiffTypeType    DiffType = "type"    // type mismatch
 	DiffTypeMissing DiffType = "missing" // field missing on the target
 	DiffTypeExtra   DiffType = "extra"   // field added by the target
+	DiffTypeNull    DiffType = "null"    // explicit null on one side
 	DiffTypeError   DiffType = "error"   // error mismatch
 	DiffTypeOrder   DiffType = "order"   // array order mismatch
 )
@@ -32,12 +37,18 @@ const (
 
 // Difference describes one mismatch between responses.
 type Difference struct {
-	Path     string       `json:"path"`               // JSON path, such as ".result.blockNumber"
-	Type     DiffType     `json:"type"`               // difference type
-	Severity DiffSeverity `json:"severity"`           // difference severity
-	Expected interface{}  `json:"expected,omitempty"` // baseline value
-	Actual   interface{}  `json:"actual,omitempty"`   // target value
-	Message  string       `json:"message,omitempty"`  // details
+	Path              string       `json:"path"`              // display path
+	Pointer           string       `json:"pointer"`           // RFC 6901 location
+	Type              DiffType     `json:"type"`              // difference type
+	Severity          DiffSeverity `json:"observed_severity"` // difference severity
+	EffectiveSeverity DiffSeverity `json:"effective_severity,omitempty"`
+	RuleID            string       `json:"rule_id,omitempty"`
+	RuleReason        string       `json:"rule_reason,omitempty"`
+	ExpectedPresent   bool         `json:"expected_present"`  // baseline field exists
+	ActualPresent     bool         `json:"actual_present"`    // target field exists
+	Expected          interface{}  `json:"expected"`          // baseline value
+	Actual            interface{}  `json:"actual"`            // target value
+	Message           string       `json:"message,omitempty"` // details
 }
 
 // CompareResult collects the differences from a comparison.
@@ -64,20 +75,11 @@ func (r *CompareResult) HasWarnings() bool {
 
 // Options controls response comparison.
 type Options struct {
-	IgnorePaths     []string // JSON paths excluded from comparison
-	IgnoreOrder     bool     // ignore array ordering
-	NormalizeHex    bool     // normalize hexadecimal values
-	IgnoreErrorData bool     // ignore error.data differences
 }
 
 // DefaultOptions returns the default comparison settings.
 func DefaultOptions() *Options {
-	return &Options{
-		IgnorePaths:     []string{},
-		IgnoreOrder:     false,
-		NormalizeHex:    true,
-		IgnoreErrorData: false,
-	}
+	return &Options{}
 }
 
 // Compare recursively compares two JSON values.
@@ -88,11 +90,11 @@ func Compare(expected, actual []byte, opts *Options) (*CompareResult, error) {
 
 	var expectedVal, actualVal interface{}
 
-	if err := json.Unmarshal(expected, &expectedVal); err != nil {
+	if err := decodeJSONValue(expected, &expectedVal); err != nil {
 		return nil, fmt.Errorf("decode expected JSON: %w", err)
 	}
 
-	if err := json.Unmarshal(actual, &actualVal); err != nil {
+	if err := decodeJSONValue(actual, &actualVal); err != nil {
 		return nil, fmt.Errorf("decode actual JSON: %w", err)
 	}
 
@@ -101,7 +103,7 @@ func Compare(expected, actual []byte, opts *Options) (*CompareResult, error) {
 		Differences: []Difference{},
 	}
 
-	compareValues("", expectedVal, actualVal, result, opts)
+	compareValues("", "", expectedVal, actualVal, result, opts)
 
 	for i := range result.Differences {
 		result.Differences[i].Severity = classifyDiffSeverity(&result.Differences[i])
@@ -123,24 +125,29 @@ func Compare(expected, actual []byte, opts *Options) (*CompareResult, error) {
 	return result, nil
 }
 
+func decodeJSONValue(data []byte, value *interface{}) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(value); err != nil {
+		return err
+	}
+	var trailing interface{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("multiple JSON values")
+		}
+		return err
+	}
+	return nil
+}
+
 // classifyDiffSeverity classifies a difference by type.
 func classifyDiffSeverity(d *Difference) DiffSeverity {
-	// Extra fields on either side are warnings.
-	if d.Type == DiffTypeExtra || d.Type == DiffTypeMissing {
-		return SeverityWarning
-	}
-
 	return SeverityFail
 }
 
 // compareValues recursively compares values at a JSON path.
-func compareValues(path string, expected, actual interface{}, result *CompareResult, opts *Options) {
-	for _, ignorePath := range opts.IgnorePaths {
-		if strings.HasPrefix(path, ignorePath) || path == ignorePath {
-			return
-		}
-	}
-
+func compareValues(path, pointer string, expected, actual interface{}, result *CompareResult, opts *Options) {
 	result.TotalFields++
 
 	if expected == nil && actual == nil {
@@ -148,19 +155,17 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 	}
 	if expected == nil {
 		result.Differences = append(result.Differences, Difference{
-			Path:    path,
-			Type:    DiffTypeExtra,
-			Actual:  actual,
-			Message: "baseline returned null; target returned a value",
+			Path: path, Pointer: pointer, Type: DiffTypeNull,
+			ExpectedPresent: true, ActualPresent: true,
+			Actual: actual, Message: "baseline returned null; target returned a value",
 		})
 		return
 	}
 	if actual == nil {
 		result.Differences = append(result.Differences, Difference{
-			Path:     path,
-			Type:     DiffTypeMissing,
-			Expected: expected,
-			Message:  "baseline returned a value; target returned null",
+			Path: path, Pointer: pointer, Type: DiffTypeNull,
+			ExpectedPresent: true, ActualPresent: true,
+			Expected: expected, Message: "baseline returned a value; target returned null",
 		})
 		return
 	}
@@ -171,10 +176,10 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 	if expectedType != actualType {
 		// JSON decoders may represent the same number as json.Number or float64.
 		if isNumericType(expected) && isNumericType(actual) {
-			if !compareNumeric(expected, actual, opts) {
+			if !compareNumeric(expected, actual) {
 				result.Differences = append(result.Differences, Difference{
-					Path:     path,
-					Type:     DiffTypeValue,
+					Path: path, Pointer: pointer, Type: DiffTypeValue,
+					ExpectedPresent: true, ActualPresent: true,
 					Expected: expected,
 					Actual:   actual,
 					Message:  "numeric values differ",
@@ -184,10 +189,10 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 		}
 
 		result.Differences = append(result.Differences, Difference{
-			Path:     path,
-			Type:     DiffTypeType,
-			Expected: fmt.Sprintf("%T", expected),
-			Actual:   fmt.Sprintf("%T", actual),
+			Path: path, Pointer: pointer, Type: DiffTypeType,
+			ExpectedPresent: true, ActualPresent: true,
+			Expected: expected,
+			Actual:   actual,
 			Message:  fmt.Sprintf("types differ: %T vs %T", expected, actual),
 		})
 		return
@@ -196,22 +201,18 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 	switch exp := expected.(type) {
 	case map[string]interface{}:
 		act := actual.(map[string]interface{})
-		compareObjects(path, exp, act, result, opts)
+		compareObjects(path, pointer, exp, act, result, opts)
 
 	case []interface{}:
 		act := actual.([]interface{})
-		compareArrays(path, exp, act, result, opts)
+		compareArrays(path, pointer, exp, act, result, opts)
 
 	case string:
 		act := actual.(string)
-		if opts.NormalizeHex {
-			exp = normalizeHex(exp)
-			act = normalizeHex(act)
-		}
 		if exp != act {
 			result.Differences = append(result.Differences, Difference{
-				Path:     path,
-				Type:     DiffTypeValue,
+				Path: path, Pointer: pointer, Type: DiffTypeValue,
+				ExpectedPresent: true, ActualPresent: true,
 				Expected: expected,
 				Actual:   actual,
 				Message:  "string values differ",
@@ -222,8 +223,20 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 		act := actual.(float64)
 		if exp != act {
 			result.Differences = append(result.Differences, Difference{
-				Path:     path,
-				Type:     DiffTypeValue,
+				Path: path, Pointer: pointer, Type: DiffTypeValue,
+				ExpectedPresent: true, ActualPresent: true,
+				Expected: expected,
+				Actual:   actual,
+				Message:  "numeric values differ",
+			})
+		}
+
+	case json.Number:
+		act := actual.(json.Number)
+		if !compareNumeric(exp, act) {
+			result.Differences = append(result.Differences, Difference{
+				Path: path, Pointer: pointer, Type: DiffTypeValue,
+				ExpectedPresent: true, ActualPresent: true,
 				Expected: expected,
 				Actual:   actual,
 				Message:  "numeric values differ",
@@ -234,8 +247,8 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 		act := actual.(bool)
 		if exp != act {
 			result.Differences = append(result.Differences, Difference{
-				Path:     path,
-				Type:     DiffTypeValue,
+				Path: path, Pointer: pointer, Type: DiffTypeValue,
+				ExpectedPresent: true, ActualPresent: true,
 				Expected: expected,
 				Actual:   actual,
 				Message:  "boolean values differ",
@@ -245,8 +258,8 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 	default:
 		if !reflect.DeepEqual(expected, actual) {
 			result.Differences = append(result.Differences, Difference{
-				Path:     path,
-				Type:     DiffTypeValue,
+				Path: path, Pointer: pointer, Type: DiffTypeValue,
+				ExpectedPresent: true, ActualPresent: true,
 				Expected: expected,
 				Actual:   actual,
 				Message:  "values differ",
@@ -256,7 +269,7 @@ func compareValues(path string, expected, actual interface{}, result *CompareRes
 }
 
 // compareObjects compares JSON objects.
-func compareObjects(path string, expected, actual map[string]interface{}, result *CompareResult, opts *Options) {
+func compareObjects(path, pointer string, expected, actual map[string]interface{}, result *CompareResult, opts *Options) {
 	allKeys := make(map[string]bool)
 	for k := range expected {
 		allKeys[k] = true
@@ -274,6 +287,7 @@ func compareObjects(path string, expected, actual map[string]interface{}, result
 
 	for _, key := range keys {
 		childPath := path + "." + key
+		childPointer := pointer + "/" + strings.ReplaceAll(strings.ReplaceAll(key, "~", "~0"), "/", "~1")
 		if path == "" {
 			childPath = key
 		}
@@ -284,8 +298,8 @@ func compareObjects(path string, expected, actual map[string]interface{}, result
 		if expExists && !actExists {
 			result.TotalFields++
 			result.Differences = append(result.Differences, Difference{
-				Path:     childPath,
-				Type:     DiffTypeMissing,
+				Path: childPath, Pointer: childPointer, Type: DiffTypeMissing,
+				ExpectedPresent: true, ActualPresent: false,
 				Expected: expVal,
 				Message:  "target response is missing this field",
 			})
@@ -295,24 +309,24 @@ func compareObjects(path string, expected, actual map[string]interface{}, result
 		if !expExists && actExists {
 			result.TotalFields++
 			result.Differences = append(result.Differences, Difference{
-				Path:    childPath,
-				Type:    DiffTypeExtra,
+				Path: childPath, Pointer: childPointer, Type: DiffTypeExtra,
+				ExpectedPresent: false, ActualPresent: true,
 				Actual:  actVal,
 				Message: "target response has an extra field",
 			})
 			continue
 		}
 
-		compareValues(childPath, expVal, actVal, result, opts)
+		compareValues(childPath, childPointer, expVal, actVal, result, opts)
 	}
 }
 
 // compareArrays compares JSON arrays.
-func compareArrays(path string, expected, actual []interface{}, result *CompareResult, opts *Options) {
+func compareArrays(path, pointer string, expected, actual []interface{}, result *CompareResult, opts *Options) {
 	if len(expected) != len(actual) {
 		result.Differences = append(result.Differences, Difference{
-			Path:     path,
-			Type:     DiffTypeValue,
+			Path: path, Pointer: pointer, Type: DiffTypeValue,
+			ExpectedPresent: true, ActualPresent: true,
 			Expected: len(expected),
 			Actual:   len(actual),
 			Message:  fmt.Sprintf("array lengths differ: %d vs %d", len(expected), len(actual)),
@@ -326,12 +340,13 @@ func compareArrays(path string, expected, actual []interface{}, result *CompareR
 
 	for i := 0; i < maxLen; i++ {
 		childPath := fmt.Sprintf("%s[%d]", path, i)
+		childPointer := pointer + "/" + strconv.Itoa(i)
 
 		if i >= len(expected) {
 			result.TotalFields++
 			result.Differences = append(result.Differences, Difference{
-				Path:    childPath,
-				Type:    DiffTypeExtra,
+				Path: childPath, Pointer: childPointer, Type: DiffTypeExtra,
+				ExpectedPresent: false, ActualPresent: true,
 				Actual:  actual[i],
 				Message: "target response has extra array elements",
 			})
@@ -341,35 +356,16 @@ func compareArrays(path string, expected, actual []interface{}, result *CompareR
 		if i >= len(actual) {
 			result.TotalFields++
 			result.Differences = append(result.Differences, Difference{
-				Path:     childPath,
-				Type:     DiffTypeMissing,
+				Path: childPath, Pointer: childPointer, Type: DiffTypeMissing,
+				ExpectedPresent: true, ActualPresent: false,
 				Expected: expected[i],
 				Message:  "target response is missing array elements",
 			})
 			continue
 		}
 
-		compareValues(childPath, expected[i], actual[i], result, opts)
+		compareValues(childPath, childPointer, expected[i], actual[i], result, opts)
 	}
-}
-
-// normalizeHex normalizes a hexadecimal string.
-func normalizeHex(s string) string {
-	if !strings.HasPrefix(s, "0x") && !strings.HasPrefix(s, "0X") {
-		return s
-	}
-
-	s = strings.ToLower(s)
-
-	// Remove leading zeroes from numeric hex while retaining one digit.
-	if len(s) > 2 {
-		trimmed := strings.TrimLeft(s[2:], "0")
-		if trimmed == "" {
-			return "0x0"
-		}
-		return "0x" + trimmed
-	}
-	return s
 }
 
 // isNumericType reports whether a value can be compared numerically.
@@ -383,44 +379,13 @@ func isNumericType(v interface{}) bool {
 }
 
 // compareNumeric compares two numeric representations.
-func compareNumeric(expected, actual interface{}, opts *Options) bool {
-	expFloat := toFloat64(expected)
-	actFloat := toFloat64(actual)
-	return expFloat == actFloat
-}
-
-// toFloat64 converts a numeric value to float64.
-func toFloat64(v interface{}) float64 {
-	switch n := v.(type) {
-	case float64:
-		return n
-	case float32:
-		return float64(n)
-	case int:
-		return float64(n)
-	case int64:
-		return float64(n)
-	case int32:
-		return float64(n)
-	case int16:
-		return float64(n)
-	case int8:
-		return float64(n)
-	case uint:
-		return float64(n)
-	case uint64:
-		return float64(n)
-	case uint32:
-		return float64(n)
-	case uint16:
-		return float64(n)
-	case uint8:
-		return float64(n)
-	case json.Number:
-		f, _ := n.Float64()
-		return f
+func compareNumeric(expected, actual interface{}) bool {
+	baseline, baselineOK := new(big.Rat).SetString(fmt.Sprint(expected))
+	target, targetOK := new(big.Rat).SetString(fmt.Sprint(actual))
+	if baselineOK && targetOK {
+		return baseline.Cmp(target) == 0
 	}
-	return 0
+	return fmt.Sprint(expected) == fmt.Sprint(actual)
 }
 
 // FormatDifferences formats differences for human-readable output.
@@ -470,67 +435,4 @@ func formatValue(v interface{}) string {
 		}
 		return s
 	}
-}
-
-// ErrorCompatibility classifies compatibility between JSON-RPC errors.
-type ErrorCompatibility string
-
-const (
-	ErrorCompatNone           ErrorCompatibility = "none"             // incompatible errors
-	ErrorCompatMethodNotFound ErrorCompatibility = "method_not_found" // unsupported method on both sides
-	ErrorCompatIdentical      ErrorCompatibility = "identical"        // identical errors
-)
-
-// methodNotFoundKeywords identifies method-not-found errors from message text.
-var methodNotFoundKeywords = []string{
-	"not exist",
-	"not available",
-	"unimplemented",
-	"method not found",
-	"does not exist",
-}
-
-// CheckErrorCompatibility classifies whether two JSON-RPC errors are compatible.
-func CheckErrorCompatibility(baselineError, targetError map[string]interface{}) ErrorCompatibility {
-	if baselineError == nil || targetError == nil {
-		return ErrorCompatNone
-	}
-
-	baselineMsg := getErrorMessage(baselineError)
-	targetMsg := getErrorMessage(targetError)
-
-	if baselineMsg == targetMsg {
-		return ErrorCompatIdentical
-	}
-
-	// Both clients may report an unsupported method with different wording.
-	baselineIsMethodNotFound := isMethodNotFoundError(baselineMsg)
-	targetIsMethodNotFound := isMethodNotFoundError(targetMsg)
-
-	if baselineIsMethodNotFound && targetIsMethodNotFound {
-		return ErrorCompatMethodNotFound
-	}
-
-	return ErrorCompatNone
-}
-
-// getErrorMessage extracts the message from an error object.
-func getErrorMessage(errObj map[string]interface{}) string {
-	if msg, ok := errObj["message"]; ok {
-		if s, ok := msg.(string); ok {
-			return strings.ToLower(s)
-		}
-	}
-	return ""
-}
-
-// isMethodNotFoundError detects unsupported-method wording.
-func isMethodNotFoundError(msg string) bool {
-	msg = strings.ToLower(msg)
-	for _, keyword := range methodNotFoundKeywords {
-		if strings.Contains(msg, keyword) {
-			return true
-		}
-	}
-	return false
 }

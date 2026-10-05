@@ -173,19 +173,29 @@ func (t *Tester) CallContract(ctx context.Context, baselineContractAddr, targetC
 		"latest",
 	})
 
-	baselineResp := t.baselineClient.Call(ctx, baselineReq)
-	targetResp := t.targetClient.Call(ctx, targetReq)
+	tc := report.TestCase{
+		Name: testName, Method: "eth_call",
+		Params: []interface{}{map[string]interface{}{
+			"to": baselineContractAddr.Hex(), "data": hexutil.Encode(callData),
+		}, "latest"},
+	}
+	compareResult, reason := t.compareAtStableTag(ctx, "latest", func() *rpc.CompareResult {
+		return &rpc.CompareResult{Request: baselineReq,
+			BaselineResponse: t.baselineClient.Call(ctx, baselineReq),
+			TargetResponse:   t.targetClient.Call(ctx, targetReq)}
+	})
+	if reason != "" {
+		if t.reporter != nil {
+			t.reporter.AddInconclusiveResult(tc, compareResult, reason)
+		}
+		return nil, &InconclusiveError{Reason: "contract comparison inconclusive: " + reason}
+	}
+	baselineResp, targetResp := compareResult.BaselineResponse, compareResult.TargetResponse
 
 	if t.reporter != nil {
-		compareResult := &rpc.CompareResult{
-			Request:          baselineReq, // retain the reference request in the report
-			BaselineResponse: baselineResp,
-			TargetResponse:   targetResp,
-		}
-
 		var diffResult *diff.CompareResult
 		var compareErr error
-		if baselineResp.Response.Error == nil && targetResp.Response.Error == nil {
+		if rpc.SuccessfulResponse(baselineResp) && rpc.SuccessfulResponse(targetResp) {
 			// Normalize eth_call responses by removing the request ID.
 			baselineRaw := normalizeRawResponse(baselineResp.RawBody, false)
 			targetRaw := normalizeRawResponse(targetResp.RawBody, false)
@@ -196,25 +206,26 @@ func (t *Tester) CallContract(ctx context.Context, baselineContractAddr, targetC
 			)
 		}
 
-		tc := report.TestCase{
-			Name:   testName,
-			Method: "eth_call",
-			Params: []interface{}{
-				map[string]interface{}{
-					"to":   baselineContractAddr.Hex(), // retain the reference contract address
-					"data": hexutil.Encode(callData),
-				},
-				"latest",
-			},
-		}
 		t.reporter.AddResult(tc, compareResult, diffResult, compareErr)
 	}
 
 	if baselineResp.Error != nil {
 		return nil, fmt.Errorf("baseline eth_call failed: %w", baselineResp.Error)
 	}
+	if baselineResp.Response == nil {
+		return nil, fmt.Errorf("baseline eth_call returned no RPC response")
+	}
 	if baselineResp.Response.Error != nil {
 		return nil, fmt.Errorf("❌ Baseline RPC error: %s", baselineResp.Response.Error.Message)
+	}
+	if targetResp.Error != nil {
+		return nil, fmt.Errorf("target eth_call failed: %w", targetResp.Error)
+	}
+	if targetResp.Response == nil {
+		return nil, fmt.Errorf("target eth_call returned no RPC response")
+	}
+	if targetResp.Response.Error != nil {
+		return nil, fmt.Errorf("target RPC error: %s", targetResp.Response.Error.Message)
 	}
 
 	var baselineResultHex string
@@ -223,12 +234,10 @@ func (t *Tester) CallContract(ctx context.Context, baselineContractAddr, targetC
 	}
 	result.BaselineResult = baselineResultHex
 
-	if targetResp.Error == nil && targetResp.Response.Error == nil {
-		var targetResultHex string
-		if err := json.Unmarshal(targetResp.Response.Result, &targetResultHex); err == nil {
-			result.TargetResult = targetResultHex
-			result.ResultMatch = baselineResultHex == targetResultHex
-		}
+	var targetResultHex string
+	if err := json.Unmarshal(targetResp.Response.Result, &targetResultHex); err == nil {
+		result.TargetResult = targetResultHex
+		result.ResultMatch = baselineResultHex == targetResultHex
 	}
 
 	result.Success = result.ResultMatch

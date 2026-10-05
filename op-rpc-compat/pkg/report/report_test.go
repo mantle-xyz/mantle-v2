@@ -1,35 +1,186 @@
 package report
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/diff"
+	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/policy"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/rpc"
-	"github.com/ethereum-optimism/optimism/op-rpc-compat/testcases"
 )
 
-func TestGenericDynamicKnownDiffsApplyAcrossClientPairs(t *testing.T) {
-	r := NewReporter(EndpointMetadata{Name: "old-reth"}, EndpointMetadata{Name: "new-reth"}, false)
-	file, err := testcases.FS.Open("known_diffs.json")
+func pairedSuccessfulResult() *rpc.CompareResult {
+	return &rpc.CompareResult{
+		BaselineResponse: &rpc.ResponseWithMeta{Response: &rpc.Response{Result: json.RawMessage(`null`)}},
+		TargetResponse:   &rpc.ResponseWithMeta{Response: &rpc.Response{Result: json.RawMessage(`null`)}},
+	}
+}
+
+func TestAcceptedPolicyChangesOnlyReviewedDifference(t *testing.T) {
+	const versionA = "Geth/v1.17.3-stable-d0169f78/darwin-arm64/go1.24.9"
+	const versionB = "mantle-reth/mantle-v1.6.3-dev+f4963d31/aarch64-apple-darwin"
+	genesis := "0x" + strings.Repeat("11", 32)
+	tc := TestCase{Name: "reviewed-case", Method: "eth_getBlockByNumber", Params: []any{"0x1", false}, CorpusID: "embedded",
+		RequestTemplateSHA256: policy.RequestDigest("eth_getBlockByNumber", []any{"{{latest_block_number}}", false})}
+	registry := &policy.Registry{
+		SchemaVersion: 1, RegistryID: "reviewed",
+		ClientSets: []policy.ClientSet{
+			{ID: "geth", Builds: []policy.ClientBuild{{ID: "git:d0169f78", ClientVersion: versionA}}},
+			{ID: "reth", Builds: []policy.ClientBuild{{ID: "git:f4963d31", ClientVersion: versionB}}},
+		},
+		Rules: []policy.Rule{{
+			ID: "reviewed-field", BaselineSet: "geth", TargetSet: "reth",
+			CorpusID: "embedded",
+			Pairs:    []policy.ReviewedPair{{BaselineBuild: "git:d0169f78", TargetBuild: "git:f4963d31", EvidenceURL: "https://example.test/review"}},
+			ChainID:  "0x539", GenesisHash: genesis, CaseID: tc.Name, Method: tc.Method,
+			RequestSHA256: tc.RequestTemplateSHA256,
+			Pointer:       "/result/logs", DiffType: diff.DiffTypeNull,
+			Baseline: policy.ValueSpec{Present: true, Type: "null", Value: json.RawMessage(`null`)},
+			Target:   policy.ValueSpec{Present: true, Type: "array", Value: json.RawMessage(`[]`)},
+			Action:   "warning", Reason: "reviewed shape difference", EvidenceURL: "https://example.test/issue",
+		}},
+	}
+	baseline := EndpointMetadata{Name: "baseline", ClientVersion: versionA, BuildID: "git:d0169f78", ChainID: "0x539", GenesisHash: genesis}
+	target := EndpointMetadata{Name: "target", ClientVersion: versionB, BuildID: "git:f4963d31", ChainID: "0x539", GenesisHash: genesis}
+	reviewed := diff.Difference{Pointer: "/result/logs", Type: diff.DiffTypeNull, Severity: diff.SeverityFail,
+		ExpectedPresent: true, ActualPresent: true, Expected: nil, Actual: []any{}}
+	for _, variant := range []struct {
+		name          string
+		mode          string
+		buildID       string
+		addUnexpected bool
+		want          TestStatus
+	}{
+		{"accepted", "accepted", "git:f4963d31", false, StatusWarning},
+		{"strict", "strict", "git:f4963d31", false, StatusFail},
+		{"unexpected extra difference", "accepted", "git:f4963d31", true, StatusFail},
+		{"unknown build", "accepted", "", false, StatusFail},
+	} {
+		t.Run(variant.name, func(t *testing.T) {
+			selectedTarget := target
+			selectedTarget.BuildID = variant.buildID
+			r := NewReporter(baseline, selectedTarget, false)
+			if err := r.ConfigurePolicy(registry, variant.mode); err != nil {
+				t.Fatal(err)
+			}
+			differences := []diff.Difference{reviewed}
+			if variant.addUnexpected {
+				differences = append(differences, diff.Difference{Pointer: "/result/new", Type: diff.DiffTypeExtra,
+					Severity: diff.SeverityFail, ExpectedPresent: false, ActualPresent: true, Actual: "new"})
+			}
+			r.AddResult(tc, pairedSuccessfulResult(), &diff.CompareResult{Differences: differences, FailCount: len(differences)}, nil)
+			report := r.Generate()
+			result := report.Results[0]
+			if result.Status != variant.want || result.ObservedStatus != StatusFail ||
+				(result.Status == StatusFail) != r.HasFailures() || report.SchemaVersion != 3 {
+				t.Fatalf("policy result = %+v", result)
+			}
+			if result.CorpusID != "embedded" {
+				t.Fatalf("case provenance missing: %+v", result)
+			}
+			if result.RequestTemplateSHA256 != tc.RequestTemplateSHA256 {
+				t.Fatalf("template fingerprint missing: %+v", result)
+			}
+			if report.RegistryID != "reviewed" || len(report.RegistryDigest) != 64 {
+				t.Fatalf("registry metadata = %+v", report)
+			}
+			if variant.buildID == "" && len(report.StaleRuleIDs) != 0 {
+				t.Fatalf("unrelated rule was marked stale: %+v", report.StaleRuleIDs)
+			}
+			if variant.buildID != "" && (result.Differences[0].RuleID != "reviewed-field" ||
+				result.Differences[0].RuleReason != "reviewed shape difference") {
+				t.Fatalf("reviewed rule not visible: %+v", result.Differences[0])
+			}
+			if variant.buildID == "" && result.Differences[0].RuleID != "" {
+				t.Fatalf("unknown build matched: %+v", result.Differences[0])
+			}
+		})
+	}
+	vanished := NewReporter(baseline, target, false)
+	if err := vanished.ConfigurePolicy(registry, "accepted"); err != nil {
+		t.Fatal(err)
+	}
+	vanished.AddResult(tc, &rpc.CompareResult{
+		BaselineResponse: &rpc.ResponseWithMeta{Response: &rpc.Response{Result: json.RawMessage(`null`)}},
+		TargetResponse:   &rpc.ResponseWithMeta{Response: &rpc.Response{Result: json.RawMessage(`null`)}},
+	}, &diff.CompareResult{}, nil)
+	if got := vanished.Generate(); got.Results[0].Status != StatusPass || len(got.StaleRuleIDs) != 1 {
+		t.Fatalf("disappeared reviewed difference = %+v", got)
+	}
+}
+
+func TestInconclusiveAndNoComparableCasesFail(t *testing.T) {
+	recorded := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
+	recorded.AddInconclusiveResult(TestCase{Name: "latest", Method: "eth_getBalance"}, nil, "heads differ")
+	if got := recorded.Generate().Results[0]; got.Status != StatusInconclusive || !recorded.HasFailures() {
+		t.Fatalf("recorded inconclusive = %+v", got)
+	}
+	r := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
+	if !r.HasFailures() {
+		t.Fatal("empty run must not exit successfully")
+	}
+	r.results = append(r.results, TestResult{Status: TestStatus("INCONCLUSIVE")})
+	if !r.HasFailures() || r.Generate().InconclusiveTests != 1 {
+		t.Fatalf("inconclusive run = %+v", r.Generate())
+	}
+	r.results = []TestResult{{Status: TestStatus("NOT_APPLICABLE")}}
+	if !r.HasFailures() || r.Generate().NotApplicableTests != 1 {
+		t.Fatalf("no comparable cases = %+v", r.Generate())
+	}
+}
+
+func TestSemanticAssertionResult(t *testing.T) {
+	response := &rpc.CompareResult{
+		BaselineResponse: &rpc.ResponseWithMeta{RawBody: []byte(`{"result":"0x1"}`)},
+		TargetResponse:   &rpc.ResponseWithMeta{RawBody: []byte(`{"result":"0x2"}`)},
+	}
+	passed := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
+	passed.AddAssertionResult(TestCase{Name: "filter", Method: "eth_newFilter"}, response, nil)
+	if got := passed.Generate().Results[0]; got.Status != StatusPass ||
+		string(got.BaselineResponse) != `{"result":"0x1"}` || string(got.TargetResponse) != `{"result":"0x2"}` {
+		t.Fatalf("filter assertion = %+v", got)
+	}
+	failed := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
+	failed.AddAssertionResult(TestCase{Name: "filter", Method: "eth_newFilter"}, response, errors.New("uninstall failed"))
+	if got := failed.Generate().Results[0]; got.Status != StatusFail || !failed.HasFailures() {
+		t.Fatalf("failed filter assertion = %+v", got)
+	}
+}
+
+func TestReportV3ShowsRawAndEffectiveDifference(t *testing.T) {
+	r := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
+	if err := r.ConfigurePolicy(&policy.Registry{SchemaVersion: 1, RegistryID: "empty"}, "accepted"); err != nil {
+		t.Fatal(err)
+	}
+	r.AddResult(TestCase{Name: "null", Method: "eth_call"}, pairedSuccessfulResult(), &diff.CompareResult{
+		Differences: []diff.Difference{{Pointer: "/result", Type: diff.DiffTypeNull,
+			Severity: diff.SeverityFail, ExpectedPresent: true, ActualPresent: true, Actual: map[string]any{}}},
+		FailCount: 1,
+	}, nil)
+	data, err := json.Marshal(r.Generate())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer file.Close()
-	if err := r.LoadKnownDiffs(file); err != nil {
+	var saved struct {
+		Results []struct {
+			EffectiveStatus string                       `json:"effective_status"`
+			Differences     []map[string]json.RawMessage `json:"differences"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(data, &saved); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"web3_clientVersion", "eth_newBlockFilter", "eth_newFilter", "eth_newFilter_with_address", "eth_newPendingTransactionFilter"} {
-		if r.GetKnownDiff(name) == nil {
-			t.Errorf("implementation-independent known difference %s must apply", name)
-		}
-	}
-	if r.GetKnownDiff("eth_hashrate") != nil {
-		t.Fatal("geth/reth-specific known difference applied to old/new reth")
+	difference := saved.Results[0].Differences[0]
+	if saved.Results[0].EffectiveStatus != "FAIL" || string(difference["observed_severity"]) != `"fail"` ||
+		string(difference["effective_severity"]) != `"fail"` || string(difference["expected_present"]) != "true" ||
+		string(difference["expected"]) != "null" {
+		t.Fatalf("report v3 difference = %s", data)
 	}
 }
 
@@ -83,17 +234,6 @@ func TestRPCErrorDifferenceUsesLogicalEndpointNames(t *testing.T) {
 	}
 }
 
-func TestLoadKnownDiffsFromReader(t *testing.T) {
-	r := NewReporter(EndpointMetadata{Name: "baseline", URL: "baseline"}, EndpointMetadata{Name: "target", URL: "target"}, false)
-	data := strings.NewReader(`{"known_diffs":[{"test_name":"sample","reason":"expected difference"}]}`)
-	if err := r.LoadKnownDiffs(data); err != nil {
-		t.Fatal(err)
-	}
-	if got := r.GetKnownDiff("sample"); got == nil || got.Reason != "expected difference" {
-		t.Fatalf("known difference = %+v", got)
-	}
-}
-
 func TestReportUsesClientIndependentSchema(t *testing.T) {
 	r := NewReporter(
 		EndpointMetadata{Name: "old-reth", URL: "http://baseline.example", ClientVersion: "reth/2.4"},
@@ -113,7 +253,7 @@ func TestReportUsesClientIndependentSchema(t *testing.T) {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded["schema_version"] != float64(2) {
+	if decoded["schema_version"] != float64(3) {
 		t.Fatalf("schema_version = %v", decoded["schema_version"])
 	}
 	for key, want := range map[string]string{"baseline": "old-reth", "target": "new-reth"} {
@@ -135,59 +275,147 @@ func TestReportUsesClientIndependentSchema(t *testing.T) {
 	}
 }
 
-func TestKnownDiffApplicability(t *testing.T) {
-	config := `{"known_diffs":[
-		{"test_name":"pair-specific","reason":"client difference",
-		 "applies_to":{"baseline":{"name_pattern":"^op-geth$","version_pattern":"^Geth/v1[.]6[.]"},
-		               "target":{"name_pattern":"^op-reth$","version_pattern":"^op-reth/v2[.]4[.]"}},
-		 "baseline_example":{"error":{"code":-32601,"message":"missing"}},
-		 "target_example":{"result":"0x0"}},
-		{"test_name":"generic","reason":"implementation-independent"}
-	]}`
-	cases := []struct {
+func TestRPCErrorDifferencesFail(t *testing.T) {
+	tests := []struct {
 		name             string
-		baseline, target EndpointMetadata
-		wantSpecific     bool
+		baseline, target rpc.RPCError
+		wantPath         string
 	}{
-		{"op-geth/op-reth", EndpointMetadata{Name: "op-geth", ClientVersion: "Geth/v1.6.1"}, EndpointMetadata{Name: "op-reth", ClientVersion: "op-reth/v2.4.2"}, true},
-		{"old/new reth", EndpointMetadata{Name: "old-reth", ClientVersion: "op-reth/v2.3.0"}, EndpointMetadata{Name: "new-reth", ClientVersion: "op-reth/v2.4.2"}, false},
-		{"wrong target version", EndpointMetadata{Name: "op-geth", ClientVersion: "Geth/v1.6.1"}, EndpointMetadata{Name: "op-reth", ClientVersion: "op-reth/v2.5.0"}, false},
+		{"same message different code", rpc.RPCError{Code: -32000, Message: "unavailable"}, rpc.RPCError{Code: -32601, Message: "unavailable"}, "error.code"},
+		{"different data", rpc.RPCError{Code: -32000, Message: "failed", Data: json.RawMessage(`{"reason":1}`)}, rpc.RPCError{Code: -32000, Message: "failed", Data: json.RawMessage(`{"reason":2}`)}, "error.data"},
+		{"both method not found with different wording", rpc.RPCError{Code: -32601, Message: "method not found"}, rpc.RPCError{Code: -32601, Message: "not available"}, "error.message"},
 	}
-	for _, tc := range cases {
+	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			r := NewReporter(tc.baseline, tc.target, false)
-			if err := r.LoadKnownDiffs(strings.NewReader(config)); err != nil {
-				t.Fatal(err)
+			r := NewReporter(EndpointMetadata{Name: "baseline"}, EndpointMetadata{Name: "target"}, false)
+			r.AddResult(TestCase{Name: "error", Method: "eth_call"}, &rpc.CompareResult{
+				BaselineResponse: &rpc.ResponseWithMeta{Response: &rpc.Response{Error: &tc.baseline}},
+				TargetResponse:   &rpc.ResponseWithMeta{Response: &rpc.Response{Error: &tc.target}},
+			}, nil, nil)
+			result := r.Generate().Results[0]
+			if result.Status != StatusFail || !r.HasFailures() {
+				t.Fatalf("error mismatch did not fail: %+v", result)
 			}
-			got := r.GetKnownDiff("pair-specific")
-			if (got != nil) != tc.wantSpecific {
-				t.Fatalf("pair-specific rule = %+v, want applicable = %v", got, tc.wantSpecific)
+			found := false
+			for _, difference := range result.Differences {
+				if difference.Path == tc.wantPath && difference.Severity == diff.SeverityFail {
+					found = true
+				}
 			}
-			if r.GetKnownDiff("generic") == nil {
-				t.Fatal("unconditional rule must remain applicable")
+			if !found {
+				t.Fatalf("missing failing %s difference: %+v", tc.wantPath, result.Differences)
 			}
 		})
 	}
 }
 
-func TestNonApplicableKnownDiffReportsFailure(t *testing.T) {
-	r := NewReporter(EndpointMetadata{Name: "old-reth"}, EndpointMetadata{Name: "new-reth"}, false)
-	config := `{"known_diffs":[{"test_name":"different","reason":"geth/reth only",
-		"applies_to":{"baseline":{"name_pattern":"^op-geth$"},"target":{"name_pattern":"^op-reth$"}},
-		"baseline_example":{"result":"0x1"},"target_example":{"result":"0x2"}}]}`
-	if err := r.LoadKnownDiffs(strings.NewReader(config)); err != nil {
+func TestOneSidedRPCErrorHasFailingPointer(t *testing.T) {
+	r := NewReporter(EndpointMetadata{Name: "baseline"}, EndpointMetadata{Name: "target"}, false)
+	r.AddResult(TestCase{Name: "one-sided", Method: "eth_call"}, &rpc.CompareResult{
+		BaselineResponse: &rpc.ResponseWithMeta{Response: &rpc.Response{Error: &rpc.RPCError{Code: -32601, Message: "missing"}}},
+		TargetResponse:   &rpc.ResponseWithMeta{Response: &rpc.Response{Result: json.RawMessage(`null`)}},
+	}, nil, nil)
+	result := r.Generate().Results[0]
+	if result.Status != StatusFail || len(result.Differences) != 2 {
+		t.Fatalf("one-sided error result = %+v", result)
+	}
+	difference := result.Differences[0]
+	if difference.Pointer != "/error" || difference.Type != diff.DiffTypeMissing ||
+		difference.Severity != diff.SeverityFail || !difference.ExpectedPresent || difference.ActualPresent {
+		t.Fatalf("one-sided error difference = %+v", difference)
+	}
+	if result.Differences[1].Pointer != "/result" || result.Differences[1].Type != diff.DiffTypeExtra ||
+		result.Differences[1].Severity != diff.SeverityFail || result.Differences[1].ExpectedPresent || !result.Differences[1].ActualPresent {
+		t.Fatalf("success result was not bound: %+v", result.Differences[1])
+	}
+}
+
+func TestOneSidedErrorRuleDoesNotAcceptUnreviewedSuccessResult(t *testing.T) {
+	const baselineVersion = "Geth/v1.17.3-stable-d0169f78/darwin-arm64/go1.24.9"
+	const targetVersion = "mantle-reth/mantle-v1.6.3-dev+f4963d31/aarch64-apple-darwin"
+	genesis := "0x" + strings.Repeat("11", 32)
+	tc := TestCase{Name: "one-sided", Method: "eth_call", Params: []any{}, CorpusID: "embedded"}
+	registry := &policy.Registry{SchemaVersion: 1, RegistryID: "one-sided", ClientSets: []policy.ClientSet{
+		{ID: "geth", Builds: []policy.ClientBuild{{ID: "git:d0169f78", ClientVersion: baselineVersion}}},
+		{ID: "reth", Builds: []policy.ClientBuild{{ID: "git:f4963d31", ClientVersion: targetVersion}}},
+	}, Rules: []policy.Rule{{
+		ID: "error-only", BaselineSet: "geth", TargetSet: "reth", CorpusID: "embedded",
+		Pairs:   []policy.ReviewedPair{{BaselineBuild: "git:d0169f78", TargetBuild: "git:f4963d31", EvidenceURL: "https://example.test/review"}},
+		ChainID: "0x539", GenesisHash: genesis, CaseID: tc.Name, Method: tc.Method,
+		RequestSHA256: policy.RequestDigest(tc.Method, tc.Params), Pointer: "/error", DiffType: diff.DiffTypeMissing,
+		Baseline: policy.ValueSpec{Present: true, Type: "object", Value: json.RawMessage(`{"code":-32601,"message":"missing"}`)},
+		Target:   policy.ValueSpec{Present: false}, Action: "warning", Reason: "reviewed error", EvidenceURL: "https://example.test/issue",
+	}}}
+	r := NewReporter(
+		EndpointMetadata{ClientVersion: baselineVersion, BuildID: "git:d0169f78", ChainID: "0x539", GenesisHash: genesis},
+		EndpointMetadata{ClientVersion: targetVersion, BuildID: "git:f4963d31", ChainID: "0x539", GenesisHash: genesis}, false)
+	if err := r.ConfigurePolicy(registry, "accepted"); err != nil {
 		t.Fatal(err)
 	}
-	r.AddResult(TestCase{Name: "different", Method: "eth_chainId"}, &rpc.CompareResult{
-		BaselineResponse: &rpc.ResponseWithMeta{RawBody: []byte(`{"result":"0x1"}`)},
-		TargetResponse:   &rpc.ResponseWithMeta{RawBody: []byte(`{"result":"0x2"}`)},
-	}, &diff.CompareResult{
-		Differences: []diff.Difference{{Type: diff.DiffTypeValue, Severity: diff.SeverityFail}},
-		FailCount:   1,
-	}, nil)
-	result := r.Generate().Results[0]
-	if result.Status != StatusFail || result.Passed || result.SkipReason != "" {
-		t.Fatalf("non-applicable known difference was waived: %+v", result)
+	r.AddResult(tc, &rpc.CompareResult{
+		BaselineResponse: &rpc.ResponseWithMeta{Response: &rpc.Response{Error: &rpc.RPCError{Code: -32601, Message: "missing"}}},
+		TargetResponse:   &rpc.ResponseWithMeta{Response: &rpc.Response{Result: json.RawMessage(`"0x123"`)}},
+	}, nil, nil)
+	if got := r.Generate().Results[0]; got.Status != StatusFail || !r.HasFailures() {
+		t.Fatalf("unreviewed success value was accepted: %+v", got)
+	}
+}
+
+func TestPairedComparisonRejectsMissingEndpointResponse(t *testing.T) {
+	r := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
+	r.AddResult(TestCase{Name: "incomplete", Method: "eth_getBalance"}, &rpc.CompareResult{
+		BaselineResponse: &rpc.ResponseWithMeta{Response: &rpc.Response{Result: json.RawMessage(`"0x1"`)}},
+	}, nil, nil)
+	if got := r.Generate().Results[0]; got.Status != StatusFail || !r.HasFailures() {
+		t.Fatalf("incomplete paired response = %+v", got)
+	}
+}
+
+func TestUncountedDifferenceStillFails(t *testing.T) {
+	r := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
+	r.AddResult(TestCase{Name: "manual", Method: "eth_getTransactionReceipt"}, pairedSuccessfulResult(),
+		&diff.CompareResult{Differences: []diff.Difference{{Pointer: "/result", Type: diff.DiffTypeNull}}}, nil)
+	if got := r.Generate().Results[0]; got.Status != StatusFail || !r.HasFailures() {
+		t.Fatalf("uncounted difference passed: %+v", got)
+	}
+}
+
+func TestPairedSuccessRequiresComparison(t *testing.T) {
+	r := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
+	r.AddResult(TestCase{Name: "uncompared", Method: "eth_call"}, pairedSuccessfulResult(), nil, nil)
+	if got := r.Generate().Results[0]; got.Status != StatusFail || !r.HasFailures() {
+		t.Fatalf("uncompared responses passed: %+v", got)
+	}
+}
+
+func TestMalformedHTTPBodyDoesNotBreakJSONReport(t *testing.T) {
+	badBody := []byte(`{"jsonrpc":`)
+	r := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
+	r.AddResult(TestCase{Name: "malformed", Method: "eth_call"}, &rpc.CompareResult{
+		BaselineResponse: &rpc.ResponseWithMeta{RawBody: badBody, Error: errors.New("invalid JSON-RPC response")},
+		TargetResponse: &rpc.ResponseWithMeta{RawBody: []byte(`{"jsonrpc":"2.0","id":1,"result":null}`),
+			Response: &rpc.Response{Result: json.RawMessage(`null`)}},
+	}, nil, nil)
+	path := filepath.Join(t.TempDir(), "report.json")
+	if err := r.SaveJSON(path); err != nil {
+		t.Fatalf("write failed report: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved struct {
+		Results []struct {
+			Status                string `json:"status"`
+			BaselineRawBodyBase64 string `json:"baseline_raw_body_base64"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(saved.Results[0].BaselineRawBodyBase64)
+	if err != nil || saved.Results[0].Status != "FAIL" || string(decoded) != string(badBody) {
+		t.Fatalf("saved malformed response = %s, decode error = %v", data, err)
 	}
 }
 
@@ -222,131 +450,5 @@ func TestAddCompatibleResultPreservesRPCErrorWithoutFailing(t *testing.T) {
 	}
 	if result.SkipReason == "" {
 		t.Fatal("compatible result must retain its reason")
-	}
-}
-
-// Test_matchesKnownDiff checks the stricter matching rules:
-//   - Compare only type and code on the reference side, where wording may vary.
-//   - Compare type, code, and normalized message on the target side to detect drift while tolerating truncation.
-func Test_matchesKnownDiff(t *testing.T) {
-	r := &Reporter{}
-	raw := func(s string) json.RawMessage { return json.RawMessage(s) }
-	errObj := func(code int, msg string) string {
-		b, _ := json.Marshal(map[string]any{"error": map[string]any{"code": code, "message": msg}})
-		return string(b)
-	}
-	okObj := func(result string) string {
-		b, _ := json.Marshal(map[string]any{"result": result})
-		return string(b)
-	}
-
-	cases := []struct {
-		name            string
-		gethEx, gethAct string
-		rethEx, rethAct string
-		want            bool
-	}{
-		{
-			name:   "reth message drift surfaces (insufficient funds -> OutOfFunds)",
-			gethEx: errObj(-32000, "insufficient funds for transfer"), gethAct: errObj(-32000, "failed with 60000000 gas: insufficient funds for transfer: address 0x1"),
-			rethEx: errObj(-32003, "insufficient funds for transfer"), rethAct: errObj(-32003, "EVM error: OutOfFunds"),
-			want: false, // changed target wording must not be waived
-		},
-		{
-			name:   "baseline message drift surfaces",
-			gethEx: errObj(-32602, "invalid argument 1: unknown block number tag"), gethAct: errObj(-32602, "invalid argument 1: hex string without 0x prefix"),
-			rethEx: errObj(-32602, "Invalid params"), rethAct: errObj(-32602, "Invalid params"),
-			want: false,
-		},
-		{
-			name:   "truncated reth record tolerated (contains)",
-			gethEx: errObj(-32000, "insufficient funds"), gethAct: errObj(-32000, "insufficient funds for transfer: address 0xabc"),
-			rethEx: errObj(-32003, "insufficient funds"), rethAct: errObj(-32003, "insufficient funds for transfer: address 0xabc"),
-			want: true,
-		},
-		{
-			name:   "reth code change surfaces",
-			gethEx: errObj(-32000, "x"), gethAct: errObj(-32000, "x"),
-			rethEx: errObj(-32003, "intrinsic gas too low"), rethAct: errObj(-32000, "intrinsic gas too low"),
-			want: false, // reth code -32003 -> -32000
-		},
-		{
-			name:   "geth code change surfaces",
-			gethEx: errObj(-32000, "out of gas"), gethAct: errObj(-32003, "out of gas"),
-			rethEx: errObj(-32003, "out of gas"), rethAct: errObj(-32003, "out of gas"),
-			want: false, // a changed reference code must be visible
-		},
-		{
-			name:   "success responses exempt on type only (volatile results)",
-			gethEx: okObj("Geth/v1.16"), gethAct: okObj("Geth/v1.17"),
-			rethEx: okObj("op-reth-rc4"), rethAct: okObj("op-reth-rc5"),
-			want: true,
-		},
-		{
-			name:   "success result type drift surfaces",
-			gethEx: okObj("Geth/v1.16"), gethAct: okObj("Geth/v1.16"),
-			rethEx: okObj("op-reth-rc4"), rethAct: `{"result":{"version":"op-reth-rc4"}}`,
-			want: false,
-		},
-		{
-			name:   "recorded object keys must remain present",
-			gethEx: `{"result":{"network":{"chainId":"0x1"}}}`, gethAct: `{"result":{"network":{}}}`,
-			rethEx: okObj("target"), rethAct: okObj("target"),
-			want: false,
-		},
-		{
-			name:   "unrecorded object fields are allowed",
-			gethEx: `{"result":{"network":{}}}`, gethAct: `{"result":{"network":{"chainId":"0x1"},"extra":true}}`,
-			rethEx: okObj("target"), rethAct: okObj("target"),
-			want: true,
-		},
-		{
-			name:   "type mismatch surfaces (reth error->success)",
-			gethEx: errObj(-32000, "x"), gethAct: errObj(-32000, "x"),
-			rethEx: errObj(-32602, "unknown account"), rethAct: okObj("0xraw"),
-			want: false, // eth_fillTransaction target changed from error to success
-		},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			kd := &KnownDiff{BaselineExample: raw(c.gethEx), TargetExample: raw(c.rethEx)}
-			res := &TestResult{BaselineResponse: raw(c.gethAct), TargetResponse: raw(c.rethAct)}
-			if got := r.matchesKnownDiff(res, kd); got != c.want {
-				t.Fatalf("matchesKnownDiff = %v, want %v", got, c.want)
-			}
-		})
-	}
-}
-
-func TestKnownDifferenceDisappearingIsPass(t *testing.T) {
-	r := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
-	config := `{"known_diffs":[{"test_name":"same","reason":"old difference","baseline_example":{"result":"0x1"},"target_example":{"result":"0x2"}}]}`
-	if err := r.LoadKnownDiffs(strings.NewReader(config)); err != nil {
-		t.Fatal(err)
-	}
-	raw := json.RawMessage(`{"result":"0x1"}`)
-	response := &rpc.ResponseWithMeta{RawBody: raw, Response: &rpc.Response{Result: json.RawMessage(`"0x1"`)}}
-	r.AddResult(TestCase{Name: "same", Method: "eth_chainId"}, &rpc.CompareResult{
-		BaselineResponse: response,
-		TargetResponse:   response,
-	}, &diff.CompareResult{}, nil)
-	if got := r.Generate().Results[0].Status; got != StatusPass {
-		t.Fatalf("disappeared known difference = %s, want PASS", got)
-	}
-}
-
-func TestKnownDifferenceBaselineMessageDriftWarns(t *testing.T) {
-	r := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
-	config := `{"known_diffs":[{"test_name":"drift","reason":"different errors","baseline_example":{"error":{"code":-32602,"message":"invalid block tag"}},"target_example":{"error":{"code":-32602,"message":"Invalid params"}}}]}`
-	if err := r.LoadKnownDiffs(strings.NewReader(config)); err != nil {
-		t.Fatal(err)
-	}
-	r.AddResult(TestCase{Name: "drift", Method: "eth_getBlockByNumber"}, &rpc.CompareResult{
-		BaselineResponse: &rpc.ResponseWithMeta{RawBody: []byte(`{"error":{"code":-32602,"message":"invalid hex string"}}`), Response: &rpc.Response{Error: &rpc.RPCError{Code: -32602, Message: "invalid hex string"}}},
-		TargetResponse:   &rpc.ResponseWithMeta{RawBody: []byte(`{"error":{"code":-32602,"message":"Invalid params"}}`), Response: &rpc.Response{Error: &rpc.RPCError{Code: -32602, Message: "Invalid params"}}},
-	}, nil, nil)
-	got := r.Generate().Results[0]
-	if got.Status != StatusWarning || !got.Passed || len(got.Differences) != 1 || got.Differences[0].Path != "error.message" {
-		t.Fatalf("baseline message drift = %+v, want visible warning", got)
 	}
 }

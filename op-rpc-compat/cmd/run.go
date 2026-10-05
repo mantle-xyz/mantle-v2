@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"math/big"
 	"os"
@@ -13,11 +15,15 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/diff"
+	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/filters"
+	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/policy"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/report"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/rpc"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/tx"
+	"github.com/ethereum-optimism/optimism/op-rpc-compat/policies"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/testcases"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -36,6 +42,13 @@ func runTests() error {
 	if txStandardOnly && !txTest {
 		return fmt.Errorf("--tx-standard-only requires --tx")
 	}
+	if diffPolicy != "accepted" && diffPolicy != "strict" {
+		return fmt.Errorf("unknown diff policy %q", diffPolicy)
+	}
+	registry, err := policy.Load(policies.FS, "accepted/registry.json")
+	if err != nil {
+		return fmt.Errorf("load accepted registry: %w", err)
+	}
 	ctx := context.Background()
 	clients := rpc.NewClientPair(baselineURL, baselineName, targetURL, targetName, timeout)
 	baselineMeta, targetMeta, err := preflightEndpoints(ctx, clients)
@@ -52,7 +65,7 @@ func runTests() error {
 		fmt.Println(color.CyanString("============================================================"))
 		fmt.Println(color.CyanString("Transaction tests"))
 		fmt.Println(color.CyanString("============================================================"))
-		if err := runTransactionTests(clients, baselineMeta, targetMeta); err != nil {
+		if err := runTransactionTests(clients, baselineMeta, targetMeta, registry); err != nil {
 			fmt.Fprintf(os.Stderr, "Transaction tests failed: %v\n", err)
 			os.Exit(1)
 		}
@@ -88,6 +101,11 @@ func runTests() error {
 		if err != nil {
 			return fmt.Errorf("load testcase file %s: %w", file, err)
 		}
+		if testFile == "" && testcasesDir == "" {
+			for i := range tests {
+				tests[i].CorpusID = "embedded"
+			}
+		}
 		allTests = append(allTests, tests...)
 	}
 
@@ -99,7 +117,12 @@ func runTests() error {
 		client := clients.Baseline
 		vars, err := fetchTemplateVars(ctx, client)
 		if err != nil {
-			fmt.Printf("Warning: fetch template variables: %v\n", err)
+			allTests = replaceTemplateVars(allTests, nil)
+			for i := range allTests {
+				if allTests[i].TemplateError != "" {
+					allTests[i].TemplateError = fmt.Sprintf("template preflight failed: %v; %s", err, allTests[i].TemplateError)
+				}
+			}
 		} else {
 			allTests = replaceTemplateVars(allTests, vars)
 			if verbose {
@@ -125,15 +148,8 @@ func runTests() error {
 	}
 
 	reporter := report.NewReporter(baselineMeta, targetMeta, verbose)
-
-	// Load known differences from the selected testcase directory.
-	knownDiffsPath := filepath.Join(testcasesDir, "known_diffs.json")
-	loaded, err := loadSelectedKnownDiffs(reporter, testcasesDir)
-	if err != nil {
+	if err := reporter.ConfigurePolicy(registry, diffPolicy); err != nil {
 		return err
-	}
-	if loaded {
-		fmt.Printf("Loaded known differences: %s\n", knownDiffsPath)
 	}
 
 	fmt.Printf("\n%s: %s\n", baselineName, baselineURL)
@@ -141,7 +157,29 @@ func runTests() error {
 	fmt.Println()
 
 	for _, tc := range allTests {
+		if tc.TemplateError != "" {
+			reporter.AddInconclusiveResult(tc, nil, tc.TemplateError)
+			continue
+		}
+		if tc.Method == "web3_clientVersion" {
+			reporter.AddNotApplicableResult(tc, "client version is recorded during endpoint preflight")
+			continue
+		}
 		req := rpc.NewRequest(tc.Method, tc.Params)
+		if filters.IsCreateMethod(tc.Method) {
+			responses, err := filters.Verify(ctx, clients, req)
+			reporter.AddAssertionResult(tc, responses, err)
+			continue
+		}
+		if tags := caseDynamicTags(tc); len(tags) > 0 {
+			compared, differences, compareErr, reason := compareAtStableSnapshot(ctx, clients, req, tags, 3, 100*time.Millisecond)
+			if reason != "" {
+				reporter.AddInconclusiveResult(tc, compared, reason)
+			} else {
+				reporter.AddResult(tc, compared, differences, compareErr)
+			}
+			continue
+		}
 
 		compareResult := clients.CompareWithRetry(ctx, req, maxRetries, retryDelay)
 
@@ -163,7 +201,7 @@ func runTests() error {
 
 	if outputFile != "" {
 		if err := reporter.SaveJSON(outputFile); err != nil {
-			fmt.Fprintf(os.Stderr, "Save report: %v\n", err)
+			return fmt.Errorf("save report: %w", err)
 		} else {
 			fmt.Printf("\nReport saved to: %s\n", outputFile)
 		}
@@ -178,12 +216,11 @@ func runTests() error {
 }
 
 // runTransactionTests executes the transaction and contract suites.
-func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta report.EndpointMetadata) error {
+func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta report.EndpointMetadata, registry *policy.Registry) error {
 	ctx := context.Background()
 
 	reporter := report.NewReporter(baselineMeta, targetMeta, verbose)
-
-	if _, err := loadSelectedKnownDiffs(reporter, testcasesDir); err != nil {
+	if err := reporter.ConfigurePolicy(registry, diffPolicy); err != nil {
 		return err
 	}
 
@@ -287,32 +324,7 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 	fmt.Println()
 	fmt.Println(color.CyanString("Checking eth_feeHistory..."))
 
-	fhReq := rpc.NewRequest("eth_feeHistory", []interface{}{"0x5", "latest", []float64{25, 75}})
-	fhBaselineResp := tester.BaselineClient().Call(ctx, fhReq)
-	fhTargetResp := tester.TargetClient().Call(ctx, fhReq)
-
-	fhCompareResult := &rpc.CompareResult{
-		Request:          fhReq,
-		BaselineResponse: fhBaselineResp,
-		TargetResponse:   fhTargetResp,
-	}
-
-	var fhDiffResult *diff.CompareResult
-	var fhCompareErr error
-	if rpc.SuccessfulResponse(fhBaselineResp) && rpc.SuccessfulResponse(fhTargetResp) {
-		fhDiffResult, fhCompareErr = diff.Compare(
-			fhBaselineResp.RawBody,
-			fhTargetResp.RawBody,
-			diff.DefaultOptions(),
-		)
-	}
-
-	fhTC := report.TestCase{
-		Name:   "eth_feeHistory_check",
-		Method: "eth_feeHistory",
-		Params: []interface{}{"0x5", "latest", []float64{25, 75}},
-	}
-	reporter.AddResult(fhTC, fhCompareResult, fhDiffResult, fhCompareErr)
+	compareFeeHistory(ctx, clients, reporter)
 
 	printTxTestSummary(results)
 	failedTransactions := recordTransactionResults(reporter, results)
@@ -321,7 +333,7 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 
 	if outputFile != "" {
 		if err := reporter.SaveJSON(outputFile); err != nil {
-			fmt.Fprintf(os.Stderr, "Save report: %v\n", err)
+			return fmt.Errorf("save report: %w", err)
 		} else {
 			fmt.Printf("\nReport saved to: %s\n", outputFile)
 		}
@@ -335,9 +347,25 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 	return nil
 }
 
+func compareFeeHistory(ctx context.Context, clients *rpc.ClientPair, reporter *report.Reporter) {
+	params := []interface{}{"0x5", "latest", []float64{25, 75}}
+	tc := report.TestCase{Name: "eth_feeHistory_check", Method: "eth_feeHistory", Params: params}
+	request := rpc.NewRequest(tc.Method, tc.Params)
+	compared, differences, compareErr, reason := compareAtStableSnapshot(ctx, clients, request,
+		[]string{"latest"}, 3, 100*time.Millisecond)
+	if reason != "" {
+		reporter.AddInconclusiveResult(tc, compared, reason)
+		return
+	}
+	reporter.AddResult(tc, compared, differences, compareErr)
+}
+
 func recordTransactionResults(reporter *report.Reporter, results []*tx.TxTestResult) int {
 	failed := 0
 	for _, result := range results {
+		if result.Inconclusive {
+			continue // the underlying comparison already recorded INCONCLUSIVE
+		}
 		passed := result.Passed && result.Error == ""
 		if !passed {
 			failed++
@@ -386,6 +414,7 @@ func testEIP7702BasicTransfer(ctx context.Context, tester *tx.Tester, amount *bi
 
 	transferResult := tester.TestNativeTransfer(ctx, recipient, amount, tx.TxTypeEIP7702, false)
 	if transferResult.Error != "" {
+		result.Inconclusive = transferResult.Inconclusive
 		result.Error = fmt.Sprintf("baseline EIP-7702 transaction failed: %s", transferResult.Error)
 		return result
 	}
@@ -432,6 +461,7 @@ func testEIP7702BasicTransferPreconf(ctx context.Context, tester *tx.Tester, amo
 
 	transferResult := tester.TestNativeTransfer(ctx, recipient, amount, tx.TxTypeEIP7702, true)
 	if transferResult.Error != "" {
+		result.Inconclusive = transferResult.Inconclusive
 		result.Error = fmt.Sprintf("baseline EIP-7702 preconfirmation failed: %s", transferResult.Error)
 		return result
 	}
@@ -464,6 +494,10 @@ func testEIP7702BasicTransferPreconf(ctx context.Context, tester *tx.Tester, amo
 
 // printTxTestResult renders one transaction test result.
 func printTxTestResult(result *tx.TxTestResult) {
+	if result.Inconclusive {
+		fmt.Printf("  %s %s: %s\n", color.YellowString("? INCONCLUSIVE"), result.TestName, result.Error)
+		return
+	}
 	if result.Error != "" {
 		fmt.Printf("  %s %s: %s\n", color.RedString("✗ FAIL"), result.TestName, result.Error)
 		return
@@ -514,24 +548,28 @@ func printTxTestSummary(results []*tx.TxTestResult) {
 	total := len(results)
 	passed := 0
 	failed := 0
+	inconclusive := 0
 
 	for _, r := range results {
-		if r.Passed && r.Error == "" {
+		if r.Inconclusive {
+			inconclusive++
+		} else if r.Passed && r.Error == "" {
 			passed++
 		} else {
 			failed++
 		}
 	}
 
-	fmt.Printf("Total: %d | Passed: %s | Failed: %s\n",
+	fmt.Printf("Total: %d | Passed: %s | Failed: %s | Inconclusive: %s\n",
 		total,
 		color.GreenString("%d", passed),
-		color.RedString("%d", failed))
+		color.RedString("%d", failed),
+		color.YellowString("%d", inconclusive))
 
 	if failed > 0 {
 		fmt.Println("\nFailed tests:")
 		for _, r := range results {
-			if !r.Passed || r.Error != "" {
+			if !r.Inconclusive && (!r.Passed || r.Error != "") {
 				fmt.Printf("  ✗ %s", r.TestName)
 				if r.Error != "" {
 					fmt.Printf(" - %s", r.Error)
@@ -539,6 +577,14 @@ func printTxTestSummary(results []*tx.TxTestResult) {
 					fmt.Printf(" - %s", strings.Join(r.StateComparison.Differences, "; "))
 				}
 				fmt.Println()
+			}
+		}
+	}
+	if inconclusive > 0 {
+		fmt.Println("\nInconclusive tests:")
+		for _, r := range results {
+			if r.Inconclusive {
+				fmt.Printf("  ? %s - %s\n", r.TestName, r.Error)
 			}
 		}
 	}
@@ -609,12 +655,13 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 	getResult1, err := tester.CallContract(ctx, contractAddrBaseline, contractAddrTarget, getCallData, "SimpleStorage.get() initial value")
 	if err != nil {
 		result := &tx.TxTestResult{
-			TestName: "SimpleStorage.get() initial value",
-			TxType:   "Contract Call",
-			Error:    fmt.Sprintf("call failed: %v", err),
-			Passed:   false,
+			TestName:     "SimpleStorage.get() initial value",
+			TxType:       "Contract Call",
+			Inconclusive: tx.IsInconclusive(err),
+			Error:        fmt.Sprintf("call failed: %v", err),
+			Passed:       false,
 		}
-		fmt.Printf("  %s %s: %s\n", color.RedString("✗ FAIL"), result.TestName, result.Error)
+		printTxTestResult(result)
 		results = append(results, result)
 	} else {
 		result := &tx.TxTestResult{
@@ -685,12 +732,13 @@ func runContractTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResult
 	getResult2, err := tester.CallContract(ctx, contractAddrBaseline, contractAddrTarget, getCallData, "SimpleStorage.get() after set")
 	if err != nil {
 		result := &tx.TxTestResult{
-			TestName: "SimpleStorage.get() after set",
-			TxType:   "Contract Call",
-			Error:    fmt.Sprintf("call failed: %v", err),
-			Passed:   false,
+			TestName:     "SimpleStorage.get() after set",
+			TxType:       "Contract Call",
+			Inconclusive: tx.IsInconclusive(err),
+			Error:        fmt.Sprintf("call failed: %v", err),
+			Passed:       false,
 		}
-		fmt.Printf("  %s %s: %s\n", color.RedString("✗ FAIL"), result.TestName, result.Error)
+		printTxTestResult(result)
 		results = append(results, result)
 	} else {
 		result := &tx.TxTestResult{
@@ -732,26 +780,6 @@ func testcaseFS(dir string) fs.FS {
 		return testcases.FS
 	}
 	return os.DirFS(dir)
-}
-
-func loadKnownDiffsFS(reporter *report.Reporter, filesystem fs.FS) error {
-	file, err := filesystem.Open(knownDiffsFileName)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	return reporter.LoadKnownDiffs(file)
-}
-
-func loadSelectedKnownDiffs(reporter *report.Reporter, dir string) (bool, error) {
-	err := loadKnownDiffsFS(reporter, testcaseFS(dir))
-	if errors.Is(err, fs.ErrNotExist) && dir != "" {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("load known differences: %w", err)
-	}
-	return true, nil
 }
 
 // findTestFiles returns JSON cases from a directory, excluding configuration and named files.
@@ -800,8 +828,19 @@ func loadTestFileFS(filesystem fs.FS, file string) ([]report.TestCase, error) {
 	}
 
 	var tests []report.TestCase
-	if err := json.Unmarshal(data, &tests); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&tests); err != nil {
 		return nil, err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, fmt.Errorf("testcase file has trailing JSON: %v", err)
+	}
+	sum := sha256.Sum256(data)
+	for i := range tests {
+		tests[i].CorpusID = fmt.Sprintf("sha256:%x", sum)
+		tests[i].RequestTemplateSHA256 = policy.RequestDigest(tests[i].Method, tests[i].Params)
 	}
 
 	return tests, nil
@@ -928,20 +967,13 @@ func fetchFirstDepositTxHash(ctx context.Context, client *rpc.Client, blockTag s
 	return ""
 }
 
-// replaceTemplateVars substitutes runtime values into testcase parameters.
+var templatePattern = regexp.MustCompile(`\{\{[a-z_]+\}\}`)
+
+// replaceTemplateVars changes only parameter strings, retaining case identity and numeric types.
 func replaceTemplateVars(tests []report.TestCase, vars *TemplateVars) []report.TestCase {
 	if vars == nil {
-		return tests
+		vars = &TemplateVars{}
 	}
-
-	// Round-trip through JSON so substitutions also reach nested parameters.
-	data, err := json.Marshal(tests)
-	if err != nil {
-		return tests
-	}
-
-	jsonStr := string(data)
-
 	replacements := map[string]string{
 		"{{latest_block_hash}}":      vars.LatestBlockHash,
 		"{{latest_block_number}}":    vars.LatestBlockNumber,
@@ -949,29 +981,108 @@ func replaceTemplateVars(tests []report.TestCase, vars *TemplateVars) []report.T
 		"{{latest_deposit_tx_hash}}": vars.LatestDepositTxHash,
 		"{{block_one_rlp}}":          vars.BlockOneRLP,
 	}
-
-	for placeholder, value := range replacements {
-		if value != "" {
-			jsonStr = strings.ReplaceAll(jsonStr, placeholder, value)
+	resolved := make([]report.TestCase, len(tests))
+	for i, tc := range tests {
+		resolved[i] = tc
+		resolved[i].TemplateError = ""
+		if resolved[i].RequestTemplateSHA256 == "" {
+			resolved[i].RequestTemplateSHA256 = policy.RequestDigest(tc.Method, tc.Params)
+		}
+		if containsLatestTemplate(tc.Params) {
+			resolved[i].SnapshotTags = append(resolved[i].SnapshotTags, "latest")
+		}
+		missing := make(map[string]bool)
+		resolved[i].Params = replaceParamTemplates(tc.Params, replacements, missing)
+		if len(missing) > 0 {
+			labels := make([]string, 0, len(missing))
+			for placeholder := range missing {
+				labels = append(labels, placeholder)
+			}
+			sort.Strings(labels)
+			resolved[i].TemplateError = "missing template variables: " + strings.Join(labels, ", ")
 		}
 	}
-
-	var result []report.TestCase
-	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
-		return tests
-	}
-
-	return result
+	return resolved
 }
 
-// hasTemplateVars reports whether any testcase needs runtime substitution.
-func hasTemplateVars(tests []report.TestCase) bool {
-	data, err := json.Marshal(tests)
-	if err != nil {
-		return false
+func replaceParamTemplates(value any, replacements map[string]string, missing map[string]bool) any {
+	switch v := value.(type) {
+	case string:
+		return templatePattern.ReplaceAllStringFunc(v, func(placeholder string) string {
+			if replacement := replacements[placeholder]; replacement != "" {
+				return replacement
+			}
+			missing[placeholder] = true
+			return placeholder
+		})
+	case []any:
+		result := make([]any, len(v))
+		for i, item := range v {
+			result[i] = replaceParamTemplates(item, replacements, missing)
+		}
+		return result
+	case map[string]any:
+		result := make(map[string]any, len(v))
+		for key, item := range v {
+			result[key] = replaceParamTemplates(item, replacements, missing)
+		}
+		return result
+	default:
+		return value
 	}
-	pattern := regexp.MustCompile(`\{\{[a-z_]+\}\}`)
-	return pattern.Match(data)
+}
+
+func containsLatestTemplate(value any) bool {
+	switch v := value.(type) {
+	case string:
+		for _, placeholder := range templatePattern.FindAllString(v, -1) {
+			if strings.HasPrefix(placeholder, "{{latest_") {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range v {
+			if containsLatestTemplate(item) {
+				return true
+			}
+		}
+	case map[string]any:
+		for _, item := range v {
+			if containsLatestTemplate(item) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasTemplateVars(tests []report.TestCase) bool {
+	for _, tc := range tests {
+		if containsTemplate(tc.Params) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsTemplate(value any) bool {
+	switch v := value.(type) {
+	case string:
+		return templatePattern.MatchString(v)
+	case []any:
+		for _, item := range v {
+			if containsTemplate(item) {
+				return true
+			}
+		}
+	case map[string]any:
+		for _, item := range v {
+			if containsTemplate(item) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func includePreconfTransactions(standardOnly bool) bool {

@@ -70,6 +70,24 @@ func TestPreflightAcceptsSameChainAndRecordsVersions(t *testing.T) {
 	}
 }
 
+func TestPreflightRecognizesOnlyVersionWithBuildSHA(t *testing.T) {
+	genesis := "0x" + strings.Repeat("11", 32)
+	baseline := preflightServer(t, "0x539", genesis, "Geth/v1.17.3-stable-d0169f78/darwin-arm64/go1.24.9")
+	defer baseline.Close()
+	target := preflightServer(t, "0x539", genesis, "mantle-reth/op-reth-v2.2.1-mantle-arsia.2-dev/aarch64-apple-darwin")
+	defer target.Close()
+	pair := rpc.NewClientPair(baseline.URL, "baseline", target.URL, "target", time.Second)
+	baseMeta, targetMeta, err := preflightEndpoints(t.Context(), pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseMeta.BuildID != "git:d0169f78" || baseMeta.IdentitySource != "rpc_version" ||
+		targetMeta.BuildID != "" || targetMeta.IdentitySource != "unknown" ||
+		baseMeta.ChainID != "0x539" || targetMeta.GenesisHash != genesis {
+		t.Fatalf("identities = %+v, %+v", baseMeta, targetMeta)
+	}
+}
+
 func TestPreflightRejectsChainIDMismatch(t *testing.T) {
 	genesis := "0x" + strings.Repeat("11", 32)
 	baseline := preflightServer(t, "0x1388", genesis, "baseline/v1")
@@ -230,8 +248,30 @@ func TestRunTestsPrintsLogicalEndpointNames(t *testing.T) {
 	if err := json.Unmarshal(data, &saved); err != nil {
 		t.Fatal(err)
 	}
-	if saved.SchemaVersion != 2 || saved.Baseline.Name != "old-reth" || saved.Baseline.ClientVersion != "old-reth/v1" ||
+	if saved.SchemaVersion != 3 || saved.Baseline.Name != "old-reth" || saved.Baseline.ClientVersion != "old-reth/v1" ||
 		saved.Target.Name != "new-reth" || saved.Target.ClientVersion != "new-reth/v2" {
 		t.Fatalf("saved endpoint metadata = %+v", saved)
+	}
+}
+
+func TestRunTestsFailsWhenReportCannotBeSaved(t *testing.T) {
+	genesis := "0x" + strings.Repeat("11", 32)
+	baseline := preflightServer(t, "0x1388", genesis, "baseline/v1")
+	defer baseline.Close()
+	target := preflightServer(t, "0x1388", genesis, "target/v2")
+	defer target.Close()
+	file := filepath.Join(t.TempDir(), "chain-id.json")
+	if err := os.WriteFile(file, []byte(`[{"name":"chain-id","method":"eth_chainId","params":[]}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldBaselineURL, oldTargetURL, oldFile, oldOutput := baselineURL, targetURL, testFile, outputFile
+	t.Cleanup(func() {
+		baselineURL, targetURL, testFile, outputFile = oldBaselineURL, oldTargetURL, oldFile, oldOutput
+	})
+	baselineURL, targetURL = baseline.URL, target.URL
+	testFile = file
+	outputFile = filepath.Join(t.TempDir(), "missing-directory", "report.json")
+	if err := runTests(); err == nil || !strings.Contains(err.Error(), "save report") {
+		t.Fatalf("report write error = %v", err)
 	}
 }

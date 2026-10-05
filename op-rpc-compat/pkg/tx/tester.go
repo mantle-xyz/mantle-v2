@@ -116,17 +116,20 @@ func (t *Tester) GetBalance(ctx context.Context, client *rpc.Client, address com
 // GetBalanceAndCompare compares account balances and returns the reference value.
 func (t *Tester) GetBalanceAndCompare(ctx context.Context, address common.Address, block string, testName string) (*big.Int, error) {
 	req := rpc.NewRequest("eth_getBalance", []interface{}{address.Hex(), block})
-
-	baselineResp := t.baselineClient.Call(ctx, req)
-	targetResp := t.targetClient.Call(ctx, req)
+	tc := report.TestCase{Name: testName, Method: "eth_getBalance", Params: []interface{}{address.Hex(), block}}
+	compareResult, reason := t.compareAtStableTag(ctx, block, func() *rpc.CompareResult {
+		pair := &rpc.ClientPair{Baseline: t.baselineClient, Target: t.targetClient}
+		return pair.Compare(ctx, req)
+	})
+	if reason != "" {
+		if t.reporter != nil {
+			t.reporter.AddInconclusiveResult(tc, compareResult, reason)
+		}
+		return nil, &InconclusiveError{Reason: "balance comparison inconclusive: " + reason}
+	}
+	baselineResp, targetResp := compareResult.BaselineResponse, compareResult.TargetResponse
 
 	if t.reporter != nil {
-		compareResult := &rpc.CompareResult{
-			Request:          req,
-			BaselineResponse: baselineResp,
-			TargetResponse:   targetResp,
-		}
-
 		var diffResult *diff.CompareResult
 		var compareErr error
 		if rpc.SuccessfulResponse(baselineResp) && rpc.SuccessfulResponse(targetResp) {
@@ -139,11 +142,6 @@ func (t *Tester) GetBalanceAndCompare(ctx context.Context, address common.Addres
 			)
 		}
 
-		tc := report.TestCase{
-			Name:   testName,
-			Method: "eth_getBalance",
-			Params: []interface{}{address.Hex(), block},
-		}
 		t.reporter.AddResult(tc, compareResult, diffResult, compareErr)
 	}
 
@@ -165,6 +163,41 @@ func (t *Tester) GetBalanceAndCompare(ctx context.Context, address common.Addres
 		return nil, err
 	}
 	return balance, nil
+}
+
+func (t *Tester) compareAtStableTag(ctx context.Context, tag string, call func() *rpc.CompareResult) (*rpc.CompareResult, string) {
+	switch tag {
+	case "latest", "safe", "finalized", "pending":
+	default:
+		return call(), ""
+	}
+	pair := &rpc.ClientPair{Baseline: t.baselineClient, Target: t.targetClient}
+	var lastCompared *rpc.CompareResult
+	var reason string
+	for attempt := 0; attempt < 3; attempt++ {
+		before, err := rpc.SharedBlockHash(ctx, pair, tag)
+		if err != nil {
+			reason = err.Error()
+		} else {
+			lastCompared = call()
+			after, err := rpc.SharedBlockHash(ctx, pair, tag)
+			if err == nil && before == after {
+				return lastCompared, ""
+			}
+			reason = "block tag changed during comparison"
+			if err != nil {
+				reason = err.Error()
+			}
+		}
+		if attempt < 2 {
+			select {
+			case <-ctx.Done():
+				return lastCompared, ctx.Err().Error()
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+	}
+	return lastCompared, reason
 }
 
 // GetGasPrice returns the gas price reported by one client.
@@ -195,18 +228,21 @@ func (t *Tester) EstimateGas(ctx context.Context, client *rpc.Client, params map
 	if resp.Error != nil {
 		return 0, resp.Error
 	}
+	if resp.Response == nil {
+		return 0, fmt.Errorf("eth_estimateGas returned no RPC response")
+	}
 	if resp.Response.Error != nil {
-		return 21000, nil // default intrinsic gas
+		return 0, fmt.Errorf("eth_estimateGas RPC error %d: %s", resp.Response.Error.Code, resp.Response.Error.Message)
 	}
 
 	var gasHex string
 	if err := json.Unmarshal(resp.Response.Result, &gasHex); err != nil {
-		return 21000, nil
+		return 0, fmt.Errorf("decode eth_estimateGas result: %w", err)
 	}
 
 	gas, err := hexutil.DecodeUint64(gasHex)
 	if err != nil {
-		return 21000, nil
+		return 0, fmt.Errorf("decode eth_estimateGas quantity: %w", err)
 	}
 	return gas, nil
 }
@@ -278,7 +314,7 @@ func (t *Tester) sendRawTransaction(
 				"another forwarding node submitted this transaction to the shared sequencer; treating already known as idempotent acceptance and checking local txpool visibility",
 			)
 		} else {
-			t.reporter.AddResult(tc, compareResult, nil, nil)
+			t.reporter.AddAssertionResult(tc, compareResult, responseErr)
 		}
 	}
 
@@ -307,6 +343,12 @@ func (t *Tester) SendRawTransactionWithPreconf(ctx context.Context, client *rpc.
 
 	req := rpc.NewRequest("eth_sendRawTransactionWithPreconf", []interface{}{hexutil.Encode(rawTx)})
 	resp := client.Call(ctx, req)
+	var responseErr error
+	if resp.Error != nil {
+		responseErr = resp.Error
+	} else if resp.Response.Error != nil {
+		responseErr = fmt.Errorf("RPC error: code=%d, message=%s", resp.Response.Error.Code, resp.Response.Error.Message)
+	}
 
 	// Record this response without comparing it to the other client's transaction.
 	if t.reporter != nil {
@@ -331,14 +373,11 @@ func (t *Tester) SendRawTransactionWithPreconf(ctx context.Context, client *rpc.
 			Method: "eth_sendRawTransactionWithPreconf",
 			Params: []interface{}{hexutil.Encode(rawTx)},
 		}
-		t.reporter.AddResult(tc, compareResult, nil, nil)
+		t.reporter.AddAssertionResult(tc, compareResult, responseErr)
 	}
 
-	if resp.Error != nil {
-		return nil, resp.Error
-	}
-	if resp.Response.Error != nil {
-		return nil, fmt.Errorf("RPC error: code=%d, message=%s", resp.Response.Error.Code, resp.Response.Error.Message)
+	if responseErr != nil {
+		return nil, responseErr
 	}
 
 	var preconfResp PreconfResponse
@@ -411,25 +450,12 @@ func normalizeRawResponse(data []byte, isReceipt bool) []byte {
 
 	if isReceipt {
 		if res, ok := m["result"].(map[string]interface{}); ok {
+			// These identify where distinct transactions were included, not receipt behavior.
 			delete(res, "blockHash")
 			delete(res, "blockNumber")
 			delete(res, "transactionHash")
 			delete(res, "transactionIndex")
 			delete(res, "cumulativeGasUsed")
-			delete(res, "from")
-			delete(res, "to")
-			delete(res, "contractAddress")
-			delete(res, "logsBloom")
-			delete(res, "root")
-			// Cause tokenRatio is different
-			delete(res, "l1Fee")
-			delete(res, "tokenRatio")
-			// Cause signature is different
-			delete(res, "l1GasUsed")
-			delete(res, "blobGasUsed")
-			// Cause l1GasPrice is different
-			delete(res, "l1GasPrice")
-			delete(res, "effectiveGasPrice")
 		}
 	}
 
@@ -454,6 +480,19 @@ func (t *Tester) CompareReceipts(ctx context.Context, testName string, baselineT
 		Request:          baselineReq, // retain the reference request in the report
 		BaselineResponse: baselineResp,
 		TargetResponse:   targetResp,
+	}
+	tc := report.TestCase{
+		Name:   fmt.Sprintf("%s_receipt", testName),
+		Method: "eth_getTransactionReceipt",
+		Params: []interface{}{baselineTxHash.Hex(), targetTxHash.Hex()},
+	}
+	if err := receiptResponseError("baseline", baselineResp); err != nil {
+		t.reporter.AddAssertionResult(tc, compareResult, err)
+		return false, err
+	}
+	if err := receiptResponseError("target", targetResp); err != nil {
+		t.reporter.AddAssertionResult(tc, compareResult, err)
+		return false, err
 	}
 
 	var diffResult *diff.CompareResult
@@ -526,18 +565,7 @@ func (t *Tester) CompareReceipts(ctx context.Context, testName string, baselineT
 		}
 	}
 
-	tc := report.TestCase{
-		Name:   fmt.Sprintf("%s_receipt", testName),
-		Method: "eth_getTransactionReceipt",
-		Params: []interface{}{baselineTxHash.Hex(), targetTxHash.Hex()}, // retain both transaction hashes
-	}
 	t.reporter.AddResult(tc, compareResult, diffResult, compareErr)
-	if baselineResp.Error != nil {
-		return false, baselineResp.Error
-	}
-	if targetResp.Error != nil {
-		return false, targetResp.Error
-	}
 
 	if compareErr != nil {
 		return false, compareErr
@@ -553,6 +581,22 @@ func (t *Tester) CompareReceipts(ctx context.Context, testName string, baselineT
 	}
 
 	return true, nil
+}
+
+func receiptResponseError(side string, response *rpc.ResponseWithMeta) error {
+	if response == nil {
+		return fmt.Errorf("%s receipt has no response", side)
+	}
+	if response.Error != nil {
+		return fmt.Errorf("%s receipt: %w", side, response.Error)
+	}
+	if response.Response == nil {
+		return fmt.Errorf("%s receipt has no JSON-RPC response", side)
+	}
+	if response.Response.Error != nil {
+		return fmt.Errorf("%s receipt RPC error %d: %s", side, response.Response.Error.Code, response.Response.Error.Message)
+	}
+	return nil
 }
 
 // WaitForReceiptAndCompare polls both clients for the same transaction hash and compares receipts.
@@ -620,23 +664,12 @@ func (t *Tester) WaitForReceiptAndCompare(ctx context.Context, txHash common.Has
 
 			var diffResult *diff.CompareResult
 			var compareErr error
-			if rpc.SuccessfulResponse(targetResp) && string(targetResp.Response.Result) != "null" {
+			if rpc.SuccessfulResponse(targetResp) {
 				diffResult, compareErr = diff.Compare(
 					baselineResp.RawBody,
 					targetResp.RawBody,
 					diff.DefaultOptions(),
 				)
-			} else {
-				// A missing target receipt is a visible difference.
-				diffResult = &diff.CompareResult{
-					Differences: []diff.Difference{
-						{
-							Type:    diff.DiffTypeMissing,
-							Path:    "receipt",
-							Message: fmt.Sprintf("%s is missing a receipt (%s confirmed)", t.targetClient.Name(), t.baselineClient.Name()),
-						},
-					},
-				}
 			}
 
 			tc := report.TestCase{
@@ -684,6 +717,7 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 
 	initialBalance, err := t.GetBalanceAndCompare(ctx, recipient, "latest", fmt.Sprintf("%s_initial_balance", testName))
 	if err != nil {
+		result.Inconclusive = IsInconclusive(err)
 		result.Error = fmt.Sprintf("get initial balance: %v", err)
 		return result
 	}
@@ -700,11 +734,15 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 		return result
 	}
 
-	estimatedGas, _ := t.EstimateGas(ctx, t.baselineClient, map[string]interface{}{
+	estimatedGas, err := t.EstimateGas(ctx, t.baselineClient, map[string]interface{}{
 		"from":  t.builder.Address().Hex(),
 		"to":    recipient.Hex(),
 		"value": hexutil.EncodeBig(amount),
 	})
+	if err != nil {
+		result.Error = fmt.Sprintf("estimate gas: %v", err)
+		return result
+	}
 	gas := estimatedGas * 2 // allow for estimation variance
 	// EIP-7702 with an authorization list needs at least 46,000 intrinsic gas.
 	if txType == TxTypeEIP7702 && gas < 46000 {
@@ -775,6 +813,7 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 
 	balanceAfterBaseline, err := t.GetBalanceAndCompare(ctx, recipient, "latest", fmt.Sprintf("%s_after_baseline_balance", testName))
 	if err != nil {
+		result.Inconclusive = IsInconclusive(err)
 		result.Error = fmt.Sprintf("get balance after baseline transaction: %v", err)
 		return result
 	}
@@ -833,6 +872,7 @@ func (t *Tester) TestNativeTransfer(ctx context.Context, recipient common.Addres
 
 	balanceAfterTarget, err := t.GetBalanceAndCompare(ctx, recipient, "latest", fmt.Sprintf("%s_after_target_balance", testName))
 	if err != nil {
+		result.Inconclusive = IsInconclusive(err)
 		result.Error = fmt.Sprintf("get balance after target transaction: %v", err)
 		return result
 	}

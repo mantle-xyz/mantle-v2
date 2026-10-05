@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/policy"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/report"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/rpc"
 	"github.com/ethereum/go-ethereum/common"
@@ -54,6 +55,7 @@ func inspectEndpoint(ctx context.Context, client *rpc.Client) (endpointIdentity,
 	if err != nil {
 		return identity, fmt.Errorf("eth_chainId returned invalid chain ID %q: %w", chainHex, err)
 	}
+	identity.metadata.ChainID = hexutil.EncodeBig(identity.chainID)
 
 	blockResult, err := preflightResult(ctx, client, "eth_getBlockByNumber", []any{"0x0", false})
 	if err != nil {
@@ -69,6 +71,7 @@ func inspectEndpoint(ctx context.Context, client *rpc.Client) (endpointIdentity,
 		return identity, fmt.Errorf("eth_getBlockByNumber returned missing genesis hash")
 	}
 	identity.genesis = *block.Hash
+	identity.metadata.GenesisHash = identity.genesis.Hex()
 
 	versionResult, err := preflightResult(ctx, client, "web3_clientVersion", []any{})
 	if err != nil {
@@ -79,6 +82,11 @@ func inspectEndpoint(ctx context.Context, client *rpc.Client) (endpointIdentity,
 	}
 	if strings.TrimSpace(identity.metadata.ClientVersion) == "" {
 		return identity, fmt.Errorf("web3_clientVersion returned empty client version")
+	}
+	identity.metadata.BuildID = policy.BuildIDFromClientVersion(identity.metadata.ClientVersion)
+	identity.metadata.IdentitySource = "unknown"
+	if identity.metadata.BuildID != "" {
+		identity.metadata.IdentitySource = "rpc_version"
 	}
 	return identity, nil
 }
