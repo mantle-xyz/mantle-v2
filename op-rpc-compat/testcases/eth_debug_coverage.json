@@ -82,13 +82,13 @@
     "params": [
       1
     ],
-    "description": "Known difference: geth returns a Go struct dump string, while reth returns null because the method is unimplemented. The argument is a number, not hex; see known_diffs."
+    "description": "Request a block dump using a numeric block number."
   },
   {
     "name": "eth_config_geth_crash_diff",
     "method": "eth_config",
     "params": [],
-    "description": "Known semantic difference: reth returns a chain configuration object, while the geth handler crashes with -32603; see known_diffs."
+    "description": "Query chain configuration and compare the returned result or RPC error."
   },
   {
     "name": "admin_peers_empty",
@@ -106,6 +106,6 @@
     "name": "admin_nodeInfo_structdiff",
     "method": "admin_nodeInfo",
     "params": [],
-    "description": "Node information has the same top-level keys, but name, ID, enode, and protocols differ by node identity (geth has snap; reth does not); see known_diffs."
+    "description": "Node-local identity values may differ; protocol and configuration fields remain strictly compared."
   }
 ]

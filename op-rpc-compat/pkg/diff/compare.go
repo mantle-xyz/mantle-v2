@@ -37,18 +37,22 @@ const (
 
 // Difference describes one mismatch between responses.
 type Difference struct {
-	Path              string       `json:"path"`              // display path
-	Pointer           string       `json:"pointer"`           // RFC 6901 location
-	Type              DiffType     `json:"type"`              // difference type
-	Severity          DiffSeverity `json:"observed_severity"` // difference severity
-	EffectiveSeverity DiffSeverity `json:"effective_severity,omitempty"`
-	RuleID            string       `json:"rule_id,omitempty"`
-	RuleReason        string       `json:"rule_reason,omitempty"`
-	ExpectedPresent   bool         `json:"expected_present"`  // baseline field exists
-	ActualPresent     bool         `json:"actual_present"`    // target field exists
-	Expected          interface{}  `json:"expected"`          // baseline value
-	Actual            interface{}  `json:"actual"`            // target value
-	Message           string       `json:"message,omitempty"` // details
+	Path                string       `json:"path"`              // display path
+	Pointer             string       `json:"pointer"`           // RFC 6901 location
+	Type                DiffType     `json:"type"`              // difference type
+	Severity            DiffSeverity `json:"observed_severity"` // difference severity
+	EffectiveSeverity   DiffSeverity `json:"effective_severity,omitempty"`
+	RuleID              string       `json:"rule_id,omitempty"`
+	RuleReason          string       `json:"rule_reason,omitempty"`
+	ScopeKind           string       `json:"scope_kind,omitempty"`
+	ScopeBaseline       string       `json:"scope_baseline,omitempty"`
+	ScopeTarget         string       `json:"scope_target,omitempty"`
+	SemanticAssertionID string       `json:"semantic_assertion_id,omitempty"`
+	ExpectedPresent     bool         `json:"expected_present"`  // baseline field exists
+	ActualPresent       bool         `json:"actual_present"`    // target field exists
+	Expected            interface{}  `json:"expected"`          // baseline value
+	Actual              interface{}  `json:"actual"`            // target value
+	Message             string       `json:"message,omitempty"` // details
 }
 
 // CompareResult collects the differences from a comparison.

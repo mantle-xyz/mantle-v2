@@ -32,6 +32,29 @@ type ReviewedPair struct {
 	EvidenceURL   string `json:"evidence_url"`
 }
 
+type ScopeSelector struct {
+	Kind    string `json:"kind"`
+	Family  string `json:"family,omitempty"`
+	BuildID string `json:"build_id,omitempty"`
+}
+
+func (s ScopeSelector) Descriptor() string {
+	switch s.Kind {
+	case "family":
+		return "family:" + s.Family
+	case "exact_build":
+		return "exact_build:" + s.BuildID
+	default:
+		return ""
+	}
+}
+
+type RuleScope struct {
+	Kind     string        `json:"kind"`
+	Baseline ScopeSelector `json:"baseline"`
+	Target   ScopeSelector `json:"target"`
+}
+
 type ValueSpec struct {
 	Present bool            `json:"present"`
 	Type    string          `json:"type,omitempty"`
@@ -40,6 +63,7 @@ type ValueSpec struct {
 
 type Rule struct {
 	ID            string         `json:"id"`
+	Scope         RuleScope      `json:"scope,omitempty"`
 	BaselineSet   string         `json:"baseline_set"`
 	TargetSet     string         `json:"target_set"`
 	Pairs         []ReviewedPair `json:"reviewed_pairs"`
@@ -81,7 +105,15 @@ type MatchContext struct {
 	RequestSHA256 string
 }
 
-var buildSHA = regexp.MustCompile(`(?:\+|-)([0-9a-f]{8,40})(?:/|$)`)
+var buildSHA = regexp.MustCompile(`(?:\+|-)([0-9a-f]{7,40})(?:/|$)`)
+
+var clientFamily = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._-]*/`)
+
+// ClientFamilyFromClientVersion returns the self-reported client family.
+func ClientFamilyFromClientVersion(version string) string {
+	match := clientFamily.FindString(version)
+	return strings.TrimSuffix(match, "/")
+}
 
 // BuildIDFromClientVersion recognizes a build SHA only when the RPC version includes one.
 func BuildIDFromClientVersion(version string) string {
@@ -137,10 +169,11 @@ func Load(filesystem fs.FS, path string) (*Registry, error) {
 }
 
 func (r *Registry) Validate() error {
-	if r.SchemaVersion != 1 || r.RegistryID == "" {
+	if (r.SchemaVersion != 1 && r.SchemaVersion != 2) || r.RegistryID == "" {
 		return fmt.Errorf("invalid registry header")
 	}
 	sets := make(map[string]map[string]ClientBuild)
+	allBuilds := make(map[string]ClientBuild)
 	for _, set := range r.ClientSets {
 		if set.ID == "" || len(set.Builds) == 0 || sets[set.ID] != nil {
 			return fmt.Errorf("invalid or duplicate client set %q", set.ID)
@@ -154,6 +187,10 @@ func (r *Registry) Validate() error {
 				return fmt.Errorf("build %q does not match client version", build.ID)
 			}
 			builds[build.ID] = build
+			if r.SchemaVersion == 2 && allBuilds[build.ID].ID != "" {
+				return fmt.Errorf("duplicate build ID %q", build.ID)
+			}
+			allBuilds[build.ID] = build
 		}
 		sets[set.ID] = builds
 	}
@@ -164,8 +201,20 @@ func (r *Registry) Validate() error {
 			return fmt.Errorf("invalid or duplicate rule ID %q", rule.ID)
 		}
 		ruleIDs[rule.ID] = true
-		if sets[rule.BaselineSet] == nil || sets[rule.TargetSet] == nil || len(rule.Pairs) == 0 {
-			return fmt.Errorf("rule %q has unknown client sets or no reviewed pairs", rule.ID)
+		if len(rule.Pairs) == 0 {
+			return fmt.Errorf("rule %q has no reviewed pairs", rule.ID)
+		}
+		if r.SchemaVersion == 1 {
+			if sets[rule.BaselineSet] == nil || sets[rule.TargetSet] == nil {
+				return fmt.Errorf("rule %q has unknown client sets", rule.ID)
+			}
+		} else {
+			if rule.BaselineSet != "" || rule.TargetSet != "" {
+				return fmt.Errorf("rule %q mixes v1 and v2 selectors", rule.ID)
+			}
+			if err := rule.Scope.validate(allBuilds); err != nil {
+				return fmt.Errorf("rule %q scope: %w", rule.ID, err)
+			}
 		}
 		if rule.ChainID == "" || rule.GenesisHash == "" || rule.CorpusID == "" || rule.CaseID == "" || rule.Method == "" ||
 			len(rule.RequestSHA256) != 64 || rule.Action != "warning" || rule.Reason == "" || rule.EvidenceURL == "" ||
@@ -182,9 +231,23 @@ func (r *Registry) Validate() error {
 			return fmt.Errorf("rule %q target: %w", rule.ID, err)
 		}
 		for _, pair := range rule.Pairs {
-			if sets[rule.BaselineSet][pair.BaselineBuild].ID == "" ||
-				sets[rule.TargetSet][pair.TargetBuild].ID == "" || pair.EvidenceURL == "" {
+			baselineBuild, targetBuild := allBuilds[pair.BaselineBuild], allBuilds[pair.TargetBuild]
+			if pair.EvidenceURL == "" || baselineBuild.ID == "" || targetBuild.ID == "" {
 				return fmt.Errorf("rule %q has an unreviewed build pair", rule.ID)
+			}
+			if r.SchemaVersion == 2 && pair.BaselineBuild == pair.TargetBuild {
+				return fmt.Errorf("rule %q has a self-pair review example", rule.ID)
+			}
+			if r.SchemaVersion == 1 && (sets[rule.BaselineSet][pair.BaselineBuild].ID == "" ||
+				sets[rule.TargetSet][pair.TargetBuild].ID == "") {
+				return fmt.Errorf("rule %q has an unreviewed build pair", rule.ID)
+			}
+			if r.SchemaVersion == 2 && (!rule.Scope.Baseline.matchesBuild(baselineBuild) ||
+				!rule.Scope.Target.matchesBuild(targetBuild)) {
+				return fmt.Errorf("rule %q reviewed pair is outside its scope", rule.ID)
+			}
+			if r.SchemaVersion == 2 {
+				continue
 			}
 			scope := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s", rule.ChainID, rule.GenesisHash,
 				rule.CorpusID, rule.CaseID, rule.Method, rule.RequestSHA256, rule.Pointer, pair.BaselineBuild, pair.TargetBuild)
@@ -194,7 +257,103 @@ func (r *Registry) Validate() error {
 			scopes[scope] = true
 		}
 	}
+	if r.SchemaVersion == 2 {
+		for i := range r.Rules {
+			for j := i + 1; j < len(r.Rules); j++ {
+				if rulesOverlap(r.Rules[i], r.Rules[j], allBuilds) {
+					return fmt.Errorf("rules %q and %q overlap", r.Rules[i].ID, r.Rules[j].ID)
+				}
+			}
+		}
+	}
 	return nil
+}
+
+func (s RuleScope) validate(builds map[string]ClientBuild) error {
+	if s.Kind != "behavior_invariant" && s.Kind != "exact_build" {
+		return fmt.Errorf("unknown scope kind %q", s.Kind)
+	}
+	if err := s.Baseline.validate(builds); err != nil {
+		return fmt.Errorf("baseline: %w", err)
+	}
+	if err := s.Target.validate(builds); err != nil {
+		return fmt.Errorf("target: %w", err)
+	}
+	if s.Kind == "exact_build" {
+		if s.Baseline.Kind != "exact_build" || s.Target.Kind != "exact_build" {
+			return fmt.Errorf("exact_build scope requires two exact builds")
+		}
+		return nil
+	}
+	if s.Baseline.Kind != "family" && s.Target.Kind != "family" {
+		return fmt.Errorf("behavior_invariant scope requires a family selector")
+	}
+	if s.Baseline.Kind == "family" && s.Target.Kind == "family" && s.Baseline.Family == s.Target.Family {
+		return fmt.Errorf("same-family comparison requires an exact build anchor")
+	}
+	return nil
+}
+
+func (s ScopeSelector) validate(builds map[string]ClientBuild) error {
+	switch s.Kind {
+	case "family":
+		if s.Family == "" || s.BuildID != "" || ClientFamilyFromClientVersion(s.Family+"/version") != s.Family {
+			return fmt.Errorf("invalid family selector")
+		}
+	case "exact_build":
+		if s.Family != "" || builds[s.BuildID].ID == "" {
+			return fmt.Errorf("invalid exact build selector")
+		}
+	default:
+		return fmt.Errorf("unknown selector kind %q", s.Kind)
+	}
+	return nil
+}
+
+func (s ScopeSelector) matchesBuild(build ClientBuild) bool {
+	if s.Kind == "family" {
+		return ClientFamilyFromClientVersion(build.ClientVersion) == s.Family
+	}
+	return s.Kind == "exact_build" && build.ID == s.BuildID
+}
+
+func (s ScopeSelector) matches(endpoint Endpoint, builds map[string]ClientBuild) bool {
+	if s.Kind == "family" {
+		return ClientFamilyFromClientVersion(endpoint.ClientVersion) == s.Family
+	}
+	build := builds[s.BuildID]
+	return s.Kind == "exact_build" && endpoint.BuildID == build.ID && endpoint.ClientVersion == build.ClientVersion
+}
+
+func rulesOverlap(a, b Rule, builds map[string]ClientBuild) bool {
+	if a.ChainID != b.ChainID || a.GenesisHash != b.GenesisHash || a.CorpusID != b.CorpusID ||
+		a.CaseID != b.CaseID || a.Method != b.Method || a.RequestSHA256 != b.RequestSHA256 ||
+		a.Pointer != b.Pointer || a.DiffType != b.DiffType ||
+		!sameValueSpec(a.Baseline, b.Baseline) || !sameValueSpec(a.Target, b.Target) {
+		return false
+	}
+	return selectorsOverlap(a.Scope.Baseline, b.Scope.Baseline, builds) &&
+		selectorsOverlap(a.Scope.Target, b.Scope.Target, builds)
+}
+
+func sameValueSpec(a, b ValueSpec) bool {
+	if a.Present != b.Present || a.Type != b.Type {
+		return false
+	}
+	return !a.Present || sameJSON(a.Value, b.Value)
+}
+
+func selectorsOverlap(a, b ScopeSelector, builds map[string]ClientBuild) bool {
+	if a.Kind == "family" && b.Kind == "family" {
+		return a.Family == b.Family
+	}
+	if a.Kind == "exact_build" && b.Kind == "exact_build" {
+		return a.BuildID == b.BuildID
+	}
+	if a.Kind == "exact_build" {
+		return ClientFamilyFromClientVersion(builds[a.BuildID].ClientVersion) == b.Family
+	}
+	return a.Family == ClientFamilyFromClientVersion(builds[b.BuildID].ClientVersion)
 }
 
 func validPointer(pointer string) bool {
@@ -263,9 +422,6 @@ func jsonType(raw []byte) string {
 }
 
 func (r *Registry) Match(context MatchContext, difference diff.Difference) *Rule {
-	if context.Baseline.BuildID == "" || context.Target.BuildID == "" {
-		return nil
-	}
 	for i := range r.Rules {
 		rule := &r.Rules[i]
 		if !r.Applicable(rule, context) || rule.Pointer != difference.Pointer || rule.DiffType != difference.Type {
@@ -281,10 +437,35 @@ func (r *Registry) Match(context MatchContext, difference diff.Difference) *Rule
 }
 
 func (r *Registry) Applicable(rule *Rule, context MatchContext) bool {
-	if context.Baseline.BuildID == "" || context.Target.BuildID == "" ||
-		rule.ChainID != context.ChainID || rule.GenesisHash != context.GenesisHash ||
+	if rule.ChainID != context.ChainID || rule.GenesisHash != context.GenesisHash ||
 		rule.CorpusID != context.CorpusID || rule.CaseID != context.CaseID ||
-		rule.Method != context.Method || rule.RequestSHA256 != context.RequestSHA256 ||
+		rule.Method != context.Method || rule.RequestSHA256 != context.RequestSHA256 {
+		return false
+	}
+	if r.SchemaVersion == 2 {
+		builds := make(map[string]ClientBuild)
+		for _, set := range r.ClientSets {
+			for _, build := range set.Builds {
+				builds[build.ID] = build
+			}
+		}
+		if !rule.Scope.Baseline.matches(context.Baseline, builds) ||
+			!rule.Scope.Target.matches(context.Target, builds) {
+			return false
+		}
+		if rule.Scope.Kind == "behavior_invariant" && context.Baseline.BuildID == context.Target.BuildID &&
+			context.Baseline.BuildID != "" {
+			return false
+		}
+		if rule.Scope.Baseline.Kind != rule.Scope.Target.Kind &&
+			ClientFamilyFromClientVersion(context.Baseline.ClientVersion) == ClientFamilyFromClientVersion(context.Target.ClientVersion) &&
+			(context.Baseline.BuildID == "" || context.Target.BuildID == "") {
+			return false
+		}
+		if rule.Scope.Kind == "behavior_invariant" {
+			return true
+		}
+	} else if context.Baseline.BuildID == "" || context.Target.BuildID == "" ||
 		!r.inSet(rule.BaselineSet, context.Baseline) || !r.inSet(rule.TargetSet, context.Target) {
 		return false
 	}

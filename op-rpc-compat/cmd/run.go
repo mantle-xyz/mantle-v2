@@ -45,6 +45,12 @@ func runTests() error {
 	if diffPolicy != "accepted" && diffPolicy != "strict" {
 		return fmt.Errorf("unknown diff policy %q", diffPolicy)
 	}
+	if suiteMode != "core" && suiteMode != "diagnostic" && suiteMode != "all" {
+		return fmt.Errorf("unknown suite %q", suiteMode)
+	}
+	if txTest && suiteMode == "diagnostic" {
+		return fmt.Errorf("--suite diagnostic cannot be combined with --tx")
+	}
 	registry, err := policy.Load(policies.FS, "accepted/registry.json")
 	if err != nil {
 		return fmt.Errorf("load accepted registry: %w", err)
@@ -112,6 +118,11 @@ func runTests() error {
 	if len(allTests) == 0 {
 		return fmt.Errorf("no testcases found")
 	}
+	selected, excluded := selectSuite(allTests, suiteMode)
+	if len(selected) == 0 {
+		return fmt.Errorf("no %s cases selected; use --suite all to run the full corpus", suiteMode)
+	}
+	allTests = selected
 
 	if hasTemplateVars(allTests) {
 		client := clients.Baseline
@@ -150,6 +161,10 @@ func runTests() error {
 	reporter := report.NewReporter(baselineMeta, targetMeta, verbose)
 	if err := reporter.ConfigurePolicy(registry, diffPolicy); err != nil {
 		return err
+	}
+	reporter.SetSuite(suiteMode)
+	for _, tc := range excluded {
+		reporter.AddExcludedCase(tc, "case belongs to "+caseSuite(tc)+" suite")
 	}
 
 	fmt.Printf("\n%s: %s\n", baselineName, baselineURL)

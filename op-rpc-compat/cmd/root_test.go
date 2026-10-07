@@ -14,6 +14,7 @@ func TestCommandHelpIsEnglish(t *testing.T) {
 		"root":    rootCmd,
 		"preconf": preconfCmd,
 		"stream":  streamCmd,
+		"triage":  triageCmd,
 	} {
 		for _, line := range strings.Split(command.UsageString(), "\n") {
 			if han.MatchString(line) {
@@ -28,11 +29,12 @@ func endpointCommandForTest() *cobra.Command {
 	cmd.Flags().String("baseline-url", "", "")
 	cmd.Flags().String("target-url", "", "")
 	cmd.Flags().String("diff-policy", "accepted", "")
+	cmd.Flags().String("suite", "core", "")
 	return cmd
 }
 
 func TestClientFlags(t *testing.T) {
-	for _, name := range []string{"baseline-url", "target-url", "diff-policy"} {
+	for _, name := range []string{"baseline-url", "target-url", "diff-policy", "suite"} {
 		if rootCmd.Flags().Lookup(name) == nil {
 			t.Errorf("missing --%s", name)
 		}
@@ -41,6 +43,31 @@ func TestClientFlags(t *testing.T) {
 		if rootCmd.Flags().Lookup(name) != nil {
 			t.Errorf("--%s must not be registered", name)
 		}
+	}
+}
+
+func TestSuiteMode(t *testing.T) {
+	t.Setenv("BASELINE_RPC_URL", "http://baseline.example")
+	t.Setenv("TARGET_RPC_URL", "http://target.example")
+	cmd := endpointCommandForTest()
+	config, err := resolveClientConfig(cmd)
+	if err != nil || config.Suite != "core" {
+		t.Fatalf("default suite = %q, error = %v", config.Suite, err)
+	}
+	for _, suite := range []string{"diagnostic", "all"} {
+		if err := cmd.Flags().Set("suite", suite); err != nil {
+			t.Fatal(err)
+		}
+		config, err := resolveClientConfig(cmd)
+		if err != nil || config.Suite != suite {
+			t.Fatalf("suite %q = %q, error = %v", suite, config.Suite, err)
+		}
+	}
+	if err := cmd.Flags().Set("suite", "none"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveClientConfig(cmd); err == nil {
+		t.Fatal("unknown suite was accepted")
 	}
 }
 

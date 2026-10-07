@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "registry_id": "accepted-rpc-differences",
   "client_sets": [],
   "rules": []

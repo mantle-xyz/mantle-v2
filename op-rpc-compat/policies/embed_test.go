@@ -12,7 +12,7 @@ func TestEmbeddedRegistryLoadsOutsideRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if registry.RegistryID == "" || len(registry.Rules) != 0 {
+	if registry.SchemaVersion != 2 || registry.RegistryID == "" || len(registry.Rules) != 0 {
 		t.Fatalf("initial registry = %+v", registry)
 	}
 }

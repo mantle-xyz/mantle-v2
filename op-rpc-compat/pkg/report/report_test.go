@@ -4,7 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,9 @@ import (
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/diff"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/policy"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/rpc"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/go-ethereum/p2p/enr"
 )
 
 func pairedSuccessfulResult() *rpc.CompareResult {
@@ -78,7 +83,7 @@ func TestAcceptedPolicyChangesOnlyReviewedDifference(t *testing.T) {
 			report := r.Generate()
 			result := report.Results[0]
 			if result.Status != variant.want || result.ObservedStatus != StatusFail ||
-				(result.Status == StatusFail) != r.HasFailures() || report.SchemaVersion != 3 {
+				(result.Status == StatusFail) != r.HasFailures() || report.SchemaVersion != 4 {
 				t.Fatalf("policy result = %+v", result)
 			}
 			if result.CorpusID != "embedded" {
@@ -115,6 +120,93 @@ func TestAcceptedPolicyChangesOnlyReviewedDifference(t *testing.T) {
 	}
 }
 
+func TestV2BehaviorRuleKeepsRawFailureAndReportsScope(t *testing.T) {
+	const baselineVersion = "Geth/v1.17.3-stable-d0169f78/darwin-arm64/go1.24.9"
+	const reviewedVersion = "mantle-reth/dev-mantle-v1.6.3-f4963d3/aarch64-macos"
+	const newVersion = "mantle-reth/feature-branch-abcdef0/aarch64-macos"
+	tc := TestCase{Name: "reviewed-case", Method: "eth_getBlockByNumber", Params: []any{"0x1", false}, CorpusID: "embedded"}
+	registry := &policy.Registry{SchemaVersion: 2, RegistryID: "reviewed",
+		ClientSets: []policy.ClientSet{
+			{ID: "geth", Builds: []policy.ClientBuild{{ID: "git:d0169f78", ClientVersion: baselineVersion}}},
+			{ID: "reth", Builds: []policy.ClientBuild{{ID: "git:f4963d3", ClientVersion: reviewedVersion}}},
+		},
+		Rules: []policy.Rule{{
+			ID: "reviewed-field",
+			Scope: policy.RuleScope{Kind: "behavior_invariant",
+				Baseline: policy.ScopeSelector{Kind: "family", Family: "Geth"},
+				Target:   policy.ScopeSelector{Kind: "family", Family: "mantle-reth"}},
+			Pairs:   []policy.ReviewedPair{{BaselineBuild: "git:d0169f78", TargetBuild: "git:f4963d3", EvidenceURL: "https://example.test/strict"}},
+			ChainID: "0x539", GenesisHash: "0x" + strings.Repeat("11", 32), CorpusID: "embedded",
+			CaseID: tc.Name, Method: tc.Method, RequestSHA256: policy.RequestDigest(tc.Method, tc.Params),
+			Pointer: "/result/logs", DiffType: diff.DiffTypeNull,
+			Baseline: policy.ValueSpec{Present: true, Type: "null", Value: json.RawMessage(`null`)},
+			Target:   policy.ValueSpec{Present: true, Type: "array", Value: json.RawMessage(`[]`)},
+			Action:   "warning", Reason: "reviewed across builds", EvidenceURL: "https://example.test/review",
+		}},
+	}
+	baseline := EndpointMetadata{Name: "baseline", ClientVersion: baselineVersion, BuildID: "git:d0169f78",
+		ChainID: "0x539", GenesisHash: registry.Rules[0].GenesisHash}
+	target := EndpointMetadata{Name: "target", ClientVersion: newVersion, BuildID: "git:abcdef0",
+		ChainID: "0x539", GenesisHash: registry.Rules[0].GenesisHash}
+	reviewed := diff.Difference{Pointer: "/result/logs", Type: diff.DiffTypeNull, Severity: diff.SeverityFail,
+		ExpectedPresent: true, ActualPresent: true, Expected: nil, Actual: []any{}}
+	for _, variant := range []struct {
+		name, mode string
+		extra      bool
+		want       TestStatus
+	}{
+		{"accepted new build", "accepted", false, StatusWarning},
+		{"strict new build", "strict", false, StatusFail},
+		{"unreviewed extra difference", "accepted", true, StatusFail},
+	} {
+		t.Run(variant.name, func(t *testing.T) {
+			r := NewReporter(baseline, target, false)
+			if err := r.ConfigurePolicy(registry, variant.mode); err != nil {
+				t.Fatal(err)
+			}
+			differences := []diff.Difference{reviewed}
+			if variant.extra {
+				differences = append(differences, diff.Difference{Pointer: "/result/new", Type: diff.DiffTypeExtra,
+					Severity: diff.SeverityFail, ExpectedPresent: false, ActualPresent: true, Actual: "new"})
+			}
+			r.AddResult(tc, pairedSuccessfulResult(), &diff.CompareResult{Differences: differences, FailCount: len(differences)}, nil)
+			got := r.Generate()
+			if got.SchemaVersion != 4 || got.Results[0].Status != variant.want || got.Results[0].ObservedStatus != StatusFail ||
+				(got.Results[0].Status == StatusFail) != r.HasFailures() {
+				t.Fatalf("v2 policy result = %+v", got.Results[0])
+			}
+			data, err := json.Marshal(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var saved struct {
+				Baseline struct {
+					ClientFamily string `json:"client_family"`
+				} `json:"baseline"`
+				Target struct {
+					ClientFamily string `json:"client_family"`
+				} `json:"target"`
+				Results []struct {
+					Differences []struct {
+						ScopeKind     string `json:"scope_kind"`
+						ScopeBaseline string `json:"scope_baseline"`
+						ScopeTarget   string `json:"scope_target"`
+					} `json:"differences"`
+				} `json:"results"`
+			}
+			if err := json.Unmarshal(data, &saved); err != nil {
+				t.Fatal(err)
+			}
+			if saved.Baseline.ClientFamily != "Geth" || saved.Target.ClientFamily != "mantle-reth" ||
+				saved.Results[0].Differences[0].ScopeKind != "behavior_invariant" ||
+				saved.Results[0].Differences[0].ScopeBaseline != "family:Geth" ||
+				saved.Results[0].Differences[0].ScopeTarget != "family:mantle-reth" {
+				t.Fatalf("missing policy provenance: %s", data)
+			}
+		})
+	}
+}
+
 func TestInconclusiveAndNoComparableCasesFail(t *testing.T) {
 	recorded := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
 	recorded.AddInconclusiveResult(TestCase{Name: "latest", Method: "eth_getBalance"}, nil, "heads differ")
@@ -132,6 +224,24 @@ func TestInconclusiveAndNoComparableCasesFail(t *testing.T) {
 	r.results = []TestResult{{Status: TestStatus("NOT_APPLICABLE")}}
 	if !r.HasFailures() || r.Generate().NotApplicableTests != 1 {
 		t.Fatalf("no comparable cases = %+v", r.Generate())
+	}
+}
+
+func TestSuiteReportListsExcludedCasesWithoutPassingThem(t *testing.T) {
+	r := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
+	r.SetSuite("core")
+	r.AddExcludedCase(TestCase{Name: "pending", Method: "eth_getBalance", CorpusID: "embedded"},
+		"case belongs to diagnostic suite")
+	r.AddResult(TestCase{Name: "fixed", Method: "eth_chainId", CorpusID: "embedded"},
+		pairedSuccessfulResult(), &diff.CompareResult{}, nil)
+	got := r.Generate()
+	if got.SelectedSuite != "core" || got.TotalTests != 1 || got.PassedTests != 1 ||
+		got.ExcludedTests != 1 || len(got.ExcludedCases) != 1 ||
+		got.ExcludedCases[0].Name != "pending" || got.ExcludedCases[0].Reason == "" || r.HasFailures() {
+		t.Fatalf("suite report = %+v", got)
+	}
+	if !strings.Contains(got.Summary, "1 excluded") {
+		t.Fatalf("summary hides excluded cases: %q", got.Summary)
 	}
 }
 
@@ -153,7 +263,123 @@ func TestSemanticAssertionResult(t *testing.T) {
 	}
 }
 
-func TestReportV3ShowsRawAndEffectiveDifference(t *testing.T) {
+func TestNodeIdentitySemanticAssertionWarnsOnlyForOwnedDifferences(t *testing.T) {
+	makeBody := func(seed byte, port int, extraProtocol bool) ([]byte, string) {
+		keyBytes := make([]byte, 32)
+		for i := range keyBytes {
+			keyBytes[i] = seed
+		}
+		key, err := crypto.ToECDSA(keyBytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ip := net.ParseIP("127.0.0.1")
+		node := enode.NewV4(&key.PublicKey, ip, port, port)
+		var record enr.Record
+		record.Set(enr.IP(ip))
+		record.Set(enr.TCP(port))
+		record.Set(enr.UDP(port))
+		if err := enode.SignV4(&record, key); err != nil {
+			t.Fatal(err)
+		}
+		enrNode, err := enode.New(enode.ValidSchemes, &record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		protocols := map[string]any{"eth": map[string]any{"network": 5003}}
+		if extraProtocol {
+			protocols["snap"] = map[string]any{}
+		}
+		data, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{
+			"id": node.ID().String(), "enode": node.URLv4(), "enr": enrNode.String(),
+			"name": "mantle-reth/version", "listenAddr": fmt.Sprintf("127.0.0.1:%d", port),
+			"ports": map[string]any{"listener": port, "discovery": port}, "protocols": protocols,
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data, node.ID().String()
+	}
+	baseline, baselineID := makeBody(1, 30303, false)
+	tc := TestCase{Name: "admin_nodeInfo_structdiff", Method: "admin_nodeInfo", Params: []any{}, CorpusID: "embedded"}
+	for _, variant := range []struct {
+		name, mode string
+		extra      bool
+		corpus     string
+		want       TestStatus
+		overlap    bool
+	}{
+		{"reviewed identity", "accepted", false, "embedded", StatusWarning, false},
+		{"strict identity", "strict", false, "embedded", StatusFail, false},
+		{"additional protocol field", "accepted", true, "embedded", StatusFail, false},
+		{"external same-name case", "accepted", false, "external", StatusFail, false},
+		{"overlapping exact rule", "accepted", false, "embedded", StatusFail, true},
+	} {
+		t.Run(variant.name, func(t *testing.T) {
+			target, targetID := makeBody(2, 30304, variant.extra)
+			compared, err := diff.Compare(baseline, target, diff.DefaultOptions())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var baselineRPC, targetRPC rpc.Response
+			if err := json.Unmarshal(baseline, &baselineRPC); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(target, &targetRPC); err != nil {
+				t.Fatal(err)
+			}
+			pair := &rpc.CompareResult{
+				BaselineResponse: &rpc.ResponseWithMeta{RawBody: baseline, Response: &baselineRPC},
+				TargetResponse:   &rpc.ResponseWithMeta{RawBody: target, Response: &targetRPC},
+			}
+			baselineMeta := EndpointMetadata{ClientVersion: "Geth/v1.17.3-stable-d0169f78/linux-amd64/go1.24", BuildID: "git:d0169f78",
+				ChainID: "0x539", GenesisHash: "0xgenesis"}
+			targetMeta := EndpointMetadata{ClientVersion: "mantle-reth/dev-f4963d3/aarch64-macos", BuildID: "git:f4963d3",
+				ChainID: "0x539", GenesisHash: "0xgenesis"}
+			r := NewReporter(baselineMeta, targetMeta, false)
+			registry := &policy.Registry{SchemaVersion: 2, RegistryID: "empty"}
+			if variant.overlap {
+				baselineValue, _ := json.Marshal(baselineID)
+				targetValue, _ := json.Marshal(targetID)
+				registry.ClientSets = []policy.ClientSet{
+					{ID: "geth", Builds: []policy.ClientBuild{{ID: baselineMeta.BuildID, ClientVersion: baselineMeta.ClientVersion}}},
+					{ID: "reth", Builds: []policy.ClientBuild{{ID: targetMeta.BuildID, ClientVersion: targetMeta.ClientVersion}}},
+				}
+				registry.Rules = []policy.Rule{{ID: "overlap",
+					Scope: policy.RuleScope{Kind: "behavior_invariant",
+						Baseline: policy.ScopeSelector{Kind: "family", Family: "Geth"},
+						Target:   policy.ScopeSelector{Kind: "family", Family: "mantle-reth"}},
+					Pairs: []policy.ReviewedPair{{BaselineBuild: baselineMeta.BuildID, TargetBuild: targetMeta.BuildID,
+						EvidenceURL: "https://example.test/strict"}},
+					ChainID: "0x539", GenesisHash: "0xgenesis", CorpusID: "embedded",
+					CaseID: tc.Name, Method: tc.Method, RequestSHA256: policy.RequestDigest(tc.Method, tc.Params),
+					Pointer: "/result/id", DiffType: diff.DiffTypeValue,
+					Baseline: policy.ValueSpec{Present: true, Type: "string", Value: baselineValue},
+					Target:   policy.ValueSpec{Present: true, Type: "string", Value: targetValue},
+					Action:   "warning", Reason: "duplicate owner", EvidenceURL: "https://example.test/review"}}
+			}
+			if err := r.ConfigurePolicy(registry, variant.mode); err != nil {
+				t.Fatal(err)
+			}
+			selected := tc
+			selected.CorpusID = variant.corpus
+			r.AddResult(selected, pair, compared, nil)
+			result := r.Generate().Results[0]
+			if result.Status != variant.want || result.ObservedStatus != StatusFail ||
+				(result.Status == StatusFail) != r.HasFailures() {
+				t.Fatalf("semantic policy result = %+v", result)
+			}
+			if variant.corpus == "embedded" && result.SemanticAssertionID != "node-local-identity" {
+				t.Fatalf("missing semantic assertion ID: %+v", result)
+			}
+			if variant.overlap && result.SemanticError == "" {
+				t.Fatalf("overlap was not rejected: %+v", result)
+			}
+		})
+	}
+}
+
+func TestReportV4ShowsRawAndEffectiveDifference(t *testing.T) {
 	r := NewReporter(EndpointMetadata{}, EndpointMetadata{}, false)
 	if err := r.ConfigurePolicy(&policy.Registry{SchemaVersion: 1, RegistryID: "empty"}, "accepted"); err != nil {
 		t.Fatal(err)
@@ -253,7 +479,7 @@ func TestReportUsesClientIndependentSchema(t *testing.T) {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded["schema_version"] != float64(3) {
+	if decoded["schema_version"] != float64(4) {
 		t.Fatalf("schema_version = %v", decoded["schema_version"])
 	}
 	for key, want := range map[string]string{"baseline": "old-reth", "target": "new-reth"} {

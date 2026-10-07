@@ -248,7 +248,7 @@ func TestRunTestsPrintsLogicalEndpointNames(t *testing.T) {
 	if err := json.Unmarshal(data, &saved); err != nil {
 		t.Fatal(err)
 	}
-	if saved.SchemaVersion != 3 || saved.Baseline.Name != "old-reth" || saved.Baseline.ClientVersion != "old-reth/v1" ||
+	if saved.SchemaVersion != 4 || saved.Baseline.Name != "old-reth" || saved.Baseline.ClientVersion != "old-reth/v1" ||
 		saved.Target.Name != "new-reth" || saved.Target.ClientVersion != "new-reth/v2" {
 		t.Fatalf("saved endpoint metadata = %+v", saved)
 	}

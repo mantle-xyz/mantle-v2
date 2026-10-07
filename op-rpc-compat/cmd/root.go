@@ -14,6 +14,7 @@ type clientConfig struct {
 	BaselineURL string
 	TargetURL   string
 	DiffPolicy  string
+	Suite       string
 }
 
 var (
@@ -22,6 +23,7 @@ var (
 	baselineName = "baseline"
 	targetName   = "target"
 	diffPolicy   = "accepted"
+	suiteMode    = "core"
 	timeout      time.Duration
 	verbose      bool
 	outputFile   string
@@ -49,6 +51,7 @@ Both endpoints must serve the same chain.`,
 		}
 		baselineURL, targetURL = config.BaselineURL, config.TargetURL
 		diffPolicy = config.DiffPolicy
+		suiteMode = config.Suite
 		return runTests()
 	},
 }
@@ -67,6 +70,12 @@ func resolveClientConfig(cmd *cobra.Command) (clientConfig, error) {
 	}
 	if config.DiffPolicy != "accepted" && config.DiffPolicy != "strict" {
 		return config, fmt.Errorf("unknown diff policy %q", config.DiffPolicy)
+	}
+	if config.Suite, err = cmd.Flags().GetString("suite"); err != nil {
+		return config, err
+	}
+	if config.Suite != "core" && config.Suite != "diagnostic" && config.Suite != "all" {
+		return config, fmt.Errorf("unknown suite %q", config.Suite)
 	}
 	if config.BaselineURL == "" {
 		return config, fmt.Errorf("baseline URL is required (--baseline-url or BASELINE_RPC_URL)")
@@ -105,6 +114,7 @@ func init() {
 	rootCmd.Flags().StringVar(&baselineURL, "baseline-url", "", "Baseline RPC endpoint URL")
 	rootCmd.Flags().StringVar(&targetURL, "target-url", "", "Target RPC endpoint URL")
 	rootCmd.Flags().StringVar(&diffPolicy, "diff-policy", "accepted", "Difference policy: accepted or strict")
+	rootCmd.Flags().StringVar(&suiteMode, "suite", "core", "Case suite: core, diagnostic, or all")
 	rootCmd.Flags().DurationVar(&timeout, "timeout", 30*time.Second, "Timeout for each RPC request")
 	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed output")
 	rootCmd.Flags().StringVarP(&outputFile, "output", "o", "report.json", "JSON report output path")

@@ -67,10 +67,14 @@ report writing.
 The default corpus covers standard `eth_*` queries, Mantle RPC extensions,
 error cases, txpool, and debug methods. It does not submit chain transactions,
 although methods such as `eth_newFilter` create temporary node-local state. A
-live chain can change between the two requests. For `latest`, `safe`, and
-`finalized`, the tool checks both endpoints' block hashes before and after the
-case. It reports an unestablished snapshot as `INCONCLUSIVE`. `pending` has no
-shared canonical block and is currently `INCONCLUSIVE`. Filter creation cases
+live chain can change between the two requests. The default `--suite core` runs
+cases with deterministic comparison prerequisites. `--suite diagnostic` runs
+`pending`, `safe`, and `finalized` cases separately; `--suite all` runs both.
+The report lists excluded cases rather than counting them as passes. A selected
+case without a comparable snapshot is still `INCONCLUSIVE` and fails that run.
+For `latest`, `safe`, and `finalized`, the tool checks both endpoints' block
+hashes before and after the case. `pending` has no shared canonical block.
+Filter creation cases
 create, query, and uninstall each endpoint's own filter; generated IDs are not
 compared. `web3_clientVersion` is collected during preflight, not compared as a
 testcase value.
@@ -80,20 +84,25 @@ Results have these statuses:
 | Status | Meaning | Fails the run |
 |---|---|---|
 | `PASS` | Responses match | No |
-| `WARNING` | Every difference was matched by an exact reviewed rule in accepted mode | No |
+| `WARNING` | Every raw difference was covered by a reviewed rule or a passing reviewed semantic assertion in accepted mode | No |
 | `FAIL` | Responses differ or a request failed | Yes |
 | `INCONCLUSIVE` | A comparable snapshot could not be established | Yes |
 | `NOT_APPLICABLE` | The case is handled as preflight metadata | Does not count as a passing case |
 | `COMPATIBLE` | Reserved for explicitly asserted transaction scenarios | No |
 
 The default `--diff-policy accepted` applies only reviewed, directional,
-per-difference rules from the embedded registry. That registry is initially
-empty. `--diff-policy strict` shows the same raw differences without downgrading
-them. Unknown build identity never matches a build-specific rule. The current
+per-difference rules and narrow semantic assertions. The embedded registry is
+initially empty; it does not import historical known differences.
+`--diff-policy strict` shows the same raw differences without downgrading them.
+Registry schema v2 supports `behavior_invariant` rules that match reviewed
+behavior across new branches, and `exact_build` rules bound to specific builds.
+Unreviewed extra differences still fail. Unknown build identity never matches
+an exact-build rule. The current
 `mantle-v1.6.1` and development reth binaries report the same RPC version when
 `--identity` is omitted, so neither is identified by that string alone.
+See [POLICY.md](POLICY.md) before reviewing or adding any accepted difference.
 
-Reports use schema version 3 and record raw and effective outcomes, the
+Reports use schema version 4 and record raw and effective outcomes, the
 registry ID and digest, endpoint versions and identity sources, and actual
 responses. Invalid response bodies are retained losslessly in
 `baseline_raw_body_base64` or `target_raw_body_base64` so a malformed RPC reply
@@ -101,7 +110,7 @@ cannot prevent the report from being saved:
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "policy_mode": "accepted",
   "registry_id": "accepted-rpc-differences",
   "baseline": {"name": "baseline", "url": "http://127.0.0.1:19545", "client_version": "Geth/..."},
@@ -112,10 +121,28 @@ cannot prevent the report from being saved:
 }
 ```
 
-Rules bind the comparison direction, reviewed build pair, chain, corpus,
-method, request digest, JSON Pointer, difference type, presence, and exact
-values. External corpora cannot claim the embedded corpus identity. A rule
-whose expected difference disappears is listed as stale in the report.
+Rules bind the comparison direction, chain, corpus, method, request digest,
+JSON Pointer, difference type, presence, and exact values. Behavior-invariant
+rules can use client families; same-family comparisons also require an exact
+build anchor. External corpora cannot claim the embedded corpus identity.
+A rule whose expected difference disappears from an executed case is listed
+as stale. The reviewed `admin_nodeInfo` assertion only covers valid node-local
+identity values; protocol configuration differences still fail.
+
+For an AI or human review of changes between two comparable reports, run the
+read-only triage command. It preserves large JSON numbers and does not change
+test verdicts or the accepted registry:
+
+```bash
+go run ./op-rpc-compat triage \
+  --previous previous-report.json \
+  --current current-report.json \
+  --output triage.json
+```
+
+The triage output separates new, changed, resolved, unchanged, and not-run raw
+differences. Review those findings and any AI-generated suggestions against
+the original reports; never turn an AI explanation directly into a waiver.
 
 ## Stateful Modes
 

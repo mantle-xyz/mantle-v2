@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/diff"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/policy"
 	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/rpc"
+	"github.com/ethereum-optimism/optimism/op-rpc-compat/pkg/semantic"
 
 	"github.com/fatih/color"
 )
@@ -60,6 +61,8 @@ type TestResult struct {
 	TargetDuration        time.Duration     `json:"target_duration"`
 	Differences           []diff.Difference `json:"differences,omitempty"`
 	CompareError          string            `json:"compare_error,omitempty"`
+	SemanticAssertionID   string            `json:"semantic_assertion_id,omitempty"`
+	SemanticError         string            `json:"semantic_error,omitempty"`
 	SkipReason            string            `json:"skip_reason,omitempty"` // reason for a skipped or compatible result
 }
 
@@ -68,13 +71,22 @@ type EndpointMetadata struct {
 	Name           string `json:"name"`
 	URL            string `json:"url"`
 	ClientVersion  string `json:"client_version"`
+	ClientFamily   string `json:"client_family,omitempty"`
+	FamilySource   string `json:"family_source,omitempty"`
 	BuildID        string `json:"build_id,omitempty"`
 	IdentitySource string `json:"identity_source,omitempty"`
 	ChainID        string `json:"chain_id,omitempty"`
 	GenesisHash    string `json:"genesis_hash,omitempty"`
 }
 
-const reportSchemaVersion = 3
+type ExcludedCase struct {
+	Name     string `json:"name"`
+	Method   string `json:"method"`
+	CorpusID string `json:"corpus_id,omitempty"`
+	Reason   string `json:"reason"`
+}
+
+const reportSchemaVersion = 4
 
 // Report contains the complete comparison run.
 type Report struct {
@@ -83,6 +95,9 @@ type Report struct {
 	RegistryID         string           `json:"registry_id,omitempty"`
 	RegistryDigest     string           `json:"registry_digest,omitempty"`
 	StaleRuleIDs       []string         `json:"stale_rule_ids,omitempty"`
+	SelectedSuite      string           `json:"selected_suite,omitempty"`
+	ExcludedTests      int              `json:"excluded_tests,omitempty"`
+	ExcludedCases      []ExcludedCase   `json:"excluded_cases,omitempty"`
 	Timestamp          time.Time        `json:"timestamp"`
 	Baseline           EndpointMetadata `json:"baseline"`
 	Target             EndpointMetadata `json:"target"`
@@ -108,10 +123,34 @@ type Reporter struct {
 	policyMode       string
 	matchedRuleIDs   map[string]bool
 	executedContexts []policy.MatchContext
+	selectedSuite    string
+	excludedCases    []ExcludedCase
+}
+
+func (r *Reporter) SetSuite(suite string) {
+	r.selectedSuite = suite
+}
+
+func (r *Reporter) AddExcludedCase(tc TestCase, reason string) {
+	r.excludedCases = append(r.excludedCases, ExcludedCase{
+		Name: tc.Name, Method: tc.Method, CorpusID: tc.CorpusID, Reason: reason,
+	})
 }
 
 // NewReporter creates a result collector.
 func NewReporter(baseline, target EndpointMetadata, verbose bool) *Reporter {
+	if baseline.ClientFamily == "" {
+		baseline.ClientFamily = policy.ClientFamilyFromClientVersion(baseline.ClientVersion)
+		if baseline.ClientFamily != "" {
+			baseline.FamilySource = "rpc_version"
+		}
+	}
+	if target.ClientFamily == "" {
+		target.ClientFamily = policy.ClientFamilyFromClientVersion(target.ClientVersion)
+		if target.ClientFamily != "" {
+			target.FamilySource = "rpc_version"
+		}
+	}
 	return &Reporter{
 		results:        []TestResult{},
 		baseline:       baseline,
@@ -272,8 +311,26 @@ func (r *Reporter) applyPolicy(tc TestCase, result *TestResult) {
 		return
 	}
 	context := r.matchContext(tc)
+	assertion := semantic.Evaluate(semantic.Case{
+		CorpusID: context.CorpusID, CaseID: context.CaseID,
+		Method: context.Method, RequestSHA256: context.RequestSHA256,
+	}, result.BaselineResponse, result.TargetResponse)
+	if assertion != nil {
+		result.SemanticAssertionID = assertion.ID
+		if assertion.Err != nil {
+			result.SemanticError = assertion.Err.Error()
+			return
+		}
+		for _, difference := range result.Differences {
+			if assertion.Covers(difference) && r.policyRegistry.Match(context, difference) != nil {
+				result.SemanticError = "semantic assertion overlaps a reviewed difference rule"
+				return
+			}
+		}
+	}
 	allAccepted := true
 	var matchedIDs []string
+	matchedNames := make(map[string]bool)
 	for i := range result.Differences {
 		difference := &result.Differences[i]
 		difference.EffectiveSeverity = difference.Severity
@@ -281,12 +338,32 @@ func (r *Reporter) applyPolicy(tc TestCase, result *TestResult) {
 			allAccepted = false
 			continue
 		}
+		if assertion != nil && assertion.Covers(*difference) {
+			difference.SemanticAssertionID = assertion.ID
+			if r.policyMode == "accepted" {
+				name := "assertion:" + assertion.ID
+				if !matchedNames[name] {
+					matchedIDs = append(matchedIDs, name)
+					matchedNames[name] = true
+				}
+				difference.EffectiveSeverity = diff.SeverityWarning
+				continue
+			}
+			allAccepted = false
+			continue
+		}
 		if rule := r.policyRegistry.Match(context, *difference); rule != nil {
 			difference.RuleID = rule.ID
 			difference.RuleReason = rule.Reason
+			difference.ScopeKind = rule.Scope.Kind
+			difference.ScopeBaseline = rule.Scope.Baseline.Descriptor()
+			difference.ScopeTarget = rule.Scope.Target.Descriptor()
 			r.matchedRuleIDs[rule.ID] = true
 			if r.policyMode == "accepted" {
-				matchedIDs = append(matchedIDs, rule.ID)
+				if !matchedNames[rule.ID] {
+					matchedIDs = append(matchedIDs, rule.ID)
+					matchedNames[rule.ID] = true
+				}
 				difference.EffectiveSeverity = diff.SeverityWarning
 				continue
 			}
@@ -580,6 +657,9 @@ func (r *Reporter) Generate() *Report {
 	report := &Report{
 		SchemaVersion: reportSchemaVersion,
 		PolicyMode:    r.policyMode,
+		SelectedSuite: r.selectedSuite,
+		ExcludedTests: len(r.excludedCases),
+		ExcludedCases: append([]ExcludedCase(nil), r.excludedCases...),
 		Timestamp:     time.Now(),
 		Baseline:      r.baseline,
 		Target:        r.target,
@@ -625,9 +705,9 @@ func (r *Reporter) Generate() *Report {
 		}
 	}
 
-	report.Summary = fmt.Sprintf("Total %d: %d passed, %d compatible, %d warnings, %d failed, %d inconclusive, %d not applicable",
+	report.Summary = fmt.Sprintf("Total %d: %d passed, %d compatible, %d warnings, %d failed, %d inconclusive, %d not applicable, %d excluded",
 		report.TotalTests, report.PassedTests, report.CompatibleTests,
-		report.WarningTests, report.FailedTests, report.InconclusiveTests, report.NotApplicableTests)
+		report.WarningTests, report.FailedTests, report.InconclusiveTests, report.NotApplicableTests, report.ExcludedTests)
 
 	return report
 }
@@ -650,6 +730,9 @@ func (r *Reporter) PrintSummary() {
 	fmt.Printf("%s: %s\n", report.Baseline.Name, cyan(report.Baseline.URL))
 	fmt.Printf("%s: %s\n", report.Target.Name, cyan(report.Target.URL))
 	fmt.Printf("Duration: %v\n", time.Since(r.startTime))
+	if report.SelectedSuite != "" {
+		fmt.Printf("Selected suite: %s | Excluded cases: %d\n", report.SelectedSuite, report.ExcludedTests)
+	}
 	fmt.Println()
 
 	methodCounts := make(map[string]int)

@@ -84,6 +84,10 @@ func inspectEndpoint(ctx context.Context, client *rpc.Client) (endpointIdentity,
 		return identity, fmt.Errorf("web3_clientVersion returned empty client version")
 	}
 	identity.metadata.BuildID = policy.BuildIDFromClientVersion(identity.metadata.ClientVersion)
+	identity.metadata.ClientFamily = policy.ClientFamilyFromClientVersion(identity.metadata.ClientVersion)
+	if identity.metadata.ClientFamily != "" {
+		identity.metadata.FamilySource = "rpc_version"
+	}
 	identity.metadata.IdentitySource = "unknown"
 	if identity.metadata.BuildID != "" {
 		identity.metadata.IdentitySource = "rpc_version"
