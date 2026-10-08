@@ -35,8 +35,9 @@ import { L1MantleToken } from "./mocks/TestMantleToken.sol";
 import { BVM_ETH } from "src/L2/BVM_ETH.sol";
 
 contract CommonTest is Test {
-    address alice = address(128);
-    address bob = address(256);
+    address alice = makeAddr("alice");
+    // Keep bob an ordinary account: address(256) is a precompile on Osaka and later forks.
+    address bob = makeAddr("bob");
     address multisig = address(512);
 
     address immutable ZERO_ADDRESS = address(0);
@@ -216,11 +217,7 @@ contract Portal_Initializer is BVMETH_Initializer {
         });
 
         opImpl = new OptimismPortal({
-            _l2Oracle: oracle,
-            _guardian: guardian,
-            _paused: true,
-            _config: systemConfig,
-            _l1MNT: address(l1MNT)
+            _l2Oracle: oracle, _guardian: guardian, _paused: true, _config: systemConfig, _l1MNT: address(l1MNT)
         });
 
         Proxy proxy = new Proxy(multisig);

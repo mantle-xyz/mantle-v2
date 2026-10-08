@@ -75,6 +75,16 @@ func (n *L1CLNode) hydrate(system stack.ExtensibleSystem) {
 
 const DevstackL1ELKindEnvVar = "DEVSTACK_L1EL_KIND"
 
+// WithManualL1Mining leaves the subprocess L1 at genesis until the test sequencer
+// builds a block. Configure it before deployment to avoid racing FakePoS startup.
+func WithManualL1Mining() stack.Option[*Orchestrator] {
+	return stack.BeforeDeploy(func(orch *Orchestrator) {
+		orch.P().Require().Equal("geth", os.Getenv(DevstackL1ELKindEnvVar),
+			"manual L1 mining requires the subprocess geth backend")
+		orch.manualL1Mining = true
+	})
+}
+
 func WithL1Nodes(l1ELID stack.L1ELNodeID, l1CLID stack.L1CLNodeID) stack.Option[*Orchestrator] {
 	switch os.Getenv(DevstackL1ELKindEnvVar) {
 	case "geth":
@@ -143,7 +153,7 @@ func WithL1NodesInProcess(l1ELID stack.L1ELNodeID, l1CLID stack.L1CLNodeID) stac
 			id:             l1CLID,
 			beaconHTTPAddr: beaconApiAddr,
 			beacon:         bcn,
-			fakepos:        &FakePoS{fakepos: fp, p: clP},
+			fakepos:        &FakePoS{fakepos: fp, p: clP, started: true},
 		}
 		require.True(orch.l1CLs.SetIfMissing(l1CLID, l1CLNode), "must not already exist")
 	})
