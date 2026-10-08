@@ -1,0 +1,56 @@
+[
+  {
+    "name": "eth_getHeaderByHash_not_found",
+    "method": "eth_getHeaderByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "Nonexistent block hash"
+  },
+  {
+    "name": "eth_getHeaderByHash_latest_template",
+    "method": "eth_getHeaderByHash",
+    "params": ["{{latest_block_hash}}"],
+    "description": "Get the latest block header using the latest_block_hash template variable"
+  },
+  {
+    "name": "eth_getHeaderByNumber_earliest",
+    "method": "eth_getHeaderByNumber",
+    "params": ["earliest"],
+    "description": "Get the earliest block header"
+  },
+  {
+    "name": "eth_getHeaderByNumber_latest",
+    "method": "eth_getHeaderByNumber",
+    "params": ["latest"],
+    "description": "Get the latest block header"
+  },
+  {
+    "name": "eth_getHeaderByNumber_latest_template",
+    "method": "eth_getHeaderByNumber",
+    "params": ["{{latest_block_number}}"],
+    "description": "Get the latest block header using the latest_block_number template variable"
+  },
+  {
+    "name": "eth_getHeaderByNumber_pending",
+    "method": "eth_getHeaderByNumber",
+    "params": ["pending"],
+    "description": "Get the pending block header"
+  },
+  {
+    "name": "eth_getHeaderByNumber_safe",
+    "method": "eth_getHeaderByNumber",
+    "params": ["safe"],
+    "description": "Get the safe block header"
+  },
+  {
+    "name": "eth_getHeaderByNumber_finalized",
+    "method": "eth_getHeaderByNumber",
+    "params": ["finalized"],
+    "description": "Get the finalized block header"
+  },
+  {
+    "name": "eth_getHeaderByNumber_0x1",
+    "method": "eth_getHeaderByNumber",
+    "params": ["0x1"],
+    "description": "Get the header of block 1"
+  }
+]

@@ -1,0 +1,2590 @@
+{
+  "description": "Known differences: these testcase divergences are expected and will not be fixed. Each entry includes example geth and reth responses for review.",
+  "known_diffs": [
+    {
+      "test_name": "eth_hashrate",
+      "reason": "eth_hashrate is deprecated on PoS chains. Geth returns a method-not-found error; reth returns 0x0 as its default.",
+      "baseline_example": {
+        "error": {
+          "code": -32601,
+          "message": "the method eth_hashrate does not exist/is not available"
+        }
+      },
+      "target_example": {
+        "result": "0x0"
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "eth_mining",
+      "reason": "eth_mining is deprecated on PoS chains. Both clients return errors, but geth uses -32601 (method not found) and reth uses -32603 (unimplemented).",
+      "baseline_example": {
+        "error": {
+          "code": -32601,
+          "message": "the method eth_mining does not exist/is not available"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32603,
+          "message": "unimplemented"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "eth_coinbase",
+      "reason": "eth_coinbase is deprecated on PoS chains. Both clients return errors, but geth uses -32601 (method not found) and reth uses -32603 (unimplemented).",
+      "baseline_example": {
+        "error": {
+          "code": -32601,
+          "message": "the method eth_coinbase does not exist/is not available"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32603,
+          "message": "unimplemented"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "eth_protocolVersion",
+      "reason": "Geth does not support this method and returns an error; reth returns the protocol version. This implementation difference does not affect normal operation.",
+      "baseline_example": {
+        "error": {
+          "code": -32601,
+          "message": "the method eth_protocolVersion does not exist/is not available"
+        }
+      },
+      "target_example": {
+        "result": "0x5"
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "rollup_getInfo",
+      "reason": "Neither client implements rollup_getInfo. Geth returns a detailed error message; reth returns the shorter 'Method not found'.",
+      "baseline_example": {
+        "error": {
+          "code": -32601,
+          "message": "the method rollup_getInfo does not exist/is not available"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32601,
+          "message": "Method not found"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "rollup_gasPrices",
+      "reason": "Neither client implements rollup_gasPrices. Geth returns a detailed error message; reth returns the shorter 'Method not found'.",
+      "baseline_example": {
+        "error": {
+          "code": -32601,
+          "message": "the method rollup_gasPrices does not exist/is not available"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32601,
+          "message": "Method not found"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "rpc_modules",
+      "reason": "rpc_modules lists modules supported by each client, so the responses are expected to differ. Geth returns its modules; reth does not implement the method.",
+      "baseline_example": {
+        "result": {
+          "admin": "1.0",
+          "debug": "1.0",
+          "eth": "1.0",
+          "net": "1.0",
+          "rpc": "1.0",
+          "txpool": "1.0",
+          "web3": "1.0"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32601,
+          "message": "Method not found"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "web3_clientVersion",
+      "reason": "web3_clientVersion reports each client's version, so the values are expected to differ.",
+      "baseline_example": {
+        "result": "Geth/v1.16.5-stable-6fd041a8/darwin-arm64/go1.24.9"
+      },
+      "target_example": {
+        "result": "\"op-reth-rpc2\""
+      }
+    },
+    {
+      "test_name": "error_empty_method",
+      "reason": "The clients handle an empty method name differently: geth returns -32600 (invalid request); reth returns -32601 (Method not found).",
+      "baseline_example": {
+        "error": {
+          "code": -32600,
+          "message": "invalid request"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32601,
+          "message": "Method not found"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_missing_required_param",
+      "reason": "Error formats differ for a missing required parameter: geth reports 'missing value for required argument'; reth returns 'Invalid params' with a data field.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "missing value for required argument 0"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params",
+          "data": "No more params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_insufficient_params",
+      "reason": "Error formats differ for too few parameters: geth reports 'missing value for required argument'; reth returns 'Invalid params' with a data field.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "missing value for required argument 1"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params",
+          "data": "No more params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_too_many_params",
+      "reason": "The clients handle extra parameters differently: geth returns an error; reth ignores them and returns a result.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "too many arguments, want at most 0"
+        }
+      },
+      "target_example": {
+        "result": "0x..."
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_invalid_block_tag",
+      "reason": "Error message formats differ for an invalid block tag.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 1: unknown block number tag"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_invalid_hex_number",
+      "reason": "Error message formats differ for an invalid hexadecimal number.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_negative_block_number",
+      "reason": "Error message formats differ for a negative block number.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: block number must be positive"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_very_large_block",
+      "reason": "The clients handle an excessively large block number differently: geth returns a parameter error; reth accepts it and returns null because the block does not exist.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: block number larger than int64"
+        }
+      },
+      "target_example": {
+        "result": null
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_invalid_address_format",
+      "reason": "Error formats differ for an invalid address: geth returns a specific Go type conversion error; reth returns a generic 'Invalid params' error.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal hex string without 0x prefix into Go value of type common.Address"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params",
+          "data": "invalid string length at line 1 column 16"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_invalid_address_length_short",
+      "reason": "Error message formats differ for an address that is too short.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal hex string of odd length"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_invalid_address_length_long",
+      "reason": "Error message formats differ for an address that is too long.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: hex string has length"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_address_without_0x",
+      "reason": "The clients handle an address without the 0x prefix differently: geth returns an error; reth adds the prefix and returns a result.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal hex string without 0x prefix"
+        }
+      },
+      "target_example": {
+        "result": "0x..."
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_invalid_hash_format",
+      "reason": "Error message formats differ for an invalid hash.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_invalid_hash_length",
+      "reason": "Error message formats differ for a hash of incorrect length.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: hex string has length"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_call_invalid_to",
+      "reason": "Error message formats differ for eth_call with an invalid to address.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_call_invalid_data",
+      "reason": "Error message formats differ for eth_call with invalid data.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_call_invalid_value",
+      "reason": "Error message formats differ for eth_call with an invalid value.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_call_invalid_gas",
+      "reason": "Error message formats differ for eth_call with an invalid gas value.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_call_negative_gas",
+      "reason": "Error message formats differ for eth_call with a negative gas value.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_call_oog",
+      "reason": "For eth_call with intrinsic gas too low, both clients now return -32000; only geth includes have/want details.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "err: intrinsic gas too low: have 1, want 21064 (supplied gas 1)"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32000,
+          "message": "intrinsic gas too low"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_estimateGas_invalid_to",
+      "reason": "Error message formats differ for eth_estimateGas with an invalid to address.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_estimateGas_invalid_data",
+      "reason": "Error message formats differ for eth_estimateGas with invalid data.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_estimateGas_invalid_value",
+      "reason": "Error message formats differ for eth_estimateGas with an invalid value.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_estimateGas_insufficient_funds",
+      "reason": "Upstream reth v2.2.x changed insufficient-funds errors to -32003 \"EVM error: OutOfFunds\"; geth still returns -32000 \"insufficient funds for transfer\". This is a cosmetic, non-consensus difference.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "insufficient funds for transfer"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32003,
+          "message": "EVM error: OutOfFunds"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "eth_getLogs_pending",
+      "reason": "For pending logs, geth returns -32602 (unsupported), while reth returns an empty array.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "pending logs are not supported"
+        }
+      },
+      "target_example": {
+        "result": []
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getLogs_invalid_fromBlock",
+      "reason": "Error message formats differ for eth_getLogs with an invalid fromBlock.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getLogs_invalid_toBlock",
+      "reason": "Error message formats differ for eth_getLogs with an invalid toBlock.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getLogs_invalid_address",
+      "reason": "Error message formats differ for eth_getLogs with an invalid address.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getLogs_invalid_topic",
+      "reason": "Error message formats differ for eth_getLogs with an invalid topic.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getLogs_invalid_blockhash",
+      "reason": "Error message formats differ for eth_getLogs with an invalid blockHash.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getLogs_blockhash_with_range",
+      "reason": "Error messages differ when eth_getLogs specifies both blockHash and a block range.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "blockHash is mutually exclusive with fromBlock/toBlock"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getLogs_range_too_large",
+      "reason": "For an eth_getLogs range beyond the chain head, both clients return -32602; only the error details differ.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "block range extends beyond current head block"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "block range extends beyond current head block"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getLogs_from_greater_than_head",
+      "reason": "When eth_getLogs fromBlock is beyond the chain head, geth returns -32602 and reth returns an empty array.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid block range params"
+        }
+      },
+      "target_example": {
+        "result": []
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getStorageAt_invalid_position",
+      "reason": "For an invalid storage key, both clients return -32602; only the error details differ.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid hex in storage key"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getStorageAt_invalid_address",
+      "reason": "Error message formats differ for eth_getStorageAt with an invalid address.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getCode_invalid_address",
+      "reason": "Error message formats differ for eth_getCode with an invalid address.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getCode_invalid_block",
+      "reason": "Error message formats differ for eth_getCode with an invalid block.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 1: unknown block number tag"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getTransactionCount_invalid_address",
+      "reason": "Error message formats differ for eth_getTransactionCount with an invalid address.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getTransactionCount_invalid_block",
+      "reason": "Error message formats differ for eth_getTransactionCount with an invalid block.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 1: unknown block number tag"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getBlockTransactionCountByNumber_invalid",
+      "reason": "Error message formats differ for eth_getBlockTransactionCountByNumber with an invalid parameter.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getBlockTransactionCountByHash_invalid",
+      "reason": "Error message formats differ for eth_getBlockTransactionCountByHash with an invalid parameter.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getTransactionByBlockNumberAndIndex_invalid_block",
+      "reason": "Error message formats differ for eth_getTransactionByBlockNumberAndIndex with an invalid block.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getTransactionByBlockNumberAndIndex_invalid_index",
+      "reason": "Error message formats differ for eth_getTransactionByBlockNumberAndIndex with an invalid index.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 1: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_feeHistory_invalid_block_count",
+      "reason": "Error message formats differ for eth_feeHistory with an invalid block count.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_feeHistory_invalid_percentiles",
+      "reason": "For an eth_feeHistory percentile above 100, geth returns -32000 and reth returns -32602.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "invalid reward percentile"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid reward percentiles"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_feeHistory_negative_percentiles",
+      "reason": "For a negative eth_feeHistory percentile, geth returns -32000 and reth returns -32602.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "invalid reward percentile"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid reward percentiles"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getProof_invalid_address",
+      "reason": "Error message formats differ for eth_getProof with an invalid address.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getProof_invalid_storage_key",
+      "reason": "For eth_getProof with an invalid storage key, both clients return -32602; only the error details differ.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid hex in storage key"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_getProof_invalid_block",
+      "reason": "Error message formats differ for eth_getProof with an invalid block.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 2: unknown block number tag"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "eth_getProof_pending",
+      "reason": "Reth has no pending block, so 'block not found' for pending is expected. Geth returns a Merkle proof when it has a pending block, or falls back to the latest block's proof otherwise. This depends on the implementation and environment.",
+      "baseline_example": {
+        "result": {
+          "address": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+          "accountProof": [
+            "0x..."
+          ],
+          "balance": "0x...",
+          "codeHash": "0x...",
+          "nonce": "0x0",
+          "storageHash": "0x...",
+          "storageProof": []
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32001,
+          "message": "block not found: pending"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_createAccessList_invalid_to",
+      "reason": "Error message formats differ for eth_createAccessList with an invalid to address.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_createAccessList_invalid_block",
+      "reason": "Error message formats differ for eth_createAccessList with an invalid block.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 1: unknown block number tag"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_web3_sha3_invalid_hex",
+      "reason": "Error message formats differ for web3_sha3 with invalid hexadecimal input.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_type_string_instead_of_number",
+      "reason": "Error message formats differ when a string is supplied instead of a number.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal string"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_type_number_instead_of_bool",
+      "reason": "Error message formats differ when a number is supplied instead of a boolean.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 1: cannot unmarshal number"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_type_array_instead_of_object",
+      "reason": "Error message formats differ when an array is supplied instead of an object.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal array"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_type_null_required_param",
+      "reason": "Error message formats differ when a required parameter is null.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: cannot unmarshal null"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "invalid_block_tag",
+      "reason": "Error message formats differ for an invalid block tag.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 1: unknown block number tag"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "invalid_hex_number",
+      "reason": "Error message formats differ for an invalid hexadecimal number.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "missing_required_param",
+      "reason": "Error message formats differ for a missing required parameter.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "missing value for required argument 0"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params",
+          "data": "No more params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "wrong_param_count",
+      "reason": "Error message formats differ for an incorrect number of parameters.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "too many arguments"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "invalid_address_format",
+      "reason": "Error message formats differ for an invalid address.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal hex string without 0x prefix"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params",
+          "data": "invalid string length"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "invalid_address_length",
+      "reason": "Error message formats differ for an address of incorrect length.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal hex string of odd length"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_call_gas_zero",
+      "reason": "For eth_call with gas=0, both clients now return -32000; only geth includes have/want details.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "err: intrinsic gas too low: have 0, want 21000 (supplied gas 0)"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32000,
+          "message": "intrinsic gas too low"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_call_value_overflow",
+      "reason": "Upstream reth v2.2.x changed insufficient-funds errors to -32003 \"EVM error: OutOfFunds\"; geth still returns -32000 \"insufficient funds for transfer\". This is a cosmetic, non-consensus difference.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "err: insufficient funds for transfer: address 0x..."
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32003,
+          "message": "EVM error: OutOfFunds"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_estimateGas_insufficient_balance",
+      "reason": "Upstream reth v2.2.x changed insufficient-funds errors to -32003 \"EVM error: OutOfFunds\"; geth still returns -32000 \"insufficient funds for transfer\". This is a cosmetic, non-consensus difference.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "failed with 60000000 gas: insufficient funds for transfer: address 0x..."
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32003,
+          "message": "EVM error: OutOfFunds"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_estimateGas_value_overflow",
+      "reason": "Upstream reth v2.2.x changed insufficient-funds errors to -32003 \"EVM error: OutOfFunds\"; geth still returns -32000 \"insufficient funds for transfer\". This is a cosmetic, non-consensus difference.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "failed with 40000000 gas: insufficient funds for transfer: address 0x..."
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32003,
+          "message": "EVM error: OutOfFunds"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "eth_estimateTotalFee_with_block_pending",
+      "reason": "A non-sequencer reth node has no pending block, so 'Block not found' for pending is expected. Geth succeeds when it has a pending block. This difference depends on the implementation and environment.",
+      "baseline_example": {
+        "result": "0x1e96f107290"
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Block not found"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_estimateTotalFee_invalid_to",
+      "reason": "Error formats differ for eth_estimateTotalFee with an invalid to address: geth returns a detailed unmarshal error; reth returns 'Invalid params'.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal hex string without 0x prefix into Go struct field TransactionArgs.to of type common.Address"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_estimateTotalFee_invalid_data",
+      "reason": "Error message formats differ for eth_estimateTotalFee with invalid data.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal hex string without 0x prefix into Go struct field TransactionArgs.data of type hexutil.Bytes"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_estimateTotalFee_invalid_value",
+      "reason": "Error message formats differ for eth_estimateTotalFee with an invalid value.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal hex string without 0x prefix into Go struct field TransactionArgs.value of type *hexutil.Big"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_estimateTotalFee_invalid_block",
+      "reason": "Error message formats differ for eth_estimateTotalFee with an invalid block tag.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 1: hex string without 0x prefix"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "eth_getRawTransactionByHash_not_found",
+      "reason": "For a nonexistent transaction hash, geth returns 0x while reth returns null.",
+      "baseline_example": {
+        "result": "0x"
+      },
+      "target_example": {
+        "result": null
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "eth_simulateV1_simple",
+      "reason": "For eth_simulateV1 with empty calls, both clients return -32602; only the error wording differs.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "empty input"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "calls are empty."
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "eth_simulateV1_with_value",
+      "reason": "For eth_simulateV1 with empty calls, both clients return -32602; only the error wording differs.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "empty input"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "calls are empty."
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_dbAncient",
+      "reason": "Error formats differ when debug_dbAncient lacks a required parameter: geth reports 'missing value for required argument'; reth returns 'Invalid params'.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "missing value for required argument 0"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params",
+          "data": "No more params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_dbGet_valid",
+      "reason": "For a malformed underlying debug_dbGet key, geth returns -32000 and reth returns -32602.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "pebble: not found"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Key must be 33 bytes, got 32"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_dbGet_invalid",
+      "reason": "For a malformed underlying debug_dbGet key, geth returns -32000 and reth returns -32602.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "pebble: not found"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Key must be 33 bytes, got 32"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_executionWitness_latest",
+      "reason": "debug_executionWitness returns different witness contents because the clients use different Merkle tree paths and state representations. This is an expected implementation difference.",
+      "baseline_example": {
+        "result": {}
+      },
+      "target_example": {
+        "result": {}
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_executionWitness_0x1",
+      "reason": "debug_executionWitness returns different witness contents because the clients use different Merkle tree paths and state representations. This is an expected implementation difference.",
+      "baseline_example": {
+        "result": {}
+      },
+      "target_example": {
+        "result": {}
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_getModifiedAccountsByHash_latest",
+      "reason": "Error formats differ when debug_getModifiedAccountsByHash lacks a required parameter: geth reports 'missing value for required argument'; reth returns 'Invalid params'.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "missing value for required argument 1"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params",
+          "data": "No more params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_getModifiedAccountsByHash_invalid",
+      "reason": "debug_getModifiedAccountsByHash behaves differently: geth returns -32000 ('start block not found'); reth returns null.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "start block 0000000000000000000000000000000000000000000000000000000000000000 not found"
+        }
+      },
+      "target_example": {
+        "result": null
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_getModifiedAccountsByNumber_0x1",
+      "reason": "Error formats differ when debug_getModifiedAccountsByNumber lacks a required parameter: geth reports 'missing value for required argument'; reth returns 'Invalid params'.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "missing value for required argument 1"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params",
+          "data": "No more params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_getModifiedAccountsByNumber_latest",
+      "reason": "Error formats differ when debug_getModifiedAccountsByNumber lacks a required parameter: geth reports 'missing value for required argument'; reth returns 'Invalid params'.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "missing value for required argument 1"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params",
+          "data": "No more params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_preimage_valid",
+      "reason": "debug_preimage behaves differently: geth returns -32000 ('unknown preimage'); reth returns null to indicate it was not found.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "unknown preimage"
+        }
+      },
+      "target_example": {
+        "result": null
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_preimage_invalid",
+      "reason": "debug_preimage behaves differently: geth returns -32000 ('unknown preimage'); reth returns null to indicate it was not found.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "unknown preimage"
+        }
+      },
+      "target_example": {
+        "result": null
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "eth_newBlockFilter",
+      "reason": "eth_newBlockFilter returns different filter IDs, as expected: each call generates a new unique ID.",
+      "baseline_example": {
+        "result": "0x327f979f05b9777fd4acf263af4fc092"
+      },
+      "target_example": {
+        "result": "0x9a43c3b0b1db218e46f75aa0d834a2b8"
+      }
+    },
+    {
+      "test_name": "eth_newFilter",
+      "reason": "eth_newFilter returns different filter IDs, as expected: each call generates a new unique ID.",
+      "baseline_example": {
+        "result": "0x40558b0250bb39af56047e5d8089f5b3"
+      },
+      "target_example": {
+        "result": "0xcb018a92101b190e89315f1ea38da7fc"
+      }
+    },
+    {
+      "test_name": "eth_newFilter_with_address",
+      "reason": "eth_newFilter returns different filter IDs, as expected: each call generates a new unique ID.",
+      "baseline_example": {
+        "result": "0x..."
+      },
+      "target_example": {
+        "result": "0x..."
+      }
+    },
+    {
+      "test_name": "eth_newPendingTransactionFilter",
+      "reason": "eth_newPendingTransactionFilter returns different filter IDs, as expected: each call generates a new unique ID.",
+      "baseline_example": {
+        "result": "0x..."
+      },
+      "target_example": {
+        "result": "0x..."
+      }
+    },
+    {
+      "test_name": "eth_signTransaction_invalid",
+      "reason": "eth_signTransaction cannot sign: geth first reports missing gas (-32000); reth first reports an unknown account (-32602).",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "gas not specified"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "unknown account"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_getAccessibleState_latest",
+      "reason": "debug_getAccessibleState behaves differently: geth returns a block number, while reth returns null (either unimplemented or a different response format).",
+      "baseline_example": {
+        "result": 0
+      },
+      "target_example": {
+        "result": null
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_getAccessibleState_0x1",
+      "reason": "debug_getAccessibleState behaves differently: geth returns a block number, while reth returns null (either unimplemented or a different response format).",
+      "baseline_example": {
+        "result": 0
+      },
+      "target_example": {
+        "result": null
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "error_eth_estimateTotalFee_insufficient_balance",
+      "reason": "For insufficient funds, estimateTotalFee wraps the underlying eth_estimateGas error. Upstream reth v2.2.x changed it to \"EVM error: OutOfFunds\" (code -32000 because the estimateTotalFee wrapper normalizes it); geth returns \"insufficient funds for transfer\". This is a cosmetic, non-consensus difference. See docs/op-reth-rc5-backlog.md.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "failed to estimate gas: failed with 40000000 gas: insufficient funds for transfer: address 0x0000000000000000000000000000000000000001"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32000,
+          "message": "failed to estimate gas: EVM error: OutOfFunds"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_verbosity_wrong_type",
+      "reason": "debug_verbosity receives a string instead of the expected type. Both clients reject it with -32602 (Invalid params); only the wording differs (geth: Go unmarshal error; reth: serde error). The behavior is equivalent.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal string into Go value of type int"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_verbosity_missing_param",
+      "reason": "debug_verbosity lacks a required parameter. Both clients return -32602; only the wording differs (geth: missing value; reth: No more params). The behavior is equivalent.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "missing value for required argument 0"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_verbosity_negative",
+      "reason": "For a negative debug_verbosity level, geth accepts the int and returns null; reth expects a usize and rejects the negative value with -32602. This is a semantic difference that does not affect normal use.",
+      "baseline_example": {
+        "result": null
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_verbosity_extra_params",
+      "reason": "With extra debug_verbosity parameters, geth strictly checks the count and returns -32602 ('too many arguments'); reth ignores the extra parameters and returns null using the first one. This is a semantic difference.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "too many arguments, want at most 1"
+        }
+      },
+      "target_example": {
+        "result": null
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_vmodule_wrong_type",
+      "reason": "debug_vmodule receives an integer instead of the expected type. Both clients return -32602; only the wording differs, so the behavior is equivalent.",
+      "baseline_example": {
+        "error": {
+          "code": -32602,
+          "message": "invalid argument 0: json: cannot unmarshal number into Go value of type string"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32602,
+          "message": "Invalid params"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_vmodule_geth_incompatible_syntax",
+      "reason": "debug_vmodule receives a named-level pattern (reth::rpc=debug). Reth's tracing EnvFilter accepts the level name and returns null; geth accepts only filename=N with a numeric level and returns -32000. The clients use different vmodule pattern syntax, so this difference is expected.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "expect comma-separated list of filename=N"
+        }
+      },
+      "target_example": {
+        "result": null
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_printBlock_stub_diff",
+      "reason": "debug_printBlock returns a Go struct debug dump string (*types.Block(...)) on geth; reth does not implement the method and returns null. This is debug output rather than consensus data, so the semantic difference is acceptable.",
+      "baseline_example": {
+        "result": "(*types.Block)(0x...)"
+      },
+      "target_example": {
+        "result": null
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "eth_config_geth_crash_diff",
+      "reason": "eth_config returns a chain configuration object (including current/next forkId) on reth. Geth's RPC handler crashes and returns -32603 ('method handler crashed'), indicating that geth does not implement it correctly. This semantic difference is recorded pending a geth-side fix.",
+      "baseline_example": {
+        "error": {
+          "code": -32603,
+          "message": "method handler crashed"
+        }
+      },
+      "target_example": {
+        "result": {
+          "current": {}
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "admin_nodeInfo_structdiff",
+      "reason": "admin_nodeInfo has the same top-level keys (enode/enr/id/ip/listenAddr/name/ports/protocols) on both clients, but values naturally differ by node identity: geth reports name='Geth/...' and the snap protocol, while reth reports name='op-reth-rpc2' and only eth. These are expected differences in node self-description.",
+      "baseline_example": {
+        "result": {
+          "name": "Geth/v1.17.x",
+          "protocols": {
+            "eth": {},
+            "snap": {}
+          }
+        }
+      },
+      "target_example": {
+        "result": {
+          "name": "op-reth-rpc2",
+          "protocols": {
+            "eth": {}
+          }
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "debug_setHead_divergence",
+      "reason": "debug_setHead was tested with tools/rpc_sethead_test.py: geth actually rewinds the head from N to N-2 and returns null when setHead targets N-2; reth's no-op stub leaves the head unchanged and also returns null. The behavior differs substantially. After the geth follower rewinds, its op-node derivation stalls at 'failed to retrieve L2 parent block' and does not recover on its own; run `task restart -- op-node-rpc1` to restore it.",
+      "baseline_example": {
+        "result": null,
+        "_note": "Head actually rewinds from N to N-2"
+      },
+      "target_example": {
+        "result": null,
+        "_note": "Head remains unchanged (no-op stub)"
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    },
+    {
+      "test_name": "eth_estimateTotalFee_legacy_gasprice_contract_creation",
+      "reason": "Contract creation fails on both clients with -32000 (InvalidJump); only the EVM error wording differs.",
+      "baseline_example": {
+        "error": {
+          "code": -32000,
+          "message": "failed to estimate gas: invalid jump destination"
+        }
+      },
+      "target_example": {
+        "error": {
+          "code": -32000,
+          "message": "failed to estimate gas: EVM error: InvalidJump"
+        }
+      },
+      "applies_to": {
+        "baseline": {
+          "name_pattern": "^op-geth$"
+        },
+        "target": {
+          "name_pattern": "^op-reth$"
+        }
+      }
+    }
+  ]
+}

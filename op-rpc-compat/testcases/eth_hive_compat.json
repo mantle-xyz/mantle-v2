@@ -1,0 +1,182 @@
+[
+  {
+    "name": "eth_getBlockByNumber_genesis",
+    "method": "eth_getBlockByNumber",
+    "params": ["0x0", true],
+    "description": "Get the genesis block with full transactions - hive test"
+  },
+  {
+    "name": "eth_getBlockByNumber_genesis_hash_only",
+    "method": "eth_getBlockByNumber",
+    "params": ["0x0", false],
+    "description": "Get the genesis block with transaction hashes only - hive test"
+  },
+  {
+    "name": "eth_getBlockByNumber_null_response",
+    "method": "eth_getBlockByNumber",
+    "params": ["0xffffffffffffff", false],
+    "description": "Request a nonexistent block and expect null - hive test"
+  },
+  {
+    "name": "eth_getBlockByHash_genesis",
+    "method": "eth_getBlockByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000", true],
+    "description": "Get a block by zero hash (should return null) - hive test"
+  },
+  {
+    "name": "eth_getBalance_genesis_address",
+    "method": "eth_getBalance",
+    "params": ["0x0000000000000000000000000000000000000000", "0x0"],
+    "description": "Get the zero address balance at the genesis block - hive test"
+  },
+  {
+    "name": "eth_getCode_precompile",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000001", "latest"],
+    "description": "Get precompile code - hive test"
+  },
+  {
+    "name": "eth_getCode_precompile_sha256",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000002", "latest"],
+    "description": "Get SHA256 precompile code - hive test"
+  },
+  {
+    "name": "eth_getCode_precompile_ripemd160",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000003", "latest"],
+    "description": "Get RIPEMD160 precompile code - hive test"
+  },
+  {
+    "name": "eth_getCode_precompile_identity",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000004", "latest"],
+    "description": "Get identity precompile code - hive test"
+  },
+  {
+    "name": "eth_call_identity_precompile",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000004", "data": "0xdeadbeef"}, "latest"],
+    "description": "Call the identity precompile - hive test"
+  },
+  {
+    "name": "eth_call_sha256_precompile",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000002", "data": "0x68656c6c6f"}, "latest"],
+    "description": "Call the SHA256 precompile - hive test"
+  },
+  {
+    "name": "eth_call_ripemd160_precompile",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000003", "data": "0x68656c6c6f"}, "latest"],
+    "description": "Call the RIPEMD160 precompile - hive test"
+  },
+  {
+    "name": "eth_getTransactionCount_zero_address",
+    "method": "eth_getTransactionCount",
+    "params": ["0x0000000000000000000000000000000000000000", "latest"],
+    "description": "Get the zero address nonce - hive test"
+  },
+  {
+    "name": "eth_getStorageAt_precompile",
+    "method": "eth_getStorageAt",
+    "params": ["0x0000000000000000000000000000000000000001", "0x0", "latest"],
+    "description": "Get precompile storage - hive test"
+  },
+  {
+    "name": "eth_estimateGas_identity_precompile",
+    "method": "eth_estimateGas",
+    "params": [{"to": "0x0000000000000000000000000000000000000004", "data": "0xdeadbeef"}],
+    "description": "Estimate gas for an identity precompile call - hive test"
+  },
+  {
+    "name": "eth_estimateGas_sha256_precompile",
+    "method": "eth_estimateGas",
+    "params": [{"to": "0x0000000000000000000000000000000000000002", "data": "0x68656c6c6f"}],
+    "description": "Estimate gas for a SHA256 precompile call - hive test"
+  },
+  {
+    "name": "eth_getProof_zero_address",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000000", [], "latest"],
+    "description": "Get proof for the zero address - hive test"
+  },
+  {
+    "name": "eth_getProof_precompile",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000001", [], "latest"],
+    "description": "Get proof for a precompile - hive test"
+  },
+  {
+    "name": "eth_feeHistory_genesis",
+    "method": "eth_feeHistory",
+    "params": ["0x1", "0x1", [25, 50, 75]],
+    "description": "Get fee history from block 1 - hive test"
+  },
+  {
+    "name": "eth_feeHistory_full_range",
+    "method": "eth_feeHistory",
+    "params": ["0x10", "latest", [10, 20, 30, 40, 50, 60, 70, 80, 90]],
+    "description": "Get the full fee history range - hive test"
+  },
+  {
+    "name": "eth_feeHistory_empty_percentiles",
+    "method": "eth_feeHistory",
+    "params": ["0x5", "latest", []],
+    "description": "Get fee history without percentiles - hive test"
+  },
+  {
+    "name": "eth_getLogs_genesis_to_latest",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest"}],
+    "description": "Get all logs from genesis through the latest block - hive test"
+  },
+  {
+    "name": "eth_getLogs_with_blockhash_valid",
+    "method": "eth_getLogs",
+    "params": [{"blockHash": "{{latest_block_hash}}"}],
+    "description": "Get logs by block hash (dynamically obtain a valid hash) - hive test"
+  },
+  {
+    "name": "eth_createAccessList_identity_precompile",
+    "method": "eth_createAccessList",
+    "params": [{"to": "0x0000000000000000000000000000000000000004", "data": "0xdeadbeef"}, "latest"],
+    "description": "Create an access list for the identity precompile - hive test"
+  },
+  {
+    "name": "web3_sha3_empty",
+    "method": "web3_sha3",
+    "params": ["0x"],
+    "description": "Compute keccak256 of empty data - hive test"
+  },
+  {
+    "name": "web3_sha3_hello",
+    "method": "web3_sha3",
+    "params": ["0x68656c6c6f"],
+    "description": "Compute keccak256 of 'hello' - hive test"
+  },
+  {
+    "name": "net_version_check",
+    "method": "net_version",
+    "params": [],
+    "description": "Check the network version - hive test"
+  },
+  {
+    "name": "eth_chainId_check",
+    "method": "eth_chainId",
+    "params": [],
+    "description": "Check the chain ID - hive test"
+  },
+  {
+    "name": "eth_blockNumber_check",
+    "method": "eth_blockNumber",
+    "params": [],
+    "description": "Check the block number - hive test"
+  },
+  {
+    "name": "eth_blockNumber_check",
+    "method": "eth_blockNumber",
+    "params": [],
+    "description": "Check the block number - hive test"
+  }
+]
