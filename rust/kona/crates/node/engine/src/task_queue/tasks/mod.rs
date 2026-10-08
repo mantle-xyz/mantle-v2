@@ -15,13 +15,13 @@ mod build;
 pub use build::{BuildTask, BuildTaskError, EngineBuildError};
 
 mod seal;
-pub use seal::{SealTask, SealTaskError};
+pub use seal::{BuildSealCoupling, SealTask, SealTaskError};
 
 mod consolidate;
 pub use consolidate::{ConsolidateInput, ConsolidateTask, ConsolidateTaskError};
 
 mod finalize;
-pub use finalize::{FinalizeTask, FinalizeTaskError};
+pub use finalize::{FinalizeBlockId, FinalizeTask, FinalizeTaskError};
 
 mod util;
 pub(super) use util::{BuildAndSealError, build_and_seal};

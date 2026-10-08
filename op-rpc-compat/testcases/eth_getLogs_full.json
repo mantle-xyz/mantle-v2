@@ -1,0 +1,221 @@
+[
+  {
+    "name": "eth_getLogs_minimal",
+    "method": "eth_getLogs",
+    "params": [{}],
+    "description": "Minimal parameters: empty object"
+  },
+  {
+    "name": "eth_getLogs_latest_only",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "latest", "toBlock": "latest"}],
+    "description": "Latest block only"
+  },
+  {
+    "name": "eth_getLogs_pending",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "pending", "toBlock": "pending"}],
+    "description": "Pending block"
+  },
+  {
+    "name": "eth_getLogs_earliest",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "earliest", "toBlock": "earliest"}],
+    "description": "Earliest block (genesis block)"
+  },
+  {
+    "name": "eth_getLogs_safe",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "safe", "toBlock": "safe"}],
+    "description": "Safe block"
+  },
+  {
+    "name": "eth_getLogs_finalized",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "finalized", "toBlock": "finalized"}],
+    "description": "Finalized block"
+  },
+
+  {
+    "name": "eth_getLogs_block_range_0_to_1",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "0x1"}],
+    "description": "Block range: 0 to 1"
+  },
+  {
+    "name": "eth_getLogs_block_range_0_to_10",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "0xa"}],
+    "description": "Block range: 0 to 10"
+  },
+  {
+    "name": "eth_getLogs_block_range_0_to_100",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "0x64"}],
+    "description": "Block range: 0 to 100"
+  },
+  {
+    "name": "eth_getLogs_block_range_single",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x1", "toBlock": "0x1"}],
+    "description": "Single block"
+  },
+  {
+    "name": "eth_getLogs_block_range_earliest_to_latest",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "earliest", "toBlock": "latest"}],
+    "description": "Earliest to latest (may return a large amount of data)"
+  },
+
+  {
+    "name": "eth_getLogs_with_single_address",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "address": "0x0000000000000000000000000000000000000000"}],
+    "description": "Filter by one address"
+  },
+  {
+    "name": "eth_getLogs_with_multiple_addresses",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "address": ["0x0000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000001"]}],
+    "description": "Filter by multiple addresses"
+  },
+  {
+    "name": "eth_getLogs_with_address_array_single",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "address": ["0x0000000000000000000000000000000000000000"]}],
+    "description": "Address array with one element"
+  },
+
+  {
+    "name": "eth_getLogs_with_single_topic",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000"]}],
+    "description": "Filter by one topic"
+  },
+  {
+    "name": "eth_getLogs_with_topic_null",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": [null]}],
+    "description": "Null topic (matches any topic)"
+  },
+  {
+    "name": "eth_getLogs_with_two_topics",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000000000000000000000000001"]}],
+    "description": "Filter by two topics"
+  },
+  {
+    "name": "eth_getLogs_with_three_topics",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000000000000000000000000000002"]}],
+    "description": "Filter by three topics"
+  },
+  {
+    "name": "eth_getLogs_with_four_topics",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000000000000000000000000000002", "0x0000000000000000000000000000000000000000000000000000000000000003"]}],
+    "description": "Filter by four topics (maximum)"
+  },
+  {
+    "name": "eth_getLogs_with_topic_array",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": [["0x0000000000000000000000000000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000000000000000000000000001"]]}],
+    "description": "Topic array (OR matching)"
+  },
+  {
+    "name": "eth_getLogs_with_mixed_topics",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000", null, "0x0000000000000000000000000000000000000000000000000000000000000002"]}],
+    "description": "Mixed topics including null"
+  },
+  {
+    "name": "eth_getLogs_with_topic_array_and_null",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": [["0x0000000000000000000000000000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000000000000000000000000001"], null]}],
+    "description": "Topic array combined with null"
+  },
+
+  {
+    "name": "eth_getLogs_with_blockhash",
+    "method": "eth_getLogs",
+    "params": [{"blockHash": "{{latest_block_hash}}"}],
+    "description": "Query by blockHash (dynamically fetch the latest block hash)"
+  },
+
+  {
+    "name": "eth_getLogs_address_and_topics",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "address": "0x0000000000000000000000000000000000000000", "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000"]}],
+    "description": "Filter by address and topic"
+  },
+  {
+    "name": "eth_getLogs_multi_address_and_topics",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "address": ["0x0000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000001"], "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000", null]}],
+    "description": "Filter by multiple addresses and topics"
+  },
+
+  {
+    "name": "eth_getLogs_erc20_transfer_topic",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]}],
+    "description": "ERC20 Transfer event signature"
+  },
+  {
+    "name": "eth_getLogs_erc20_approval_topic",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925"]}],
+    "description": "ERC20 Approval event signature"
+  },
+
+  {
+    "name": "eth_getLogs_boundary_empty_result",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "0x0", "address": "0xffffffffffffffffffffffffffffffffffffffff"}],
+    "description": "Boundary: should return an empty array"
+  },
+  {
+    "name": "eth_getLogs_boundary_block_0_only",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "0x0"}],
+    "description": "Boundary: block 0 only"
+  },
+
+  {
+    "name": "eth_getLogs_fromBlock_only",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0"}],
+    "description": "Specify only fromBlock"
+  },
+  {
+    "name": "eth_getLogs_toBlock_only",
+    "method": "eth_getLogs",
+    "params": [{"toBlock": "latest"}],
+    "description": "Specify only toBlock"
+  },
+  {
+    "name": "eth_getLogs_address_only",
+    "method": "eth_getLogs",
+    "params": [{"address": "0x0000000000000000000000000000000000000000"}],
+    "description": "Specify only address"
+  },
+  {
+    "name": "eth_getLogs_topics_only",
+    "method": "eth_getLogs",
+    "params": [{"topics": ["0x0000000000000000000000000000000000000000000000000000000000000000"]}],
+    "description": "Specify only topics"
+  },
+
+  {
+    "name": "eth_getLogs_empty_topics_array",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": []}],
+    "description": "Empty topics array"
+  },
+  {
+    "name": "eth_getLogs_empty_address_array",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "address": []}],
+    "description": "Empty address array"
+  }
+]

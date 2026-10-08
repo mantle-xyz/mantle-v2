@@ -22,13 +22,18 @@ pub(crate) fn check_deployment_code(
     expected_code_hash: B256,
 ) {
     let ctx = Context::op()
-        .with_cfg(CfgEnv::new_with_spec(OpSpecId::INTEROP))
+        .with_cfg(CfgEnv::new_with_spec(OpSpecId::LAGOON))
         .modify_tx_chained(|tx| {
             // Deposit + OP meta
             tx.deposit = DepositTransactionParts {
                 source_hash: deployment_tx.source_hash,
                 mint: Some(deployment_tx.mint),
                 is_system_transaction: deployment_tx.is_system_transaction,
+                // [MANTLE] BVM_ETH: TxDeposit.eth_value (u128) -> DepositTransactionParts
+                // .eth_value (Option<u128>), 0 meaning "no mint". Same convention as
+                // alloy-op-evm's `FromTxWithEncoded<TxDeposit>`.
+                eth_value: (deployment_tx.eth_value != 0).then_some(deployment_tx.eth_value),
+                eth_tx_value: deployment_tx.eth_tx_value,
             };
             tx.enveloped_tx = Some(deployment_tx.encoded_2718().into());
 

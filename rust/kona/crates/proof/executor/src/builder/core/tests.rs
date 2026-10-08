@@ -13,7 +13,12 @@ use std::path::PathBuf;
 /// The chosen fixture must contain a regular (non-deposit, non-post-exec) tx at index 1, since
 /// several tests target that index when constructing payload entries.
 fn post_exec_fixture_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata/block-26207960.tar.gz")
+    // [MANTLE] Regenerated against Mantle sepolia-qa3 (chain 1115511103). The previous OP Sepolia
+    // fixtures could not be decoded here at all: their deposits carry the 8-field OP wire format,
+    // while Mantle's `TxDeposit` requires the BVM_ETH `eth_value` field, so RLP decoding
+    // overflowed into `input`. Block 2510026 keeps the shape this test needs — a deposit at
+    // index 0 and a regular tx at index 1.
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata/block-2510026.tar.gz")
 }
 
 fn fixture_block_number(parent_header: &Header) -> u64 {

@@ -1,6 +1,6 @@
 //! Contains Mantle-specific hardforks.
 
-use crate::Arsia;
+use crate::{Arsia, Skadi};
 
 /// Mantle-specific Hardforks
 ///
@@ -21,6 +21,9 @@ use crate::Arsia;
 pub struct MantleHardforks;
 
 impl MantleHardforks {
+    /// The Skadi hardfork upgrade transactions.
+    pub const SKADI: Skadi = Skadi;
+
     /// The Arsia hardfork upgrade transactions.
     pub const ARSIA: Arsia = Arsia;
 }
@@ -35,5 +38,8 @@ mod tests {
     fn test_mantle_hardforks() {
         let arsia_upgrade_tx = MantleHardforks::ARSIA.txs();
         assert_eq!(arsia_upgrade_tx.collect::<Vec<_>>().len(), 7);
+
+        let skadi_upgrade_tx = MantleHardforks::SKADI.txs();
+        assert_eq!(skadi_upgrade_tx.collect::<Vec<_>>().len(), 2);
     }
 }

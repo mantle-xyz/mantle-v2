@@ -9,9 +9,9 @@ use revm::{
         self, EthPrecompileResult, Precompile, PrecompileHalt, PrecompileId, Precompiles, bn254,
         eth_precompile_fn, modexp, secp256r1,
     },
-    primitives::{Address, OnceLock, hardfork::SpecId},
+    primitives::{Address, AddressSet, OnceLock, hardfork::SpecId},
 };
-use std::{boxed::Box, string::String};
+use std::string::String;
 
 /// Optimism precompile provider
 #[derive(Debug, Clone)]
@@ -27,15 +27,19 @@ impl OpPrecompiles {
     #[inline]
     pub fn new_with_spec(spec: OpSpecId) -> Self {
         let precompiles = match spec {
+            // [mantle] Osaka/Arsia use the plain eth precompile set (op-geth
+            // PrecompiledContractsMantleSkadi parity); Karst/Lagoon are upstream-only.
             spec @ (OpSpecId::BEDROCK |
             OpSpecId::REGOLITH |
             OpSpecId::CANYON |
-            OpSpecId::ECOTONE) => Precompiles::new(spec.into_eth_spec().into()),
+            OpSpecId::ECOTONE |
+            OpSpecId::OSAKA |
+            OpSpecId::ARSIA) => Precompiles::new(spec.into_eth_spec().into()),
             OpSpecId::FJORD => fjord(),
             OpSpecId::GRANITE | OpSpecId::HOLOCENE => granite(),
             OpSpecId::ISTHMUS => isthmus(),
             OpSpecId::JOVIAN => jovian(),
-            OpSpecId::KARST | OpSpecId::INTEROP => karst(),
+            OpSpecId::KARST | OpSpecId::LAGOON => karst(),
         };
 
         Self { inner: EthPrecompiles { precompiles, spec: SpecId::default() }, spec }
@@ -71,18 +75,24 @@ pub fn granite() -> &'static Precompiles {
 }
 
 /// Returns precompiles for isthmus spec.
+///
+/// `[mantle]` Mantle maps its entire pre-Limb era (Skadi and genesis) to
+/// `OpSpecId::ISTHMUS`. op-geth's `PrecompiledContractsMantleSkadi` is the
+/// standard Prague precompile set plus secp256r1 `p256verify`, using the
+/// standard EIP-2537 BLS12-381 precompiles and the standard Istanbul bn254
+/// pairing — none of which carry OP Stack input-size limits. We therefore build
+/// the Isthmus set from `fjord()` (Cancun + p256verify, with the unrestricted
+/// Istanbul bn254 pairing) and the unrestricted Prague BLS12-381 precompiles,
+/// instead of inheriting the input-size limits added by `granite()` and the
+/// upstream OP Isthmus BLS modifications. This keeps op-revm consensus-consistent
+/// with Mantle op-geth for the pre-Limb era.
 pub fn isthmus() -> &'static Precompiles {
     static INSTANCE: OnceLock<Precompiles> = OnceLock::new();
     INSTANCE.get_or_init(|| {
-        let mut precompiles = granite().clone();
-        // Prague bls12 precompiles
+        let mut precompiles = fjord().clone();
+        // Standard (unrestricted) Prague bls12 precompiles, matching op-geth
+        // PrecompiledContractsMantleSkadi.
         precompiles.extend(precompile::bls12_381::precompiles());
-        // Isthmus bls12 precompile modifications
-        precompiles.extend([
-            bls12_381::ISTHMUS_G1_MSM,
-            bls12_381::ISTHMUS_G2_MSM,
-            bls12_381::ISTHMUS_PAIRING,
-        ]);
         precompiles
     })
 }
@@ -157,7 +167,7 @@ where
     }
 
     #[inline]
-    fn warm_addresses(&self) -> Box<impl Iterator<Item = Address>> {
+    fn warm_addresses(&self) -> &AddressSet {
         self.inner.warm_addresses()
     }
 
@@ -504,6 +514,57 @@ mod tests {
         let res = bls12_381_pairing_precompile.execute(&input, u64::MAX, 0).unwrap();
         assert!(
             matches!(res.status, PrecompileStatus::Halt(PrecompileHalt::Other(msg)) if msg.contains("input length too long"))
+        );
+    }
+
+    /// Mantle maps the whole pre-Limb era (including Skadi and genesis) to
+    /// `OpSpecId::ISTHMUS`. op-geth's `PrecompiledContractsMantleSkadi` uses the
+    /// standard EIP-2537 BLS12-381 precompiles and the standard Istanbul bn254
+    /// pairing, i.e. WITHOUT any OP Stack input-size limits. Therefore the
+    /// Isthmus precompile set in op-revm must not reject oversized bn254/BLS
+    /// inputs purely on length grounds, to stay consensus-consistent with
+    /// Mantle op-geth.
+    #[test]
+    fn test_isthmus_bn254_and_bls_unrestricted_for_mantle() {
+        let precompiles = OpPrecompiles::new_with_spec(OpSpecId::ISTHMUS);
+        let precompiles = precompiles.precompiles();
+
+        // bn254 pairing (0x08): 587 elements = 112704 bytes, a valid multiple of
+        // PAIR_ELEMENT_LEN(192) exceeding GRANITE_MAX_INPUT_SIZE(112687).
+        let bn254_pairing = precompiles.get(&bn254::pair::ADDRESS).unwrap();
+        let input = vec![0u8; 587 * bn254::PAIR_ELEMENT_LEN];
+        assert!(input.len() > bn254_pair::GRANITE_MAX_INPUT_SIZE);
+        let res = bn254_pairing.execute(&input, u64::MAX, 0).unwrap();
+        assert!(
+            !matches!(res.status, PrecompileStatus::Halt(PrecompileHalt::Bn254PairLength)),
+            "Isthmus bn254 pairing must not impose an OP input-size limit (op-geth MantleSkadi has none)"
+        );
+
+        // BLS12-381 g1 msm (0x0c)
+        let g1 = precompiles.get(&bls12_381_const::G1_MSM_ADDRESS).unwrap();
+        let input = vec![0u8; ISTHMUS_G1_MSM_MAX_INPUT_SIZE + 160];
+        let res = g1.execute(&input, u64::MAX, 0).unwrap();
+        assert!(
+            !matches!(&res.status, PrecompileStatus::Halt(PrecompileHalt::Other(m)) if m.contains("input length too long")),
+            "Isthmus BLS g1 msm must not impose an OP input-size limit"
+        );
+
+        // BLS12-381 g2 msm (0x0e)
+        let g2 = precompiles.get(&bls12_381_const::G2_MSM_ADDRESS).unwrap();
+        let input = vec![0u8; ISTHMUS_G2_MSM_MAX_INPUT_SIZE + 288];
+        let res = g2.execute(&input, u64::MAX, 0).unwrap();
+        assert!(
+            !matches!(&res.status, PrecompileStatus::Halt(PrecompileHalt::Other(m)) if m.contains("input length too long")),
+            "Isthmus BLS g2 msm must not impose an OP input-size limit"
+        );
+
+        // BLS12-381 pairing (0x0f)
+        let pairing = precompiles.get(&bls12_381_const::PAIRING_ADDRESS).unwrap();
+        let input = vec![0u8; ISTHMUS_PAIRING_MAX_INPUT_SIZE + 384];
+        let res = pairing.execute(&input, u64::MAX, 0).unwrap();
+        assert!(
+            !matches!(&res.status, PrecompileStatus::Halt(PrecompileHalt::Other(m)) if m.contains("input length too long")),
+            "Isthmus BLS pairing must not impose an OP input-size limit"
         );
     }
 

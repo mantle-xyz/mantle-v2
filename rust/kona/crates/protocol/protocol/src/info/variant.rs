@@ -4,7 +4,7 @@
 use alloy_consensus::Header;
 use alloy_eips::{BlockNumHash, eip7840::BlobParams};
 use alloy_primitives::{Address, B256, Bytes, Sealable, Sealed, TxKind, U256, address};
-use kona_genesis::{L1ChainConfig, RollupConfig, SystemConfig};
+use kona_genesis::{ETHEREUM_MAINNET_CHAIN_ID, L1ChainConfig, RollupConfig, SystemConfig};
 use op_alloy_consensus::{DepositSourceDomain, L1InfoDepositSource, TxDeposit};
 
 use crate::{
@@ -40,7 +40,7 @@ pub enum L1BlockInfoTx {
     Isthmus(L1BlockInfoIsthmus),
     /// A Jovian L1 info transaction
     Jovian(L1BlockInfoJovian),
-    /// [MANTLE] An Arsia L1 info transaction (Mantle hardfork; same payload
+    /// `[MANTLE]` An Arsia L1 info transaction (Mantle hardfork; same payload
     /// layout as Jovian, distinct `setL1BlockValuesArsia()` selector).
     Arsia(L1BlockInfoArsia),
 }
@@ -88,18 +88,41 @@ impl L1BlockInfoTx {
             scalar[28..32].try_into().map_err(|_| BlockInfoError::BaseFeeScalar)?,
         );
 
+        // [MANTLE] From Arsia until Elysium, Mantle mainnet pins the L1 blob-fee schedule at
+        // Prague regardless of what L1 has activated. op-node implements this by swapping the
+        // whole L1 `ChainConfig` for `eth.MantleArsiaL1ChainConfigByChainID` — a hand-written
+        // Ethereum mainnet config carrying only the Cancun and Prague blob schedules and no
+        // `OsakaTime` (`derive/l1_block_info.go:508`, `op-service/eth/config.go:28`).
+        //
+        // That helper returns `nil` for every chain but Ethereum mainnet, and op-node then falls
+        // back to the real config — so the pin is a no-op on Sepolia. Hence the `chain_id` guard:
+        // without it, Mantle Sepolia would freeze at Prague too and diverge from op-node.
+        //
+        // Expressed as "ignore the scheduled BPO entries and Osaka" rather than by substituting a
+        // config, which keeps the L1 registry honest: `kona-registry::l1` carries Ethereum
+        // mainnet's real `osaka_time` / `bpo1..5_time`, and this gate is the only thing that
+        // suppresses them.
+        let arsia_blob_schedule_pin = rollup_config
+            .is_mantle_arsia_blob_schedule_pinned(l2_block_time) &&
+            l1_config.chain_id == ETHEREUM_MAINNET_CHAIN_ID;
+
         // Determine the blob fee configuration based on the timestamp.
         // We start with the scheduled blob fee parameters, and then check for the osaka and prague
         // parameters.
         let blob_fee_params = l1_config.blob_schedule_blob_params();
 
-        let blob_fee_config =
-            match blob_fee_params.active_scheduled_params_at_timestamp(l1_header.timestamp) {
-                Some(blob_fee_param) => *blob_fee_param,
-                None if l1_config.osaka_time.is_some_and(|time| time <= l1_header.timestamp) => {
-                    BlobParams::osaka()
-                }
-                None if l1_config
+        let scheduled_blob_params = (!arsia_blob_schedule_pin)
+            .then(|| blob_fee_params.active_scheduled_params_at_timestamp(l1_header.timestamp))
+            .flatten();
+
+        let blob_fee_config = match scheduled_blob_params {
+            Some(blob_fee_param) => *blob_fee_param,
+            None if !arsia_blob_schedule_pin &&
+                l1_config.osaka_time.is_some_and(|time| time <= l1_header.timestamp) =>
+            {
+                BlobParams::osaka()
+            }
+            None if l1_config
                     .prague_time.is_some_and(|time| time <= l1_header.timestamp) &&
                     // There was an incident on OP Stack Sepolia chains (03-05-2025) when L1 activated pectra,
                     // where the sequencer followed the incorrect chain, using the legacy Cancun blob fee
@@ -111,11 +134,11 @@ impl L1BlockInfoTx {
                     // immediately.
                     (rollup_config.hardforks.pectra_blob_schedule_time.is_none() ||
                         rollup_config.is_pectra_blob_schedule_active(l1_header.timestamp)) =>
-                {
-                    BlobParams::prague()
-                }
-                _ => BlobParams::cancun(),
-            };
+            {
+                BlobParams::prague()
+            }
+            _ => BlobParams::cancun(),
+        };
 
         let blob_base_fee = l1_header.blob_fee(blob_fee_config).unwrap_or(1);
         let block_hash = l1_header.hash_slow();
@@ -361,9 +384,9 @@ impl L1BlockInfoTx {
             Self::Jovian(L1BlockInfoJovian { da_footprint_gas_scalar, .. }) => {
                 Some(*da_footprint_gas_scalar)
             }
-            Self::Arsia(L1BlockInfoArsia { base: L1BlockInfoJovian { da_footprint_gas_scalar, .. } }) => {
-                Some(*da_footprint_gas_scalar)
-            }
+            Self::Arsia(L1BlockInfoArsia {
+                base: L1BlockInfoJovian { da_footprint_gas_scalar, .. },
+            }) => Some(*da_footprint_gas_scalar),
             _ => None,
         }
     }
@@ -1146,8 +1169,11 @@ mod test {
         )
         .unwrap();
 
-        assert!(matches!(l1_info, L1BlockInfoTx::Arsia(_)),
-            "expected L1BlockInfoTx::Arsia, got {:?}", l1_info);
+        assert!(
+            matches!(l1_info, L1BlockInfoTx::Arsia(_)),
+            "expected L1BlockInfoTx::Arsia, got {:?}",
+            l1_info
+        );
 
         // Selector on encoded output must be Arsia's, not Jovian's.
         let calldata = l1_info.encode_calldata();
@@ -1194,5 +1220,134 @@ mod test {
         assert_eq!(deposit_tx.gas_limit, REGOLITH_SYSTEM_TX_GAS);
         assert!(!deposit_tx.is_system_transaction);
         assert_eq!(deposit_tx.input, l1_info.encode_calldata());
+    }
+
+    // ---------------------------------------------------------------------------
+    // [MANTLE] Arsia-era blob-schedule pin, lifted by Elysium.
+    //
+    // op-node reference: `derive/l1_block_info.go:508` swapping in
+    // `eth.MantleArsiaL1ChainConfigByChainID` while
+    // `isMantleArsiaButNotFirstBlock && !isMantleElysiumButNotFirstBlock`.
+    // ---------------------------------------------------------------------------
+
+    /// A Mantle chain on Ethereum L1 mainnet. `block_time` matters: the "but not the first
+    /// block" gates are defined relative to `timestamp - block_time`.
+    fn mantle_mainnet_cfg(elysium: Option<u64>) -> RollupConfig {
+        RollupConfig {
+            block_time: 2,
+            mantle_hardforks: kona_genesis::MantleHardForkConfig {
+                mantle_skadi_time: Some(0),
+                mantle_arsia_time: Some(100),
+                mantle_elysium_time: elysium,
+                ..kona_genesis::MantleHardForkConfig::NONE
+            },
+            ..Default::default()
+        }
+    }
+
+    /// An L1 header late enough that Ethereum mainnet's real schedule has reached BPO1.
+    fn l1_header_past_bpo1(l1_config: &L1ChainConfig) -> Header {
+        let bpo1 = l1_config.bpo1_time.expect("mainnet must schedule BPO1");
+        Header {
+            timestamp: bpo1 + 1,
+            excess_blob_gas: Some(0x5080000),
+            blob_gas_used: Some(0x100000),
+            requests_hash: Some(B256::ZERO),
+            ..Default::default()
+        }
+    }
+
+    fn arsia_blob_base_fee(rollup_config: &RollupConfig, l1: &L1ChainConfig, l2_time: u64) -> u128 {
+        let info = L1BlockInfoTx::try_new(
+            rollup_config,
+            l1,
+            &SystemConfig::default(),
+            0,
+            &l1_header_past_bpo1(l1),
+            l2_time,
+        )
+        .unwrap();
+        let L1BlockInfoTx::Arsia(info) = info else { panic!("expected the Arsia variant") };
+        info.blob_base_fee()
+    }
+
+    /// Between Arsia and Elysium, Mantle mainnet must price blobs with Prague parameters even
+    /// though L1 is past Osaka and BPO1 — and that must be a *different* number, or the test
+    /// proves nothing.
+    #[test]
+    fn mantle_mainnet_pins_blob_schedule_to_prague_between_arsia_and_elysium() {
+        let l1: L1ChainConfig = L1Config::mainnet().into();
+        let header = l1_header_past_bpo1(&l1);
+
+        let pinned = arsia_blob_base_fee(&mantle_mainnet_cfg(None), &l1, 200);
+        let prague = header.blob_fee(BlobParams::prague()).unwrap();
+        let bpo1 = header.blob_fee(BlobParams::bpo1()).unwrap();
+
+        assert_ne!(
+            prague, bpo1,
+            "test premise: the two schedules must price this header differently"
+        );
+        assert_eq!(pinned, prague, "Arsia-era blob base fee must use the Prague schedule");
+        assert_ne!(pinned, bpo1);
+    }
+
+    /// Once Elysium has been active for a block, L1's real schedule applies again. This is the
+    /// half that did not exist while the pin was implemented by nulling `osaka_time` in the L1
+    /// registry: there was no way to ever turn it back on.
+    #[test]
+    fn mantle_elysium_restores_the_real_l1_blob_schedule() {
+        let l1: L1ChainConfig = L1Config::mainnet().into();
+        let header = l1_header_past_bpo1(&l1);
+        let bpo1 = header.blob_fee(BlobParams::bpo1()).unwrap();
+
+        // Elysium at 200, block_time 2: the pin still applies *on* the activation block and
+        // lifts on the next one, matching op-node's `isMantleElysiumButNotFirstBlock`.
+        let cfg = mantle_mainnet_cfg(Some(200));
+        assert_eq!(
+            arsia_blob_base_fee(&cfg, &l1, 200),
+            header.blob_fee(BlobParams::prague()).unwrap(),
+            "the Elysium activation block itself is still pinned",
+        );
+        assert_eq!(
+            arsia_blob_base_fee(&cfg, &l1, 202),
+            bpo1,
+            "the block after Elysium activation must use L1's real schedule",
+        );
+    }
+
+    /// op-node's `MantleArsiaL1ChainConfigByChainID` returns `nil` for every L1 but mainnet, so
+    /// a Mantle chain on Sepolia is never pinned. Dropping the chain-ID guard would freeze
+    /// Sepolia at Prague and diverge there instead.
+    #[test]
+    fn mantle_on_sepolia_l1_is_never_pinned() {
+        let l1: L1ChainConfig = L1Config::sepolia().into();
+        if l1.bpo1_time.is_none() {
+            return; // Sepolia has no BPO schedule in this registry build; nothing to compare.
+        }
+        let header = l1_header_past_bpo1(&l1);
+        let real = header.blob_fee(BlobParams::bpo1()).unwrap();
+        assert_ne!(real, header.blob_fee(BlobParams::prague()).unwrap(), "test premise");
+        assert_eq!(arsia_blob_base_fee(&mantle_mainnet_cfg(None), &l1, 200), real);
+    }
+
+    /// The predicate itself, independent of blob maths.
+    #[test]
+    fn arsia_blob_schedule_pin_window() {
+        let cfg = mantle_mainnet_cfg(Some(300));
+        // Arsia at 100, block_time 2 -> the activation block (100) is excluded.
+        assert!(!cfg.is_mantle_arsia_blob_schedule_pinned(98));
+        assert!(!cfg.is_mantle_arsia_blob_schedule_pinned(100));
+        assert!(cfg.is_mantle_arsia_blob_schedule_pinned(102));
+        assert!(cfg.is_mantle_arsia_blob_schedule_pinned(298));
+        // Elysium at 300 -> its activation block is still pinned, the next block is not.
+        assert!(cfg.is_mantle_arsia_blob_schedule_pinned(300));
+        assert!(!cfg.is_mantle_arsia_blob_schedule_pinned(302));
+
+        // A chain that never schedules Elysium stays pinned.
+        let forever = mantle_mainnet_cfg(None);
+        assert!(forever.is_mantle_arsia_blob_schedule_pinned(u64::MAX));
+
+        // Non-Mantle chains are never pinned.
+        assert!(!RollupConfig::default().is_mantle_arsia_blob_schedule_pinned(u64::MAX));
     }
 }

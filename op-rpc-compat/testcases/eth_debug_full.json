@@ -1,0 +1,122 @@
+[
+    {
+      "name": "debug_traceBlockByNumber_latest",
+      "method": "debug_traceBlockByNumber",
+      "params": ["latest"],
+      "description": "Trace the latest block"
+    },
+    {
+      "name": "debug_traceBlockByNumber_with_tracer",
+      "method": "debug_traceBlockByNumber",
+      "params": ["latest", {"tracer": "callTracer"}],
+      "description": "Trace a block with callTracer"
+    },
+    {
+    "name": "debug_traceBlockByNumber_0x1",
+    "method": "debug_traceBlockByNumber",
+    "params": ["0x1", {}],
+    "description": "Trace block 1"
+    },
+    {
+      "name": "debug_traceTransaction_valid",
+      "method": "debug_traceTransaction",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000001"],
+      "description": "Trace a transaction"
+    },
+    {
+      "name": "debug_traceTransaction_latest_template",
+      "method": "debug_traceTransaction",
+      "params": ["{{latest_tx_hash}}"],
+      "description": "Trace the latest transaction using the latest_tx_hash template variable"
+    },
+    {
+      "name": "debug_traceTransaction_with_callTracer",
+      "method": "debug_traceTransaction",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000001", {"tracer": "callTracer"}],
+      "description": "Trace a transaction with callTracer"
+    },
+    {
+      "name": "debug_traceTransaction_with_prestateTracer",
+      "method": "debug_traceTransaction",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000001", {"tracer": "prestateTracer"}],
+      "description": "Trace a transaction with prestateTracer"
+    },
+    {
+      "name": "debug_traceTransaction_with_4byteTracer",
+      "method": "debug_traceTransaction",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000001", {"tracer": "4byteTracer"}],
+      "description": "Trace a transaction with 4byteTracer"
+    },
+    {
+      "name": "debug_traceCall_basic",
+      "method": "debug_traceCall",
+    "params": [{"to": "0x0000000000000000000000000000000000000001", "data": "0x"}, "latest"],
+      "description": "Basic debug_traceCall"
+    },
+    {
+    "name": "debug_accountRange_latest",
+    "method": "debug_accountRange",
+    "params": ["latest", "0x0000000000000000000000000000000000000000000000000000000000000000", 10, false, false, false],
+    "description": "Get the account range at the latest block"
+    },
+    {
+      "name": "debug_getRawReceipts_latest",
+      "method": "debug_getRawReceipts",
+      "params": ["latest"],
+      "description": "Get raw receipts for the latest block"
+    },
+    {
+      "name": "debug_getRawReceipts_by_number",
+      "method": "debug_getRawReceipts",
+    "params": ["0x1"],
+      "description": "Get raw receipts for a specified block"
+    },
+  {
+    "name": "debug_getRawReceipts_earliest",
+    "method": "debug_getRawReceipts",
+    "params": ["earliest"],
+    "description": "Get raw receipts for the genesis block"
+  },
+    {
+      "name": "debug_getRawHeader_latest",
+      "method": "debug_getRawHeader",
+      "params": ["latest"],
+      "description": "Get the raw header of the latest block"
+    },
+  {
+    "name": "debug_getRawHeader_earliest",
+    "method": "debug_getRawHeader",
+    "params": ["earliest"],
+    "description": "Get the raw header of the genesis block"
+  },
+  {
+    "name": "debug_getRawHeader_by_number",
+    "method": "debug_getRawHeader",
+    "params": ["0x1"],
+    "description": "Get the raw header of a specified block"
+  },
+    {
+      "name": "debug_getRawBlock_latest",
+      "method": "debug_getRawBlock",
+      "params": ["latest"],
+      "description": "Get the raw data of the latest block"
+    },
+  {
+    "name": "debug_getRawBlock_earliest",
+    "method": "debug_getRawBlock",
+    "params": ["earliest"],
+    "description": "Get the raw data of the genesis block"
+  },
+  {
+    "name": "debug_getRawBlock_by_number",
+    "method": "debug_getRawBlock",
+    "params": ["0x1"],
+    "description": "Get the raw data of a specified block"
+  },
+    {
+      "name": "debug_getBadBlocks",
+      "method": "debug_getBadBlocks",
+      "params": [],
+      "description": "Get the bad block list"
+    }
+  ]
