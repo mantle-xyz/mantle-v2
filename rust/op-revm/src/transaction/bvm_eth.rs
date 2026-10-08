@@ -476,6 +476,43 @@ mod tests {
     }
 
     #[test]
+    fn mantle_eth_tx_value_above_u128_max_is_not_truncated() {
+        // The low 128 bits are small, so narrowing this amount would transfer only 12,345.
+        let huge = (U256::from(1u64) << 128) | U256::from(12_345u64);
+        let caller = address!("1234567890123456789012345678901234567890");
+        let to = address!("abcdefabcdefabcdefabcdefabcdefabcdefabcd");
+
+        let mut ctx = Context::op()
+            .with_db(InMemoryDB::default())
+            .with_chain(L1BlockInfo::default())
+            .modify_cfg_chained(|cfg| cfg.set_spec_and_mainnet_gas_params(OpSpecId::ISTHMUS))
+            .modify_tx_chained(|tx| {
+                tx.base.caller = caller;
+                tx.base.kind = revm::primitives::TxKind::Call(to);
+                tx.base.gas_limit = 1_000_000;
+                tx.deposit.eth_value = None;
+                tx.deposit.eth_tx_value = Some(huge);
+            });
+
+        assert_eq!(OpTxTr::eth_tx_value(&ctx.tx), Some(huge));
+
+        use revm::context_interface::JournalTr;
+        let from_slot = BvmEth::get_balance_slot(caller);
+        let to_slot = BvmEth::get_balance_slot(to);
+        ctx.journaled_state.load_account(BvmEth::ADDRESS).expect("load account");
+        ctx.journaled_state.sstore(BvmEth::ADDRESS, from_slot, huge).expect("sstore");
+        ctx.journaled_state.inner.logs.clear();
+
+        BvmEth::process_eth_deposit(&mut ctx, false).expect("transfer should succeed");
+
+        let from_after =
+            ctx.journaled_state.sload(BvmEth::ADDRESS, from_slot).expect("sload from").data;
+        let to_after = ctx.journaled_state.sload(BvmEth::ADDRESS, to_slot).expect("sload to").data;
+        assert_eq!(from_after, U256::ZERO);
+        assert_eq!(to_after, huge, "recipient must receive the full 2^128 + 12,345 amount");
+    }
+
+    #[test]
     fn test_process_eth_deposit_both_values() {
         // When both eth_value and eth_tx_value are present, should mint and transfer
         let eth_value = U256::from(1_000_000_000_000_000_000u128); // 1 ETH
