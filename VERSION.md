@@ -4,14 +4,14 @@
 
 Current round: **`mantle-v1.6` (Elysium)**
 
-| Component | Version | Released | Previous version |
-|---|---|---|---|
-| op-geth | — | — | `v1.6.1` |
-| mantle-v2 | — | — | `v1.6.2` |
-| reth | — | — | `op-reth-v2.2.1-mantle-arsia.2` |
-| op-succinct | [`mantle-v1.6.0`](https://github.com/mantle-xyz/op-succinct/releases/tag/mantle-v1.6.0) | 2026-09-02 | `v3.8.1-testnet-mantle-arsia.2` |
-| mantle-da-indexer | — | — | `v1.6.0` |
-| lithosphere | — | — | `v2.2.12` |
+| Component | Version          | Released | Previous version |
+|---|------------------|---|------------------|
+| op-geth | `v1.6.3`         | — | —                |
+| mantle-v2 | `v1.6.3`         | — | —                |
+| reth | `mantle-v1.6.1`  | — | —                |
+| op-succinct | `mantle-v1.6.1`  | — | —                |
+| mantle-da-indexer | `v1.6.3`         | — | —                |
+| lithosphere | `mantle-v1.6.3`  | — | —                |
 
 `—` means the component has not yet adopted unified numbering; **Previous version** is its newest tag under the old scheme, cleared once it adopts. `PATCH` advances independently per component, so two components can hold the same version number — the pair *(version, component)* is the unique key.
 

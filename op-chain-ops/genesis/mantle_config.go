@@ -237,27 +237,16 @@ func (d *UpgradeScheduleDeployConfig) ActivateMantleForkAtOffset(fork rollup.Man
 		}
 	}
 
-	// Special handling for Arsia: activate OP Stack forks
-	if fork == forks.MantleArsia {
-		d.L2GenesisCanyonTimeOffset = (*hexutil.Uint64)(&offset)
-		d.L2GenesisDeltaTimeOffset = (*hexutil.Uint64)(&offset)
-		d.L2GenesisEcotoneTimeOffset = (*hexutil.Uint64)(&offset)
-		d.L2GenesisFjordTimeOffset = (*hexutil.Uint64)(&offset)
-		d.L2GenesisGraniteTimeOffset = (*hexutil.Uint64)(&offset)
-		d.L2GenesisHoloceneTimeOffset = (*hexutil.Uint64)(&offset)
-		d.L2GenesisIsthmusTimeOffset = (*hexutil.Uint64)(&offset)
-		d.L2GenesisJovianTimeOffset = (*hexutil.Uint64)(&offset)
-	} else {
-		// Non-Arsia forks: clear all OP Stack forks
-		d.L2GenesisCanyonTimeOffset = nil
-		d.L2GenesisDeltaTimeOffset = nil
-		d.L2GenesisEcotoneTimeOffset = nil
-		d.L2GenesisFjordTimeOffset = nil
-		d.L2GenesisGraniteTimeOffset = nil
-		d.L2GenesisHoloceneTimeOffset = nil
-		d.L2GenesisIsthmusTimeOffset = nil
-		d.L2GenesisJovianTimeOffset = nil
-	}
+	// OP Stack forks are introduced by MantleArsia and stay active for later
+	// Mantle forks such as Elysium.
+	d.L2GenesisCanyonTimeOffset = d.L2GenesisMantleArsiaTimeOffset
+	d.L2GenesisDeltaTimeOffset = d.L2GenesisMantleArsiaTimeOffset
+	d.L2GenesisEcotoneTimeOffset = d.L2GenesisMantleArsiaTimeOffset
+	d.L2GenesisFjordTimeOffset = d.L2GenesisMantleArsiaTimeOffset
+	d.L2GenesisGraniteTimeOffset = d.L2GenesisMantleArsiaTimeOffset
+	d.L2GenesisHoloceneTimeOffset = d.L2GenesisMantleArsiaTimeOffset
+	d.L2GenesisIsthmusTimeOffset = d.L2GenesisMantleArsiaTimeOffset
+	d.L2GenesisJovianTimeOffset = d.L2GenesisMantleArsiaTimeOffset
 }
 
 // SetMantleForkTimeOffset sets the time offset for a Mantle fork
