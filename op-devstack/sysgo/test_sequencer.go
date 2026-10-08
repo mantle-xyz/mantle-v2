@@ -137,6 +137,7 @@ func WithTestSequencer(testSequencerID stack.TestSequencerID, l1CLID stack.L1CLN
 				bid_L1: {
 					L1: &fakepos.Config{
 						ChainConfig:       orch.wb.outL1Genesis.Config,
+						L1ChainConfig:     orch.wb.outL1Genesis.Config,
 						EngineAPI:         engineCl,
 						Backend:           l1ELClient,
 						Beacon:            l1CL.beacon,

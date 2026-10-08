@@ -3,22 +3,33 @@ pragma solidity 0.8.15;
 
 import { CommonTest } from "./CommonTest.t.sol";
 import { SafeCall } from "src/libraries/SafeCall.sol";
+import { Preinstalls } from "src/libraries/Preinstalls.sol";
 
 contract SafeCall_Test is CommonTest {
+    /// @dev These success cases call empty accounts with arbitrary calldata and gas.
+    function assumeEmptyAccount(address account) internal view {
+        vm.assume(account.code.length == 0);
+        assumeNotPrecompile(account, 1);
+        // forge-std's reserved range ends at 0xff; P256 lives at 0x100.
+        vm.assume(account != address(0x100));
+        assumeNotForgeAddress(account);
+        vm.assume(account != address(0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f));
+    }
+
+    function test_send_systemContract_fails() external {
+        // Amsterdam installs HistoryStorage even when its balance is zero.
+        address target = Preinstalls.HistoryStorage;
+        assertGt(target.code.length, 0);
+        uint256 balanceBefore = target.balance;
+        assertFalse(SafeCall.send(target, 100_000, 1));
+        assertEq(target.balance, balanceBefore);
+    }
+
     function testFuzz_send_succeeds(address from, address to, uint256 gas, uint64 value) external {
         vm.assume(from.balance == 0);
         vm.assume(to.balance == 0);
-        // no precompiles (mainnet)
-        assumeNotPrecompile(to, 1);
-        // don't call the vm
-        vm.assume(to != address(vm));
-        vm.assume(from != address(vm));
-        // don't call the console
-        vm.assume(to != address(0x000000000000000000636F6e736F6c652e6c6f67));
-        // don't call the create2 deployer
-        vm.assume(to != address(0x4e59b44847b379578588920cA78FbF26c0B4956C));
-        // don't call the ffi interface
-        vm.assume(to != address(0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f));
+        assumeEmptyAccount(from);
+        assumeEmptyAccount(to);
 
         assertEq(from.balance, 0, "from balance is 0");
         vm.deal(from, value);
@@ -42,17 +53,8 @@ contract SafeCall_Test is CommonTest {
     function testFuzz_call_succeeds(address from, address to, uint256 gas, uint64 value, bytes memory data) external {
         vm.assume(from.balance == 0);
         vm.assume(to.balance == 0);
-        // no precompiles (mainnet)
-        assumeNotPrecompile(to, 1);
-        // don't call the vm
-        vm.assume(to != address(vm));
-        vm.assume(from != address(vm));
-        // don't call the console
-        vm.assume(to != address(0x000000000000000000636F6e736F6c652e6c6f67));
-        // don't call the create2 deployer
-        vm.assume(to != address(0x4e59b44847b379578588920cA78FbF26c0B4956C));
-        // don't call the ffi interface
-        vm.assume(to != address(0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f));
+        assumeEmptyAccount(from);
+        assumeEmptyAccount(to);
 
         assertEq(from.balance, 0, "from balance is 0");
         vm.deal(from, value);
@@ -84,17 +86,8 @@ contract SafeCall_Test is CommonTest {
     {
         vm.assume(from.balance == 0);
         vm.assume(to.balance == 0);
-        // no precompiles (mainnet)
-        assumeNotPrecompile(to, 1);
-        // don't call the vm
-        vm.assume(to != address(vm));
-        vm.assume(from != address(vm));
-        // don't call the console
-        vm.assume(to != address(0x000000000000000000636F6e736F6c652e6c6f67));
-        // don't call the create2 deployer
-        vm.assume(to != address(0x4e59b44847b379578588920cA78FbF26c0B4956C));
-        // don't call the FFIInterface
-        vm.assume(to != address(0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f));
+        assumeEmptyAccount(from);
+        assumeEmptyAccount(to);
 
         assertEq(from.balance, 0, "from balance is 0");
         vm.deal(from, value);

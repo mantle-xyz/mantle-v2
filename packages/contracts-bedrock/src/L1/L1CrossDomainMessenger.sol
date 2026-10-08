@@ -27,7 +27,7 @@ contract L1CrossDomainMessenger is CrossDomainMessenger, Semver {
 
     /// @notice Address of the Mantle Token on L1.
     address public immutable L1_MNT_ADDRESS;
-    /// @custom:semver 1.5.0
+    /// @custom:semver 1.6.0
     ///
     /// @param _portal Address of the OptimismPortal contract on this network.
 
@@ -35,7 +35,7 @@ contract L1CrossDomainMessenger is CrossDomainMessenger, Semver {
         OptimismPortal _portal,
         address l1mnt
     )
-        Semver(1, 5, 0)
+        Semver(1, 6, 0)
         CrossDomainMessenger(Predeploys.L2_CROSS_DOMAIN_MESSENGER)
     {
         PORTAL = _portal;
@@ -145,6 +145,7 @@ contract L1CrossDomainMessenger is CrossDomainMessenger, Semver {
     /// @param _ethValue    ETH value to send with the message.
     /// @param _minGasLimit Minimum amount of gas that the message can be executed with.
     /// @param _message     Message to send to the target.
+    /// @dev Copy the payload into memory before checking gas and calculating the finalization reserve.
     function relayMessage(
         uint256 _nonce,
         address _sender,
@@ -152,7 +153,7 @@ contract L1CrossDomainMessenger is CrossDomainMessenger, Semver {
         uint256 _mntValue,
         uint256 _ethValue,
         uint256 _minGasLimit,
-        bytes calldata _message
+        bytes memory _message
     )
         external
         payable
@@ -195,14 +196,15 @@ contract L1CrossDomainMessenger is CrossDomainMessenger, Semver {
         // If there is not enough gas left to perform the external call and finish the execution,
         // return early and assign the message to the failedMessages mapping.
         // We are asserting that we have enough gas to:
-        // 1. Call the target contract (_minGasLimit + RELAY_CALL_OVERHEAD + RELAY_GAS_CHECK_BUFFER)
+        // 1. Call the target contract, including approval and recipient account creation
+        //    (_minGasLimit + RELAY_CALL_OVERHEAD + RELAY_GAS_CHECK_BUFFER + RELAY_NEW_ACCOUNT_OVERHEAD).
         //   1.a. The RELAY_CALL_OVERHEAD is included in `hasMinGas`.
         // 2. Finish the execution after the external call (RELAY_RESERVED_GAS).
         //
         // If `xDomainMsgSender` is not the default L2 sender, this function
         // is being re-entered. This marks the message as failed to allow it to be replayed.
         if (
-            !SafeCall.hasMinGas(_minGasLimit, RELAY_RESERVED_GAS + RELAY_GAS_CHECK_BUFFER)
+            !SafeCall.hasMinGas(_minGasLimit, RELAY_RESERVED_GAS + RELAY_GAS_CHECK_BUFFER + RELAY_NEW_ACCOUNT_OVERHEAD)
                 || xDomainMsgSender != Constants.DEFAULT_L2_SENDER
         ) {
             failedMessages[versionedHash] = true;

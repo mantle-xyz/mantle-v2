@@ -34,7 +34,7 @@ compilation_restrictions = [
 extra_output = ['devdoc', 'userdoc', 'metadata', 'storageLayout']
 bytecode_hash = 'none'
 ast = true
-evm_version = 'cancun'
+evm_version = 'amsterdam'
 
 remappings = [
   '@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts',
@@ -67,10 +67,20 @@ fs_permissions = [
   { access='read', path='./lib/superchain-registry/validation/standard/' },
 ]
 
-# 5159 error code is selfdestruct error code
-ignored_error_codes = ["transient-storage", "code-size", "init-code-size", "too-many-warnings", 5159]
-deny_warnings = true
+# 5159 = selfdestruct deprecation
+# 8429 = virtual modifiers deprecated (solc 0.8.31, triggered by solmate)
+# 2424 = natspec memory-safe-assembly comment deprecated (solc 0.8.31, triggered by forge-std)
+ignored_error_codes = ["transient-storage", "code-size", "init-code-size", "too-many-warnings", 5159, 8429, 2424]
+deny = "warnings"
 ffi = true
+
+# foundry >= 1.8 turns `--isolate` on by default, which runs every top-level call as its own
+# transaction. The deploy scripts break under it: contracts created by a broadcast are not
+# visible to the calls that follow, so the post-deploy upgrade steps hit code-less addresses
+# ("Proxy: implementation not initialized", "call to non-contract address") and the run dies
+# with "Simulated execution failed" before broadcasting anything. Pin it off to keep the
+# pre-1.8 execution model, which is also what the forge version in mise.toml uses.
+isolate = false
 
 # We set the gas limit to max int64 to avoid running out of gas during testing, since the default
 # gas limit is 1B and some of our tests require more gas than that, such as
@@ -143,13 +153,6 @@ timeout = 300
 optimizer = false
 optimizer_runs = 0
 
-[profile.lite.fuzz]
-runs = 8
-
-[profile.lite.invariant]
-runs = 8
-depth = 8
-
 # IMPORTANT:
 # See the info in the "DEFAULT" profile to understand this section.
 additional_compiler_profiles = [
@@ -165,6 +168,13 @@ compilation_restrictions = [
   { paths = "src/L1/OptimismPortal2.sol", optimizer_runs = 0 },
   { paths = "src/L1/ProtocolVersions.sol", optimizer_runs = 0 },
 ]
+
+[profile.lite.fuzz]
+runs = 8
+
+[profile.lite.invariant]
+runs = 8
+depth = 8
 
 ################################################################
 #                         PROFILE: KONTROL                     #
