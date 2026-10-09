@@ -328,6 +328,15 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 
 	fmt.Println()
 	fmt.Println(color.CyanString("============================================================"))
+	fmt.Println(color.CyanString("Trace tests (one transaction traced on both endpoints)"))
+	fmt.Println(color.CyanString("============================================================"))
+	for _, result := range tester.TestTraceTransfer(ctx, recipient, amount, tx.DefaultTraceTracerConfigs()) {
+		printTxTestResult(result)
+		results = append(results, result)
+	}
+
+	fmt.Println()
+	fmt.Println(color.CyanString("============================================================"))
 	fmt.Println(color.CyanString("Txpool rejection tests (MetaTx and EIP-155)"))
 	fmt.Println(color.CyanString("============================================================"))
 	rejectionResults := runRejectionTests(ctx, tester)
