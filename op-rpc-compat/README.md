@@ -150,9 +150,13 @@ the original reports; never turn an AI explanation directly into a waiver.
 receipts. It changes chain state and should run on a disposable network. It runs
 transaction cases instead of the default JSON corpus. The default transaction
 suite includes preconfirmation scenarios; `--tx --tx-standard-only` retains
-Legacy, EIP-1559, EIP-7702, contract, and txpool coverage while skipping
+Legacy, EIP-1559, EIP-7702, contract, trace, and txpool coverage while skipping
 preconfirmation. `--tx-standard-only` alone is an error. The default signing key
 is a public local-devnet test key and must not be used on a funded network.
+The trace scenario sends one transfer through the baseline and, once both
+endpoints have its receipt, compares `debug_traceTransaction` for that same
+transaction under `callTracer`, `flatCallTracer`, and `muxTracer`; unlike the
+transfer scenarios, every trace field, including hashes, must match.
 The full preconfirmation parity scenario is calibrated for an op-geth sequencer;
 use standard-only mode on a reth sequencer.
 The JSON report includes each transaction assertion alongside its underlying
