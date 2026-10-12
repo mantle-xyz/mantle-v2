@@ -164,7 +164,7 @@ contract L2Genesis is Script {
     //          script didn't set the nonce and we didn't want to change that behavior when
     ///         migrating genesis generation to Solidity.
     function setPredeployProxies(Input memory _input) internal {
-        bytes memory code = vm.getDeployedCode("Proxy.sol:Proxy");
+        bytes memory code = _proxyDeployedCode();
 
         uint160 prefix = uint160(0x420) << 148;
 
@@ -225,6 +225,7 @@ contract L2Genesis is Script {
         setDeployerWhitelist(); // 2
         // 3,4,5: legacy, not used in OP-Stack.
         setBVM_ETH(); // BVM_ETH - Mantle specific
+        setLegacyERC20MNT(_input); // LEGACY_ERC20_MNT (BVM_MNT) - Mantle specific
         setL2CrossDomainMessenger(_input); // 7
         setGasPriceOracle(_input); // f
         setL2StandardBridge(_input); // 10
@@ -394,16 +395,16 @@ contract L2Genesis is Script {
         vm.resetNonce(address(factory));
     }
 
-    /// @notice This predeploy is following the safety invariant #1.
+    /// @notice This predeploy is following the safety invariant #2 (Semver immutables).
     function setL1Block() internal {
         // Note: L1 block attributes are set to 0.
         // Before the first user-tx the state is overwritten with actual L1 attributes.
-        _setImplementationCode(Predeploys.L1_BLOCK_ATTRIBUTES);
+        _setConstructedImplementationCode(Predeploys.L1_BLOCK_ATTRIBUTES);
     }
 
-    /// @notice This predeploy is following the safety invariant #1.
+    /// @notice This predeploy is following the safety invariant #2 (Semver immutables).
     function setGasPriceOracle(Input memory _input) internal {
-        _setImplementationCode(Predeploys.GAS_PRICE_ORACLE);
+        _setConstructedImplementationCode(Predeploys.GAS_PRICE_ORACLE);
 
         // Set owner and operator directly in storage
         // owner is at slot 1, operator is at slot 2
@@ -422,19 +423,32 @@ contract L2Genesis is Script {
         vm.store(Predeploys.GAS_PRICE_ORACLE, bytes32(uint256(0)), bytes32(tokenRatio));
     }
 
-    /// @notice This predeploy is following the safety invariant #1.
+    /// @notice This predeploy is following the safety invariant #2 (Semver immutables).
     function setDeployerWhitelist() internal {
-        _setImplementationCode(Predeploys.DEPLOYER_WHITELIST);
+        _setConstructedImplementationCode(Predeploys.DEPLOYER_WHITELIST);
     }
 
-    /// @notice This predeploy is following the safety invariant #1.
+    /// @notice This predeploy is following the safety invariant #2 (Semver immutables).
     function setL1BlockNumber() internal {
-        _setImplementationCode(Predeploys.L1_BLOCK_NUMBER);
+        _setConstructedImplementationCode(Predeploys.L1_BLOCK_NUMBER);
     }
 
-    /// @notice This predeploy is following the safety invariant #1.
+    /// @notice This predeploy is following the safety invariant #2 (Semver immutables).
     function setLegacyMessagePasser() internal {
-        _setImplementationCode(Predeploys.LEGACY_MESSAGE_PASSER);
+        _setConstructedImplementationCode(Predeploys.LEGACY_MESSAGE_PASSER);
+    }
+
+    /// @notice Sets LegacyERC20MNT (BVM_MNT) at its predeploy address (Mantle specific).
+    ///         Not proxied. L2StandardBridge uses this address as the L2 token identifier for MNT,
+    ///         and indexers read its ERC20 metadata.
+    function setLegacyERC20MNT(Input memory _input) internal {
+        // LegacyERC20MNT has immutables (BRIDGE, REMOTE_TOKEN). Deploy a real instance so the
+        // constructor patches them into the runtime code; name()/symbol() are constant overrides.
+        address mnt =
+            DeployUtils.create1({ _name: "LegacyERC20MNT.sol:LegacyERC20MNT", _args: abi.encode(_input.l1MNTAddress) });
+        vm.etch(Predeploys.LEGACY_ERC20_MNT, address(mnt).code);
+        vm.etch(mnt, "");
+        vm.resetNonce(mnt);
     }
 
     /// @notice Sets BVM_ETH at its predeploy address (Mantle specific)
@@ -452,7 +466,9 @@ contract L2Genesis is Script {
     function setBaseFeeVault(Input memory _input) internal {
         address vault = DeployUtils.create1({
             _name: "BaseFeeVault",
-            _args: DeployUtils.encodeConstructor(abi.encodeCall(IFeeVault.__constructor__, (_input.baseFeeVaultRecipient)))
+            _args: DeployUtils.encodeConstructor(
+                abi.encodeCall(IFeeVault.__constructor__, (_input.baseFeeVaultRecipient))
+            )
         });
 
         address impl = Predeploys.predeployToCodeNamespace(Predeploys.BASE_FEE_VAULT);
@@ -467,7 +483,9 @@ contract L2Genesis is Script {
     function setL1FeeVault(Input memory _input) internal {
         address vault = DeployUtils.create1({
             _name: "L1FeeVault",
-            _args: DeployUtils.encodeConstructor(abi.encodeCall(IFeeVault.__constructor__, (_input.l1FeeVaultRecipient)))
+            _args: DeployUtils.encodeConstructor(
+                abi.encodeCall(IFeeVault.__constructor__, (_input.l1FeeVaultRecipient))
+            )
         });
 
         address impl = Predeploys.predeployToCodeNamespace(Predeploys.L1_FEE_VAULT);
@@ -503,11 +521,37 @@ contract L2Genesis is Script {
         vm.etch(tmpSetPreinstalls, "");
     }
 
-    /// @notice Sets the bytecode in state
+    /// @notice Runtime code of src/universal/Proxy.sol. "Proxy.sol:Proxy" is ambiguous under a full
+    ///         Forge build (OpenZeppelin's proxy/Proxy.sol is also compiled), so pin the artifact path.
+    ///         The Go script host does not support artifact paths and falls back to the short name,
+    ///         which it resolves unambiguously (same approach as upstream DeployUtils.getDeployedCode).
+    function _proxyDeployedCode() internal view returns (bytes memory) {
+        try vm.getDeployedCode("forge-artifacts/Proxy.sol/Proxy.json") returns (bytes memory code_) {
+            return code_;
+        } catch {
+            return vm.getDeployedCode("Proxy.sol:Proxy");
+        }
+    }
+
+    /// @notice Sets the bytecode in state. Only valid for contracts without immutables
+    ///         (safety invariant #1); use `_setConstructedImplementationCode` otherwise.
     function _setImplementationCode(address _addr) internal returns (address) {
         string memory cname = Predeploys.getName(_addr);
         address impl = Predeploys.predeployToCodeNamespace(_addr);
         vm.etch(impl, vm.getDeployedCode(string.concat(cname, ".sol:", cname)));
+        return impl;
+    }
+
+    /// @notice Deploys the predeploy implementation with its no-argument constructor so that its
+    ///         immutables (e.g. Semver version numbers) are set, then moves the runtime code to the
+    ///         code namespace address and removes the temporary deployment from the state dump.
+    function _setConstructedImplementationCode(address _addr) internal returns (address) {
+        string memory cname = Predeploys.getName(_addr);
+        address deployed = DeployUtils.create1({ _name: string.concat(cname, ".sol:", cname), _args: "" });
+        address impl = Predeploys.predeployToCodeNamespace(_addr);
+        vm.etch(impl, deployed.code);
+        vm.etch(deployed, "");
+        vm.resetNonce(deployed);
         return impl;
     }
 

@@ -14,7 +14,19 @@ import { OptimismMintableERC20 } from "../universal/OptimismMintableERC20.sol";
 
 contract LegacyERC20MNT is OptimismMintableERC20 {
     /// @notice Initializes the contract as an Optimism Mintable ERC20.
-    constructor(address _l1mnt) OptimismMintableERC20(Predeploys.L2_STANDARD_BRIDGE, _l1mnt, "Mantle Token", "MNT") { }
+    /// @dev name and symbol are constant overrides rather than constructor storage, so etching the
+    ///      constructed runtime code at the predeploy address is sufficient (no storage copy needed).
+    constructor(address _l1mnt) OptimismMintableERC20(Predeploys.L2_STANDARD_BRIDGE, _l1mnt, "", "") { }
+
+    /// @notice Returns the token name.
+    function name() public pure override returns (string memory) {
+        return "Mantle Token";
+    }
+
+    /// @notice Returns the token symbol.
+    function symbol() public pure override returns (string memory) {
+        return "MNT";
+    }
 
     /// @notice Returns the MNT balance of the target account. Overrides the base behavior of the
     ///         contract to preserve the invariant that the balance within this contract always
