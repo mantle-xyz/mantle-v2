@@ -1,19 +1,19 @@
 //! [`NodeActor`] implementation for the derivation sub-routine.
 
 use crate::{
-    CancellableContext, DerivationActorRequest, DerivationEngineClient, DerivationState,
-    DerivationStateMachine, DerivationStateTransitionError, DerivationStateUpdate, Metrics,
-    NodeActor, actors::derivation::L2Finalizer,
+    DerivationActorRequest, DerivationEngineClient, DerivationState, DerivationStateMachine,
+    DerivationStateTransitionError, DerivationStateUpdate, Metrics, NodeActor,
+    actors::derivation::L2Finalizer,
 };
 use async_trait::async_trait;
 use kona_derive::{
     ActivationSignal, Pipeline, PipelineError, PipelineErrorKind, ResetError, Signal,
     SignalReceiver, StepResult,
 };
+use kona_engine::FinalizeBlockId;
 use kona_protocol::OpAttributesWithParent;
 use thiserror::Error;
-use tokio::{select, sync::mpsc};
-use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
+use tokio::sync::mpsc;
 
 /// The [`NodeActor`] for the derivation sub-routine.
 ///
@@ -26,8 +26,6 @@ where
     DerivationEngineClient_: DerivationEngineClient,
     PipelineSignalReceiver: Pipeline + SignalReceiver,
 {
-    /// The cancellation token, shared between all tasks.
-    cancellation_token: CancellationToken,
     /// The channel on which all inbound requests are received by the [`DerivationActor`].
     inbound_request_rx: mpsc::Receiver<DerivationActorRequest>,
     /// The Engine client used to interact with the engine.
@@ -41,17 +39,6 @@ where
     pub(crate) finalizer: L2Finalizer,
 }
 
-impl<DerivationEngineClient_, PipelineSignalReceiver> CancellableContext
-    for DerivationActor<DerivationEngineClient_, PipelineSignalReceiver>
-where
-    DerivationEngineClient_: DerivationEngineClient,
-    PipelineSignalReceiver: Pipeline + SignalReceiver + Send + Sync,
-{
-    fn cancelled(&self) -> WaitForCancellationFuture<'_> {
-        self.cancellation_token.cancelled()
-    }
-}
-
 impl<DerivationEngineClient_, PipelineSignalReceiver>
     DerivationActor<DerivationEngineClient_, PipelineSignalReceiver>
 where
@@ -61,12 +48,10 @@ where
     /// Creates a new instance of the [`DerivationActor`].
     pub fn new(
         engine_client: DerivationEngineClient_,
-        cancellation_token: CancellationToken,
         inbound_request_rx: mpsc::Receiver<DerivationActorRequest>,
         pipeline: PipelineSignalReceiver,
     ) -> Self {
         Self {
-            cancellation_token,
             pipeline,
             inbound_request_rx,
             engine_client,
@@ -142,19 +127,10 @@ where
 
                                     kona_macros::inc!(counter, Metrics::L1_REORG_COUNT);
                                 }
-                                // send the `reset` signal to the engine actor only when interop is
-                                // not active.
-                                if !self.pipeline.rollup_config().is_interop_active(
-                                    self.derivation_state_machine
-                                        .last_confirmed_safe_head()
-                                        .block_info
-                                        .timestamp,
-                                ) {
-                                    self.engine_client.reset_engine_forkchoice().await.map_err(|e| {
-                                        error!(target: "derivation", ?e, "Failed to send reset request");
-                                        DerivationError::Sender(Box::new(e))
-                                    })?;
-                                }
+                                self.engine_client.reset_engine_forkchoice().await.map_err(|e| {
+                                    error!(target: "derivation", ?e, "Failed to send reset request");
+                                    DerivationError::Sender(Box::new(e))
+                                })?;
                                 self.derivation_state_machine
                                     .update(&DerivationStateUpdate::SignalNeeded)?;
                                 return Err(DerivationError::Yield);
@@ -189,8 +165,10 @@ where
                 // Attempt to finalize the block. If successful, notify engine.
                 if let Some(l2_block_number) = self.finalizer.try_finalize_next(*finalized_l1_block)
                 {
+                    // Local L1-finality: the engine's own canonical chain is the authoritative
+                    // source at this height, so finalize by number.
                     self.engine_client
-                        .send_finalized_l2_block(l2_block_number)
+                        .send_finalized_l2_block(FinalizeBlockId::ByNumber(l2_block_number))
                         .await
                         .map_err(|e| DerivationError::Sender(Box::new(e)))?;
                 }
@@ -270,32 +248,16 @@ where
     PipelineSignalReceiver: Pipeline + SignalReceiver + Send + Sync + 'static,
 {
     type Error = DerivationError;
-    type StartData = ();
 
-    async fn start(mut self, _: Self::StartData) -> Result<(), Self::Error> {
-        info!(target: "derivation", "Starting derivation");
-        loop {
-            select! {
-                biased;
-
-                _ = self.cancellation_token.cancelled() => {
-                    info!(
-                        target: "derivation",
-                        "Received shutdown signal. Exiting derivation task."
-                    );
-                    return Ok(());
-                }
-                req = self.inbound_request_rx.recv() => {
-                    let Some(request_type) = req else {
-                        error!(target: "derivation", "DerivationActor inbound request receiver closed unexpectedly");
-                        self.cancellation_token.cancel();
-                        return Err(DerivationError::RequestReceiveFailed);
-                    };
-
-                    self.handle_derivation_actor_request(request_type).await?;
-                }
-            }
-        }
+    async fn step(&mut self) -> Result<(), Self::Error> {
+        let request = self.inbound_request_rx.recv().await.ok_or_else(|| {
+            error!(
+                target: "derivation",
+                "DerivationActor inbound request receiver closed unexpectedly",
+            );
+            DerivationError::RequestReceiveFailed
+        })?;
+        self.handle_derivation_actor_request(request).await
     }
 }
 
@@ -317,4 +279,102 @@ pub enum DerivationError {
     /// An invalid state transition occurred.
     #[error(transparent)]
     StateTransitionError(#[from] DerivationStateTransitionError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::actors::derivation::engine_client::MockDerivationEngineClient;
+    use alloy_primitives::B256;
+    use kona_derive::PipelineResult;
+    use kona_genesis::{HardForkConfig, RollupConfig, SystemConfig};
+    use kona_protocol::{BlockInfo, L2BlockInfo};
+    use rstest::rstest;
+    use std::sync::Arc;
+
+    /// A pipeline stub whose every step reports an L1 reorg, forcing the reset branch of
+    /// [`DerivationActor::produce_next_attributes`].
+    #[derive(Debug)]
+    struct ReorgingPipeline {
+        rollup_config: Arc<RollupConfig>,
+    }
+
+    impl Iterator for ReorgingPipeline {
+        type Item = OpAttributesWithParent;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            None
+        }
+    }
+
+    impl kona_derive::OriginProvider for ReorgingPipeline {
+        fn origin(&self) -> Option<BlockInfo> {
+            Some(BlockInfo::default())
+        }
+    }
+
+    #[async_trait]
+    impl SignalReceiver for ReorgingPipeline {
+        async fn signal(&mut self, _: Signal) -> PipelineResult<()> {
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl Pipeline for ReorgingPipeline {
+        fn peek(&self) -> Option<&OpAttributesWithParent> {
+            None
+        }
+
+        async fn step(&mut self, _: L2BlockInfo) -> StepResult {
+            StepResult::StepFailed(PipelineErrorKind::Reset(ResetError::ReorgDetected(
+                B256::ZERO,
+                B256::repeat_byte(1),
+            )))
+        }
+
+        fn rollup_config(&self) -> &RollupConfig {
+            &self.rollup_config
+        }
+
+        async fn system_config_by_l2_hash(
+            &mut self,
+            _: B256,
+        ) -> Result<SystemConfig, PipelineErrorKind> {
+            Ok(SystemConfig::default())
+        }
+    }
+
+    /// A pipeline-driven reset must always reach the engine actor. The engine's reset is what
+    /// sends the pipeline its [`Signal`] back; without it the actor parks in
+    /// [`DerivationState::AwaitingSignal`] forever.
+    #[rstest]
+    #[case::interop_inactive(None)]
+    #[case::interop_active(Some(0))]
+    #[tokio::test]
+    async fn test_pipeline_reset_always_resets_engine(#[case] lagoon_time: Option<u64>) {
+        let rollup_config = Arc::new(RollupConfig {
+            hardforks: HardForkConfig { lagoon_time, ..Default::default() },
+            ..Default::default()
+        });
+
+        let mut engine_client = MockDerivationEngineClient::new();
+        engine_client.expect_reset_engine_forkchoice().times(1).returning(|| Ok(()));
+
+        let (request_tx, request_rx) = mpsc::channel(1);
+        let mut actor = DerivationActor::new(
+            engine_client,
+            request_rx,
+            ReorgingPipeline { rollup_config: rollup_config.clone() },
+        );
+
+        // Complete EL sync so the actor starts deriving, then let it hit the reorg.
+        request_tx
+            .send(DerivationActorRequest::ProcessEngineSyncCompletionRequest(Box::default()))
+            .await
+            .unwrap();
+        actor.step().await.unwrap();
+
+        assert_eq!(actor.derivation_state_machine.current_state(), DerivationState::AwaitingSignal);
+    }
 }

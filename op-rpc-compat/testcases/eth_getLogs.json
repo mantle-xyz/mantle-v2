@@ -1,0 +1,72 @@
+[
+  {
+    "name": "eth_getLogs_latest",
+    "method": "eth_getLogs",
+    "params": [
+      {
+        "fromBlock": "latest",
+        "toBlock": "latest"
+      }
+    ],
+    "description": "Get logs from the latest block"
+  },
+  {
+    "name": "eth_getLogs_block_range",
+    "method": "eth_getLogs",
+    "params": [
+      {
+        "fromBlock": "0x0",
+        "toBlock": "0x10"
+      }
+    ],
+    "description": "Get logs within a block range"
+  },
+  {
+    "name": "eth_getLogs_single_block",
+    "method": "eth_getLogs",
+    "params": [
+      {
+        "blockHash": null,
+        "fromBlock": "0x1",
+        "toBlock": "0x1"
+      }
+    ],
+    "description": "Get logs from a single block"
+  },
+  {
+    "name": "eth_getLogs_with_address",
+    "method": "eth_getLogs",
+    "params": [
+      {
+        "fromBlock": "0x0",
+        "toBlock": "latest",
+        "address": "0x0000000000000000000000000000000000000000"
+      }
+    ],
+    "description": "Filter logs by address"
+  },
+  {
+    "name": "eth_getLogs_with_topics",
+    "method": "eth_getLogs",
+    "params": [
+      {
+        "fromBlock": "0x0",
+        "toBlock": "latest",
+        "topics": ["0x0000000000000000000000000000000000000000000000000000000000000000"]
+      }
+    ],
+    "description": "Filter logs by topic"
+  },
+  {
+    "name": "eth_getFilterChanges_invalid",
+    "method": "eth_getFilterChanges",
+    "params": ["0x1"],
+    "description": "Get changes for a nonexistent filter"
+  },
+  {
+    "name": "eth_uninstallFilter_invalid",
+    "method": "eth_uninstallFilter",
+    "params": ["0x1"],
+    "description": "Uninstall a nonexistent filter"
+  }
+]
