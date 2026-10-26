@@ -452,7 +452,7 @@ contract PreconfWhitelist_Test is Portal_Initializer {
         assertEq(f, 1);
         assertEq(t, 1);
         assertTrue(wl.isExactPair(P_FROM, P_TO));
-        assertEq(wl.layoutVersion(), 2);
+        assertEq(wl.layoutVersion(), 3);
     }
 
     // ===== batch guard =====
@@ -790,13 +790,13 @@ contract PreconfWhitelist_Test is Portal_Initializer {
     ///         it, instead of reading its recipient list out of slot 2 and installing it as sender
     ///         wildcards.
     function test_storageLayout_layoutVersion_succeeds() external view {
-        assertEq(uint256(vm.load(address(wl), bytes32(uint256(6)))), 2, "layoutVersion must be slot 6");
+        assertEq(uint256(vm.load(address(wl), bytes32(uint256(6)))), 3, "layoutVersion must be slot 6");
         assertEq(wl.layoutVersion(), wl.LAYOUT_VERSION());
-        assertEq(wl.LAYOUT_VERSION(), 2);
+        assertEq(wl.LAYOUT_VERSION(), 3);
     }
 
     /// @notice `authorizedL1` is appended *after* `layoutVersion`, so it moves none of the slots
-    ///         op-reth reads — which is why it does not bump `LAYOUT_VERSION`. Asserting the slot
+    ///         op-reth reads, and op-reth does not read it — so it does not bump `LAYOUT_VERSION`. Asserting the slot
     ///         number is the guard, and it matters more for this variable than for any other:
     ///         `authorizedL1` is the one piece of configuration a reader would naturally declare at
     ///         the *top* of the contract, next to the constants, which would put it in slot 0 and
@@ -813,23 +813,65 @@ contract PreconfWhitelist_Test is Portal_Initializer {
 
         assertEq(_addrAt(bytes32(0), 7), newGov, "authorizedL1 must be slot 7");
         assertEq(wl.authorizedL1(), newGov);
-        assertEq(uint256(vm.load(address(wl), bytes32(uint256(6)))), 2, "layoutVersion still slot 6");
+        assertEq(uint256(vm.load(address(wl), bytes32(uint256(6)))), 3, "layoutVersion still slot 6");
         assertEq(uint256(vm.load(address(wl), bytes32(uint256(0)))), 1, "exactPairs still slot 0");
-        assertEq(wl.LAYOUT_VERSION(), 2, "appending a variable is not a layout change");
     }
 
     /// @notice The marker is written by the constructor, so every deployment carries it — there is
     ///         no window in which a live contract reads back as version 0.
     function test_constructor_writesLayoutVersion_succeeds() external {
         PreconfWhitelist fresh = new PreconfWhitelist(AUTHORIZED_L1, _none());
-        assertEq(fresh.layoutVersion(), 2, "even an empty deployment declares its layout");
+        assertEq(fresh.layoutVersion(), 3, "even an empty deployment declares its layout");
     }
 
     /// @notice `updatePreconfs` must never touch it: it describes the shape of storage, not its
     ///         contents, and governance has no say over the shape.
     function test_updatePreconfs_leavesLayoutVersionAlone_succeeds() external {
         _gov(_one(address(0x5555), address(0x6666)), _one(P_FROM, P_TO));
-        assertEq(wl.layoutVersion(), 2);
+        assertEq(wl.layoutVersion(), 3);
+    }
+
+    // ===== listsHash =====
+
+    /// @notice op-reth reads `listsHash` at slot 8 to tell whether its cached lists are current,
+    ///         which is why adding it bumped `LAYOUT_VERSION`: a version-2 contract has no slot 8,
+    ///         reads back as zero, and would look permanently unchanged.
+    function test_storageLayout_listsHashIsSlot8_succeeds() external {
+        _gov(_one(address(0x5555), address(0x6666)), _none());
+        assertEq(vm.load(address(wl), bytes32(uint256(8))), wl.listsHash(), "listsHash must be slot 8");
+        assertTrue(wl.listsHash() != bytes32(0));
+    }
+
+    function test_constructor_seedsListsHash_succeeds() external {
+        PreconfWhitelist.Rule[] memory seed = _one(P_FROM, P_TO);
+        PreconfWhitelist fresh = new PreconfWhitelist(AUTHORIZED_L1, seed);
+        assertEq(fresh.listsHash(), keccak256(abi.encode(bytes32(0), seed, _none())));
+    }
+
+    /// @notice Each batch is chained onto the previous value, so two chains that diverge on any
+    ///         batch never share a value again.
+    function test_updatePreconfs_chainsListsHash_succeeds() external {
+        PreconfWhitelist.Rule[] memory add = _one(address(0x5555), address(0x6666));
+        PreconfWhitelist.Rule[] memory remove = _one(P_FROM, P_TO);
+        bytes32 before = wl.listsHash();
+
+        _gov(add, remove);
+
+        assertEq(wl.listsHash(), keccak256(abi.encode(before, add, remove)));
+    }
+
+    /// @notice A batch that changes nothing still moves the hash: it records batches, not contents.
+    function test_updatePreconfs_noopBatchStillMovesListsHash_succeeds() external {
+        bytes32 before = wl.listsHash();
+        _gov(_one(P_FROM, P_TO), _none());
+        assertTrue(wl.listsHash() != before);
+    }
+
+    function test_setAuthorizedL1_leavesListsHashAlone_succeeds() external {
+        bytes32 before = wl.listsHash();
+        _asL1(AUTHORIZED_L1);
+        wl.setAuthorizedL1(address(0x9E01));
+        assertEq(wl.listsHash(), before);
     }
 
     /// @notice op-reth filters canonical logs on this topic0 (`WHITELIST_UPDATED_TOPIC0` in
@@ -865,17 +907,17 @@ contract PreconfWhitelist_Test is Portal_Initializer {
     // — and `ResourceMetering` caps the deposit gas bought per L1 block at `maxResourceLimit`
     // (20,000,000). Subtracting the deposit's own worst-case intrinsic cost (285,256 for a full
     // batch's 16,516 calldata bytes) leaves 19,714,744. The full derivation is on `MAX_BATCH` in
-    // `PreconfWhitelist.sol`; extrapolating the figures below puts the hard ceiling at 289.
+    // `PreconfWhitelist.sol`; extrapolating the figures below puts the hard ceiling at 288.
     //
     // That justification lives entirely in the two measurements below, so they assert the ceiling
     // rather than only logging. A change that inflates per-rule cost has to either stay under the
     // bound or force whoever made it to re-derive `MAX_BATCH` — which is the point. The pair bound
-    // is the real 19,714,744 figure, which sits 13.2% above the recorded cost, so compiler-version
+    // is the real 19,714,744 figure, which sits 12.7% above the recorded cost, so compiler-version
     // noise is not a tripwire. Run with `-vv` to read the numbers; if a bound trips, re-measure and
     // update the table in `PreconfWhitelist.sol`.
 
     /// @notice A full `MAX_BATCH` of exact-pair adds — the expensive form `MAX_BATCH` is sized
-    ///         against. Recorded at 17,419,375 (68,044 per rule).
+    ///         against. Recorded at 17,496,087 (68,344 per rule).
     function test_gas_maxBatchOfPairAdds() external {
         uint256 max = wl.MAX_BATCH();
         PreconfWhitelist.Rule[] memory adds = _pairBatch(max, 0);
@@ -894,8 +936,8 @@ contract PreconfWhitelist_Test is Portal_Initializer {
 
     /// @notice A **single** pair add — the un-amortized cost. `MAX_BATCH`'s figure above is an
     ///         average over 256 rules, which divides the per-call fixed cost (dispatch, calldata
-    ///         decode, the three cold SLOADs the event reads, the cold length SSTORE) by 256; a
-    ///         one-rule call pays all of it. This is the number `PreconfWhitelistGov.BASE_GAS`
+    ///         decode, the three cold SLOADs the event reads, the cold length SSTORE, the `listsHash`
+    ///         update) by 256; a one-rule call pays all of it. This is the number `PreconfWhitelistGov.BASE_GAS`
     ///         exists to cover, and it is measured here because only the L2 side can measure it.
     function test_gas_singleRuleAdd() external {
         _asL1(AUTHORIZED_L1);
@@ -905,13 +947,13 @@ contract PreconfWhitelist_Test is Portal_Initializer {
         uint256 used = g - gasleft();
 
         console.log("gas, single pair add  ", used);
-        console.log("gas, per-rule average ", uint256(68_044));
-        console.log("un-amortized excess   ", used - 68_044);
+        console.log("gas, per-rule average ", uint256(68_344));
+        console.log("un-amortized excess   ", used - 68_344);
         assertLt(used, 100_000, "single add got more expensive -- re-derive PreconfWhitelistGov.BASE_GAS");
     }
 
     /// @notice The same batch made entirely of wildcards, to confirm the pair form really is the
-    ///         expensive one. Recorded at 11,700,841 (45,706 per rule).
+    ///         expensive one. Recorded at 11,776,517 (46,002 per rule).
     /// @dev    Bounded above by the pair figure as well as by an absolute number: if a wildcard add
     ///         ever became the costlier of the two, `MAX_BATCH` would be sized against the wrong
     ///         operation and the ceiling above would stop being an upper bound at all.
@@ -931,6 +973,6 @@ contract PreconfWhitelist_Test is Portal_Initializer {
         console.log("gas per wildcard add  ", used / max);
 
         assertLt(used, 12_400_000, "wildcard adds got more expensive -- re-measure");
-        assertLt(used, 17_419_375, "the exact-pair form must stay the expensive one");
+        assertLt(used, 17_496_087, "the exact-pair form must stay the expensive one");
     }
 }

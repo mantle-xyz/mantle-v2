@@ -14,13 +14,14 @@ contract PreconfWhitelistGov is Ownable {
     ///         bought, so rejecting it here — where the length is plain calldata — is free.
     uint256 public constant MAX_BATCH = PRECONF_MAX_BATCH;
 
-    /// @notice Fixed part of the computed limit: dispatch, decode, the event's cold SLOADs and the
-    ///         cold length SSTORE are paid once per call, not per rule, so [`GAS_PER_RULE`]'s
-    ///         full-batch average under-buys small ones. One rule measures 91,597: 21,597 needed.
+    /// @notice Fixed part of the computed limit: dispatch, decode, the event's cold SLOADs, the
+    ///         cold length SSTORE and the `listsHash` update are paid once per call, not per rule, so
+    ///         [`GAS_PER_RULE`]'s full-batch average under-buys small ones. One rule measures 93,330:
+    ///         23,330 needed.
     uint64 public constant BASE_GAS = 30_000;
 
-    /// @notice Gas the computed limit buys per rule. A pair add measures 68,044 on L2 — the worst
-    ///         per-rule cost — so this carries a 2.9% margin, and a full batch buys 18.2M of the 20M
+    /// @notice Gas the computed limit buys per rule. A pair add measures 68,344 on L2 — the worst
+    ///         per-rule cost — so this carries a 2.4% margin, and a full batch buys 18.2M of the 20M
     ///         a deposit can. Raising `MAX_BATCH` past 281 breaks that; see the test.
     uint64 public constant GAS_PER_RULE = 70_000;
 

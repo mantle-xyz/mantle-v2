@@ -10,7 +10,7 @@ uint256 constant PRECONF_MAX_BATCH = 256;
 
 /// @title PreconfWhitelist
 /// @notice Preconf fast-path allowlist, governed only from `authorizedL1` by direct portal deposit.
-///         LAYOUT IS LOAD-BEARING: op-reth reads slots 0/2/4/6 and a `Rule` spans two; never reorder.
+///         LAYOUT IS LOAD-BEARING: op-reth reads slots 0/2/4/6/8 and a `Rule` spans two; never reorder.
 contract PreconfWhitelist {
     /// @notice One allowlist rule as governance submits it. Both halves non-zero is an exact pair;
     ///         exactly one zero half is a wildcard on the other side. The zero address is a
@@ -50,15 +50,22 @@ contract PreconfWhitelist {
     ///         `layoutVersion`: at the top it would take slot 0 and shift every array.
     address public authorizedL1;
 
+    /// @notice Commitment to every batch applied so far: `keccak256(abi.encode(previous, add,
+    ///         remove))`, seeded by the constructor's rules against `bytes32(0)`. Slot 8. op-reth
+    ///         reads it at a block's parent to tell whether the lists it already holds are current.
+    ///         Changes on every update, including one that leaves the lists as they were.
+    bytes32 public listsHash;
+
     /// @notice Maximum rules one `updatePreconfs` may touch, summed across both arguments. Sized on
-    ///         a pair add (68,044 gas): 256 need 17,419,375 of the 19,714,744 a deposit can buy
-    ///         (20,000,000 less 285,256 intrinsic). Ceiling is 289; re-measure before raising.
+    ///         a pair add (68,344 gas): 256 need 17,496,087 of the 19,714,744 a deposit can buy
+    ///         (20,000,000 less 285,256 intrinsic). Ceiling is 288; re-measure before raising.
     uint256 public constant MAX_BATCH = PRECONF_MAX_BATCH;
 
     /// @notice The layout this contract declares, written to [`layoutVersion`] at construction. Bump
-    ///         on any positional change to the storage above; a rename is not one. op-reth pins the
-    ///         same number as `EXPECTED_LAYOUT_VERSION` and refuses anything else.
-    uint256 public constant LAYOUT_VERSION = 2;
+    ///         when a slot op-reth reads moves or a new one is read; a rename is not one. op-reth pins
+    ///         the same number as `EXPECTED_LAYOUT_VERSION` and refuses anything else. 3 adds
+    ///         `listsHash`.
+    uint256 public constant LAYOUT_VERSION = 3;
 
     /// @notice Emitted whenever the allowlist changes; op-reth watches topic0 to trigger a re-read.
     ///         Changing this signature moves topic0 and silently stops the sequencer refreshing.
@@ -86,6 +93,7 @@ contract PreconfWhitelist {
         for (uint256 i = 0; i < _initRules.length; i++) {
             _apply(_initRules[i].from, _initRules[i].to, true);
         }
+        listsHash = keccak256(abi.encode(bytes32(0), _initRules, new Rule[](0)));
         emit WhitelistUpdated(exactPairs.length, fromWildcards.length, toWildcards.length);
     }
 
@@ -123,6 +131,7 @@ contract PreconfWhitelist {
         for (uint256 i = 0; i < _remove.length; i++) {
             _apply(_remove[i].from, _remove[i].to, false);
         }
+        listsHash = keccak256(abi.encode(listsHash, _add, _remove));
         emit WhitelistUpdated(exactPairs.length, fromWildcards.length, toWildcards.length);
     }
 
