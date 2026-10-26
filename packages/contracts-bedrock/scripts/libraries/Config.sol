@@ -47,11 +47,12 @@ enum MantleFork {
     MANTLE_EUBOEA,
     MANTLE_SKADI,
     MANTLE_LIMB,
-    MANTLE_ARSIA
+    MANTLE_ARSIA,
+    MANTLE_ELYSIUM
 }
 
 Fork constant LATEST_FORK = Fork.INTEROP;
-MantleFork constant LATEST_MANTLE_FORK = MantleFork.MANTLE_ARSIA;
+MantleFork constant LATEST_MANTLE_FORK = MantleFork.MANTLE_ELYSIUM;
 
 library ForkUtils {
     function toString(Fork _fork) internal pure returns (string memory) {
@@ -91,6 +92,8 @@ library MantleForkUtils {
             return "mantle_limb";
         } else if (_fork == MantleFork.MANTLE_ARSIA) {
             return "mantle_arsia";
+        } else if (_fork == MantleFork.MANTLE_ELYSIUM) {
+            return "mantle_elysium";
         } else {
             return "unknown";
         }

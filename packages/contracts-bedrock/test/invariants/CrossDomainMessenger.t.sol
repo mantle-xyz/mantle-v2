@@ -1,7 +1,7 @@
 pragma solidity 0.8.15;
 
 import { StdUtils } from "forge-std/StdUtils.sol";
-import { Vm } from "forge-std/Vm.sol";
+import { Vm, VmSafe } from "forge-std/Vm.sol";
 import { OptimismPortal } from "src/L1/OptimismPortal.sol";
 import { L1CrossDomainMessenger } from "src/L1/L1CrossDomainMessenger.sol";
 import { Messenger_Initializer } from "../CommonTest.t.sol";
@@ -12,6 +12,7 @@ import { Encoding } from "src/libraries/Encoding.sol";
 import { Hashing } from "src/libraries/Hashing.sol";
 
 contract RelayActor is StdUtils {
+    event FailedRelayedMessage(bytes32 indexed msgHash);
     // Storage slot of the l2Sender
     uint256 constant senderSlotIndex = 50;
 
@@ -52,9 +53,11 @@ contract RelayActor is StdUtils {
         // will not reject value being sent to it.
         _ethValue = _ethValue % 2;
 
-        // If the message should succeed, supply it `baseGas`. If not, supply it an amount of
-        // gas that is too low to complete the call.
-        uint256 gas = doFail ? bound(minGasLimit, 90_000, 100_000) : xdm.baseGas(_message, minGasLimit);
+        // Always budget for hashing, proxy calls and failure bookkeeping. To exercise the
+        // insufficient-gas branch, request more target gas than the entire outer call has.
+        // A fixed 90k-100k outer budget can OOG before failedMessages is written.
+        uint256 gas = xdm.baseGas(_message, minGasLimit);
+        if (doFail) minGasLimit = uint32(gas + 1);
 
         // Compute the cross domain message hash and store it in `hashes`.
         // The `relayMessage` function will always encode the message as a version 1
@@ -71,12 +74,17 @@ contract RelayActor is StdUtils {
         // Act as the optimism portal and call `relayMessage` on the `L1CrossDomainMessenger` with
         // the outer min gas limit.
         vm.startPrank(address(op));
-        if (!doFail) {
-            vm.expectCallMinGas(address(0x04), _ethValue, minGasLimit, _message);
+        if (doFail) {
+            vm.expectEmit(true, false, false, true, address(xdm));
+            emit FailedRelayedMessage(_hash);
         }
+        // The identity precompile requires minGasLimit to succeed. The success invariant
+        // checks that outcome directly; persistent expectCallMinGas expectations otherwise
+        // collide when a later fuzz action reuses calldata with a different ETH value.
         try xdm.relayMessage{ gas: gas, value: _ethValue }(
             Encoding.encodeVersionedNonce(0, _version), sender, target, _mntValue, _ethValue, minGasLimit, _message
-        ) { } catch {
+        ) { }
+        catch {
             // If any of these calls revert, set `reverted` to true to fail the invariant test.
             // NOTE: This is to get around forge's invariant fuzzer ignoring reverted calls
             // to this function.
@@ -131,6 +139,9 @@ contract XDM_MinGasLimits_Succeeds is XDM_MinGasLimits {
     ///
     /// - The inner min gas limit is for the call from the `L1CrossDomainMessenger` to the target
     /// contract.
+    /// forge-config: default.invariant.fail-on-revert = true
+    /// forge-config: ci.invariant.fail-on-revert = true
+    /// forge-config: ciheavy.invariant.fail-on-revert = true
     function invariant_minGasLimits() external view {
         uint256 length = actor.numHashes();
         for (uint256 i = 0; i < length; ++i) {
@@ -150,11 +161,41 @@ contract XDM_MinGasLimits_Reverts is XDM_MinGasLimits {
         super.init(true);
     }
 
+    function test_relayMessage_insufficientGasRetry_succeeds() external {
+        bytes memory message = hex"56ca623dffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        vm.startStateDiffRecording();
+        actor.relay(1, 214, 1, message);
+        VmSafe.AccountAccess[] memory accesses = vm.stopAndReturnStateDiff();
+        for (uint256 i; i < accesses.length; ++i) {
+            if (accesses[i].kind == VmSafe.AccountAccessKind.Call) {
+                assertNotEq(accesses[i].account, address(0x04), "insufficient gas must not call the target");
+            }
+        }
+        bytes32 hash = actor.hashes(0);
+        assertFalse(actor.reverted());
+        assertTrue(L1Messenger.failedMessages(hash));
+        assertFalse(L1Messenger.successfulMessages(hash));
+
+        uint32 identityGas = uint32(15 + 3 * ((message.length + 31) / 32));
+        uint32 minGasLimit = uint32(L1Messenger.baseGas(message, identityGas) + 1);
+        vm.expectCallMinGas(address(0x04), 1, minGasLimit, message);
+        L1Messenger.relayMessage{ gas: L1Messenger.baseGas(message, minGasLimit) }(
+            Encoding.encodeVersionedNonce(0, 1),
+            Predeploys.L2_CROSS_DOMAIN_MESSENGER,
+            address(0x04),
+            214,
+            1,
+            minGasLimit,
+            message
+        );
+        assertTrue(L1Messenger.successfulMessages(hash));
+        // failedMessages remains set after a successful replay, preventing a second initial relay.
+        assertTrue(L1Messenger.failedMessages(hash));
+    }
+
     /// @custom:invariant A call to `relayMessage` should assign the message hash to the
-    ///                   `failedMessages` mapping if not enough gas is supplied to forward
-    ///                   `minGasLimit` to the target context or if there is not enough gas to
-    ///                   complete execution of `relayMessage` after the target context's execution
-    ///                   is finished.
+    ///                   `failedMessages` mapping when the pre-call gas check fails and the
+    ///                   outer call still has enough gas to complete failure bookkeeping.
     ///
     /// There are two minimum gas limits here:
     ///
@@ -164,6 +205,9 @@ contract XDM_MinGasLimits_Reverts is XDM_MinGasLimits {
     ///
     /// - The inner min gas limit is for the call from the `L1CrossDomainMessenger` to the target
     /// contract.
+    /// forge-config: default.invariant.fail-on-revert = true
+    /// forge-config: ci.invariant.fail-on-revert = true
+    /// forge-config: ciheavy.invariant.fail-on-revert = true
     function invariant_minGasLimits() external view {
         uint256 length = actor.numHashes();
         for (uint256 i = 0; i < length; ++i) {

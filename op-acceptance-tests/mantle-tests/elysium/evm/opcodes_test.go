@@ -1,0 +1,100 @@
+package evm
+
+import (
+	"testing"
+
+	"github.com/ethereum-optimism/optimism/op-acceptance-tests/mantle-tests/elysium/internal/testhelpers"
+	"github.com/ethereum-optimism/optimism/op-devstack/devtest"
+	"github.com/ethereum-optimism/optimism/op-devstack/presets"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
+	"github.com/ethereum-optimism/optimism/op-service/txplan"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+)
+
+// deployRuntimeInitCode returns EVM init code that, when run as a CREATE, stores
+// the given runtime blob verbatim as the new contract's code. The init code only
+// CODECOPYs and RETURNs the blob — it never executes it — so deployment succeeds
+// even when the runtime contains an opcode the current EVM does not implement.
+func deployRuntimeInitCode(runtime []byte) []byte {
+	n := len(runtime)
+	hi, lo := byte(n>>8), byte(n)
+	prefix := []byte{
+		0x61, hi, lo, // PUSH2 n
+		0x60, 0x00, //   PUSH1 <prefixLen>  (patched below to the runtime offset)
+		0x60, 0x00, //   PUSH1 0
+		0x39,         //   CODECOPY   mem[0:n] = code[prefixLen:prefixLen+n]
+		0x61, hi, lo, // PUSH2 n
+		0x60, 0x00, //   PUSH1 0
+		0xf3, //         RETURN     mem[0:n]
+	}
+	prefix[4] = byte(len(prefix)) // the runtime blob starts right after the prefix
+	return append(prefix, runtime...)
+}
+
+// TestL2EVM_NoNewOpcodes asserts the Mantle L2 EVM stays on Arsia rules and
+// keeps EIP-8024 stack opcodes undefined while the L1 runs Glamsterdam.
+//
+// For each opcode we deploy a probe contract whose runtime code executes that
+// opcode, then call it. Deployment must succeed (the init code only stores the
+// blob), but the subsequent call must revert (Status == Failed) because the EVM
+// hits an invalid/undefined opcode.
+//
+// Gas-rule sub-cases live in sibling evm packages.
+func runNoNewOpcodes(gt *testing.T) {
+	t := devtest.SerialT(gt)
+	sys := presets.NewMantleMinimal(t)
+	require := t.Require()
+	ctx := t.Ctx()
+
+	// Ensure the L1 has actually upgraded to Glamsterdam before probing the L2.
+	l1Config := sys.L1Network.Escape().ChainConfig()
+	require.NotNil(l1Config.AmsterdamTime, "L1 AmsterdamTime must be configured")
+	testhelpers.WaitForGlamsterdamL1(t, sys.L1EL, *l1Config.AmsterdamTime)
+
+	wallet := sys.FunderL2.NewFundedEOA(eth.OneEther)
+
+	newOpcodes := []struct {
+		name string
+		op   byte
+	}{
+		{"DUPN", 0xe6},
+		{"SWAPN", 0xe7},
+		{"EXCHANGE", 0xe8},
+	}
+
+	for _, tc := range newOpcodes {
+		// Four PUSHes and immediate 0x00 give each EIP-8024 opcode enough stack to
+		// succeed if implemented; on Arsia it must fail as undefined.
+		runtime := []byte{0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, tc.op, 0x00, 0x00}
+
+		// Deploy the probe contract. Creation must succeed: the init code only
+		// RETURNs the runtime blob, it does not run the new opcode.
+		deploy, err := txplan.NewPlannedTx(txplan.Combine(
+			wallet.Plan(),
+			txplan.WithData(deployRuntimeInitCode(runtime)),
+			txplan.WithGasLimit(1_000_000),
+		)).Included.Eval(ctx)
+		require.NoError(err, "deploy tx for %s probe must be included", tc.name)
+		require.Equal(types.ReceiptStatusSuccessful, deploy.Status, "deploying the %s probe contract must succeed", tc.name)
+		require.NotEqual(common.Address{}, deploy.ContractAddress, "%s probe contract must have an address", tc.name)
+
+		// Call the deployed contract. Explicit gas is set because an invalid
+		// opcode consumes all supplied gas; the call must revert on Arsia.
+		const callGasLimit = uint64(1_000_000)
+		addr := deploy.ContractAddress
+		call, err := txplan.NewPlannedTx(txplan.Combine(
+			wallet.Plan(),
+			txplan.WithTo(&addr),
+			txplan.WithGasLimit(callGasLimit),
+		)).Included.Eval(ctx)
+		require.NoError(err, "call tx for %s must be included even though it reverts", tc.name)
+		require.Equal(types.ReceiptStatusFailed, call.Status, "calling %s (0x%x) must revert on Arsia — the opcode is not supported", tc.name, tc.op)
+
+		// Invalid opcode burns the full gas allowance; a partial burn would be a different failure.
+		require.EqualValuesf(callGasLimit, call.GasUsed,
+			"calling %s (0x%x) must fail as an invalid opcode, which consumes the whole gas "+
+				"allowance; a partial burn of %d/%d means it failed for some other reason",
+			tc.name, tc.op, call.GasUsed, callGasLimit)
+	}
+}

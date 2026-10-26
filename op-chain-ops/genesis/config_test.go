@@ -17,8 +17,25 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-core/forks"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/testlog"
 )
+
+func TestNewL1GenesisMinimalAmsterdamTimeOffset(t *testing.T) {
+	timestamp := hexutil.Uint64(1_800_000_000)
+	amsterdamOffset := uint64(48)
+
+	genesis, err := NewL1GenesisMinimal(&DevL1DeployConfigMinimal{
+		DevL1DeployConfig: DevL1DeployConfig{
+			L1GenesisBlockTimestamp: timestamp,
+		},
+		L1ChainID:             eth.ChainIDFromUInt64(1),
+		L1AmsterdamTimeOffset: &amsterdamOffset,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, genesis.Config.AmsterdamTime)
+	require.Equal(t, uint64(timestamp)+amsterdamOffset, *genesis.Config.AmsterdamTime)
+}
 
 func TestConfigDataMarshalUnmarshal(t *testing.T) {
 	b, err := os.ReadFile("testdata/test-deploy-config-full.json")

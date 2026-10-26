@@ -52,6 +52,9 @@ func TestStandardBinary_ForgeBins(t *testing.T) {
 }
 
 func TestStandardBinary_Downloads(t *testing.T) {
+	// Exercise downloading even when the pinned Foundry version is already installed.
+	t.Setenv("PATH", "")
+
 	expChecksum, err := os.ReadFile("testdata/foundry.tgz.sha256")
 	require.NoError(t, err)
 

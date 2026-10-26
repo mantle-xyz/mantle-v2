@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ethereum-optimism/optimism/devnet-sdk/controller/kt"
+	"github.com/ethereum-optimism/optimism/devnet-sdk/controller/rde"
 	"github.com/ethereum-optimism/optimism/devnet-sdk/controller/surface"
 	"github.com/ethereum-optimism/optimism/devnet-sdk/descriptors"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
@@ -39,6 +40,15 @@ func getKurtosisController(env *descriptors.DevnetEnvironment) surfaceGetter {
 	}
 }
 
+// getRdeController controls a devnet orchestrated by rde (mantle-xyz/rde-v4).
+// The descriptor itself is a plain file, so this is only ever selected via
+// DEVNET_ENV_CTRL=rde (the control surface is decoupled from the data source).
+func getRdeController(env *descriptors.DevnetEnvironment) surfaceGetter {
+	return func() (surface.ControlSurface, error) {
+		return rde.NewRdeControllerSurface(env)
+	}
+}
+
 var (
 	ktFetcher = &kurtosisFetcher{
 		devnetFSFactory: newDevnetFS,
@@ -50,6 +60,9 @@ var (
 		"file":     {fetchFileData, nil},
 		"kt":       {ktFetcher.fetchKurtosisData, getKurtosisController},
 		"ktnative": {fetchKurtosisNativeData, getKurtosisController},
+		// rde-managed devnet: descriptor still comes from a file, but service
+		// lifecycle is driven through the rde CLI. Select with DEVNET_ENV_CTRL=rde.
+		"rde": {fetchFileData, getRdeController},
 	}
 )
 

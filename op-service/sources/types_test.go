@@ -55,6 +55,59 @@ func TestBlockHeaderJSON(t *testing.T) {
 	}
 }
 
+func TestRPCHeaderParsesGethAmsterdamBlockAccessListHash(t *testing.T) {
+	zero := uint64(0)
+	slot := uint64(12345)
+	balHash := common.HexToHash("0x9adef00d000000000000000000000000000000000000000000000000deadbeef")
+	parentBeaconRoot := randHash()
+	header := &types.Header{
+		ParentHash:          randHash(),
+		UncleHash:           types.EmptyUncleHash,
+		Coinbase:            common.Address{},
+		Root:                randHash(),
+		TxHash:              types.EmptyTxsHash,
+		ReceiptHash:         types.EmptyReceiptsHash,
+		Bloom:               types.Bloom{},
+		Difficulty:          big.NewInt(0),
+		Number:              big.NewInt(1),
+		GasLimit:            30_000_000,
+		GasUsed:             0,
+		Time:                1_800_000_000,
+		Extra:               []byte{},
+		MixDigest:           randHash(),
+		Nonce:               types.BlockNonce{},
+		BaseFee:             big.NewInt(1),
+		WithdrawalsHash:     &types.EmptyWithdrawalsHash,
+		BlobGasUsed:         &zero,
+		ExcessBlobGas:       &zero,
+		ParentBeaconRoot:    &parentBeaconRoot,
+		RequestsHash:        &types.EmptyRequestsHash,
+		BlockAccessListHash: &balHash,
+		SlotNumber:          &slot,
+	}
+
+	raw, err := json.Marshal(header)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"blockAccessListHash"`)
+	require.NotContains(t, string(raw), `"balHash"`)
+
+	var rpcHeader RPCHeader
+	require.NoError(t, json.Unmarshal(raw, &rpcHeader))
+	require.NotNil(t, rpcHeader.BlockAccessListHash)
+	require.Equal(t, balHash, *rpcHeader.BlockAccessListHash)
+
+	reconstructed := rpcHeader.CreateGethHeader()
+	require.NotNil(t, reconstructed.BlockAccessListHash)
+	require.Equal(t, balHash, *reconstructed.BlockAccessListHash)
+	require.NotNil(t, reconstructed.SlotNumber)
+	require.Equal(t, slot, *reconstructed.SlotNumber)
+	require.Equal(t, header.Hash(), reconstructed.Hash())
+
+	info, err := rpcHeader.Info(false, true)
+	require.NoError(t, err)
+	require.Equal(t, header.Hash(), info.Hash())
+}
+
 func TestBlockJSON(t *testing.T) {
 	blocksDir, err := blocksTestdata.ReadDir("testdata/data/blocks")
 	require.NoError(t, err)

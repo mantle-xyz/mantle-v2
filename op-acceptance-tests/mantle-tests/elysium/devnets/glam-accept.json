@@ -1,0 +1,233 @@
+{
+  "name": "glam-accept",
+  "features": [
+    "mantle"
+  ],
+  "l1": {
+    "name": "l1",
+    "id": "31337",
+    "config": {
+      "amsterdamTime": 1784617258,
+      "berlinBlock": 0,
+      "blobSchedule": {
+        "amsterdam": {
+          "baseFeeUpdateFraction": 11684671,
+          "max": 21,
+          "target": 14
+        },
+        "bpo1": {
+          "baseFeeUpdateFraction": 8346193,
+          "max": 15,
+          "target": 10
+        },
+        "bpo2": {
+          "baseFeeUpdateFraction": 11684671,
+          "max": 21,
+          "target": 14
+        },
+        "cancun": {
+          "baseFeeUpdateFraction": 3338477,
+          "max": 6,
+          "target": 3
+        },
+        "osaka": {
+          "baseFeeUpdateFraction": 5007716,
+          "max": 9,
+          "target": 6
+        },
+        "prague": {
+          "baseFeeUpdateFraction": 5007716,
+          "max": 9,
+          "target": 6
+        }
+      },
+      "bpo1Time": 0,
+      "bpo2Time": 1784616490,
+      "byzantiumBlock": 0,
+      "cancunTime": 0,
+      "chainId": 31337,
+      "constantinopleBlock": 0,
+      "depositContractAddress": "0x00000000219ab540356cBB839Cbe05303d7705Fa",
+      "eip150Block": 0,
+      "eip155Block": 0,
+      "eip158Block": 0,
+      "homesteadBlock": 0,
+      "istanbulBlock": 0,
+      "londonBlock": 0,
+      "mergeNetsplitBlock": 0,
+      "osakaTime": 0,
+      "petersburgBlock": 0,
+      "pragueTime": 0,
+      "shanghaiTime": 0,
+      "terminalTotalDifficulty": 0
+    },
+    "services": {
+      "faucet": [
+        {
+          "name": "op-faucet",
+          "endpoints": {
+            "rpc": {
+              "host": "127.0.0.1",
+              "port": 9000,
+              "scheme": "http"
+            }
+          }
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "name": "geth0",
+        "services": {
+          "el": {
+            "name": "geth0",
+            "endpoints": {
+              "rpc": {
+                "host": "127.0.0.1",
+                "port": 30145,
+                "scheme": "http"
+              }
+            }
+          },
+          "cl": {
+            "name": "beacon0",
+            "endpoints": {
+              "http": {
+                "host": "127.0.0.1",
+                "port": 30152,
+                "scheme": "http"
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "l2": [
+    {
+      "name": "mantle",
+      "id": "1337",
+      "config": {
+        "chainId": 1337
+      },
+      "services": {
+        "faucet": [
+          {
+            "name": "op-faucet",
+            "endpoints": {
+              "rpc": {
+                "host": "127.0.0.1",
+                "port": 9000,
+                "scheme": "http"
+              }
+            }
+          }
+        ],
+        "batcher": [
+          {
+            "name": "op-batcher",
+            "endpoints": {
+              "http": {
+                "host": "127.0.0.1",
+                "port": 30248,
+                "scheme": "http"
+              }
+            }
+          }
+        ],
+        "proposer": [
+          {
+            "name": "op-proposer",
+            "endpoints": {
+              "http": {
+                "host": "127.0.0.1",
+                "port": 30249,
+                "scheme": "http"
+              }
+            }
+          }
+        ]
+      },
+      "nodes": [
+        {
+          "name": "sequencer",
+          "services": {
+            "el": {
+              "name": "op-geth",
+              "endpoints": {
+                "rpc": {
+                  "host": "127.0.0.1",
+                  "port": 30245,
+                  "scheme": "http"
+                }
+              }
+            },
+            "cl": {
+              "name": "op-node",
+              "endpoints": {
+                "rpc": {
+                  "host": "127.0.0.1",
+                  "port": 30247,
+                  "scheme": "http"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "verifier",
+          "services": {
+            "el": {
+              "name": "op-geth-rpc1",
+              "endpoints": {
+                "rpc": {
+                  "host": "127.0.0.1",
+                  "port": 31245,
+                  "scheme": "http"
+                }
+              }
+            },
+            "cl": {
+              "name": "op-node-rpc1",
+              "endpoints": {
+                "rpc": {
+                  "host": "127.0.0.1",
+                  "port": 31247,
+                  "scheme": "http"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "l1_wallets": {
+        "systemConfigOwner": {
+          "address": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "private_key": "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
+        },
+        "l1ProxyAdmin": {
+          "address": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+          "private_key": "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
+        },
+        "batcher": {
+          "address": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+          "private_key": "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"
+        },
+        "proposer": {
+          "address": "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+          "private_key": "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"
+        },
+        "deployer": {
+          "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "private_key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+        }
+      },
+      "addresses": {
+        "systemConfigProxy": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+        "l1StandardBridgeProxy": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+        "l1MantleTokenProxy": "0x8000000000000000000000000000000000000000",
+        "disputeGameFactoryProxy": "0x0000000000000000000000000000000000000000"
+      }
+    }
+  ]
+}

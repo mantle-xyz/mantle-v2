@@ -149,6 +149,19 @@
   },
   {
     "inputs": [],
+    "name": "RELAY_NEW_ACCOUNT_OVERHEAD",
+    "outputs": [
+      {
+        "internalType": "uint64",
+        "name": "",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "RELAY_RESERVED_GAS",
     "outputs": [
       {
