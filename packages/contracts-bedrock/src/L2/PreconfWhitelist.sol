@@ -52,8 +52,8 @@ contract PreconfWhitelist {
 
     /// @notice Commitment to every batch applied so far: `keccak256(abi.encode(previous, add,
     ///         remove))`, seeded by the constructor's rules against `bytes32(0)`. Slot 8. op-reth
-    ///         reads it at a block's parent to tell whether the lists it already holds are current.
-    ///         Changes on every update, including one that leaves the lists as they were.
+    ///         compares it with its in-memory copy's to tell whether that copy is current. Changes
+    ///         on every update, including one that leaves the lists as they were.
     bytes32 public listsHash;
 
     /// @notice Maximum rules one `updatePreconfs` may touch, summed across both arguments. Sized on
