@@ -16,6 +16,7 @@ use kona_genesis::{L1ChainConfig, RollupConfig};
 use kona_interop::DependencySet;
 use kona_preimage::{
     BidirectionalChannel, Channel, HintReader, HintWriter, OracleReader, OracleServer,
+    VerifyingPreimageFetcher,
 };
 use kona_proof_interop::HintType;
 use kona_providers_alloy::{OnlineBeaconClient, OnlineBlobProvider};
@@ -120,6 +121,16 @@ pub enum InteropHostError {
     /// An IO error.
     #[error("IO error: {0}")]
     IOError(#[from] std::io::Error),
+    /// `[MANTLE]` The rollup config schedules Mantle hardforks out of order.
+    #[error("Invalid Mantle hardfork schedule: {0}")]
+    MantleForkOrder(#[from] kona_genesis::MantleForkOrderError),
+
+    /// `[MANTLE]` The rollup config schedules Mantle hardforks this build does not implement.
+    #[error(
+        "Rollup config schedules Mantle hardfork(s) this build does not implement: {0}. \
+         op-node would activate them and kona would not, so refusing to start."
+    )]
+    UnimplementedMantleForks(String),
     /// A JSON parse error.
     #[error("Failed deserializing RollupConfig: {0}")]
     ParseError(#[from] serde_json::Error),
@@ -135,17 +146,17 @@ pub enum InteropHostError {
     /// An error when no provider found for chain ID.
     #[error("No provider found for chain ID: {0}")]
     RootProviderError(u64),
-    /// Interop is scheduled for a supplied rollup config but no dependency-set file was provided.
+    /// Lagoon is scheduled for a supplied rollup config but no dependency-set file was provided.
     #[error(
-        "Interop is scheduled for chain {chain_id} (interop_time = {interop_time:?}), but \
+        "Lagoon is scheduled for chain {chain_id} (lagoon_time = {lagoon_time:?}), but \
          --depset-cfg was not provided. Supply the dependency-set JSON file matching op-node's \
-         --interop.dependency-set to avoid silent state divergence on interop activation."
+         --interop.dependency-set to avoid silent state divergence on Lagoon activation."
     )]
     InteropWithoutDependencySet {
-        /// The L2 chain ID whose rollup config has interop scheduled.
+        /// The L2 chain ID whose rollup config has Lagoon scheduled.
         chain_id: u64,
-        /// The `interop_time` from that rollup config.
-        interop_time: Option<u64>,
+        /// The `lagoon_time` from that rollup config.
+        lagoon_time: Option<u64>,
     },
     /// Any other error.
     #[error("Error: {0}")]
@@ -155,8 +166,6 @@ pub enum InteropHostError {
 impl InteropHost {
     /// Starts the [`InteropHost`] application.
     pub async fn start(self) -> Result<(), InteropHostError> {
-        self.require_dependency_set_if_interop_scheduled()?;
-
         if self.server {
             let hint = FileChannel::new(FileDescriptor::HintRead, FileDescriptor::HintWrite);
             let preimage =
@@ -168,7 +177,7 @@ impl InteropHost {
         }
     }
 
-    /// Refuses to start when any supplied rollup config schedules the Interop hardfork but no
+    /// Refuses to start when any supplied rollup config schedules the Lagoon hardfork but no
     /// `--depset-cfg` was provided. Mirrors the same invariant enforced by `kona-node`, turning a
     /// silent state-divergence bug into a startup crash.
     ///
@@ -180,7 +189,7 @@ impl InteropHost {
     }
 
     /// Starts the preimage server, communicating with the client over the provided channels.
-    async fn start_server<C>(
+    pub async fn start_server<C>(
         &self,
         hint: C,
         preimage: C,
@@ -188,6 +197,8 @@ impl InteropHost {
     where
         C: Channel + Send + Sync + 'static,
     {
+        self.require_dependency_set_if_interop_scheduled()?;
+
         let kv_store = self.create_key_value_store()?;
 
         let task_handle = if self.is_offline() {
@@ -195,7 +206,7 @@ impl InteropHost {
                 PreimageServer::new(
                     OracleServer::new(preimage),
                     HintReader::new(hint),
-                    Arc::new(OfflineHostBackend::new(kv_store)),
+                    Arc::new(VerifyingPreimageFetcher::new(OfflineHostBackend::new(kv_store))),
                 )
                 .start()
                 .await
@@ -209,14 +220,14 @@ impl InteropHost {
                 providers,
                 InteropHintHandler,
             )
-            .with_proactive_hint(HintType::L2BlockData)
-            .with_proactive_hint(HintType::L2PayloadWitness);
+            .with_high_level_hint(HintType::L2BlockData)
+            .with_high_level_hint(HintType::L2PayloadWitness);
 
             task::spawn(async {
                 PreimageServer::new(
                     OracleServer::new(preimage),
                     HintReader::new(hint),
-                    Arc::new(backend),
+                    Arc::new(VerifyingPreimageFetcher::new(backend)),
                 )
                 .start()
                 .await
@@ -266,7 +277,17 @@ impl InteropHost {
             let ser_config = std::fs::read_to_string(path)?;
 
             // Deserialize the config and return it.
-            let cfg: RollupConfig = serde_json::from_str(&ser_config)?;
+            // [MANTLE] Same startup validation as the single-chain host — see
+            // `SingleChainHostCli::read_rollup_config` for why the raw-key scan is needed on
+            // top of `deny_unknown_fields`.
+            let raw: serde_json::Value = serde_json::from_str(&ser_config)?;
+            let unknown = crate::mantle_config::unknown_mantle_forks(&raw);
+            if !unknown.is_empty() {
+                return Err(InteropHostError::UnimplementedMantleForks(unknown.join(", ")));
+            }
+
+            let cfg: RollupConfig = serde_json::from_value(raw)?;
+            cfg.check_mantle_fork_order()?;
 
             acc.insert(cfg.l2_chain_id.id(), cfg);
             Ok(acc)
@@ -359,7 +380,7 @@ impl InteropProviders {
     }
 }
 
-/// Returns `Err` when any config in `configs` schedules the Interop hardfork but
+/// Returns `Err` when any config in `configs` schedules the Lagoon hardfork but
 /// `dependency_set_path` is `None`.
 fn require_dependency_set_for_configs(
     configs: &BTreeMap<u64, RollupConfig>,
@@ -369,10 +390,10 @@ fn require_dependency_set_for_configs(
         return Ok(());
     }
     for (chain_id, cfg) in configs {
-        if cfg.hardforks.interop_time.is_some() {
+        if cfg.hardforks.lagoon_time.is_some() {
             return Err(InteropHostError::InteropWithoutDependencySet {
                 chain_id: *chain_id,
-                interop_time: cfg.hardforks.interop_time,
+                lagoon_time: cfg.hardforks.lagoon_time,
             });
         }
     }
@@ -385,9 +406,9 @@ mod tests {
     use alloy_primitives::b256;
     use kona_genesis::HardForkConfig;
 
-    fn rollup_config_with_interop_time(interop_time: Option<u64>) -> RollupConfig {
+    fn rollup_config_with_lagoon_time(lagoon_time: Option<u64>) -> RollupConfig {
         RollupConfig {
-            hardforks: HardForkConfig { interop_time, ..Default::default() },
+            hardforks: HardForkConfig { lagoon_time, ..Default::default() },
             ..Default::default()
         }
     }
@@ -395,13 +416,13 @@ mod tests {
     #[test]
     fn test_require_dependency_set_interop_scheduled_without_depset() {
         let configs: BTreeMap<u64, RollupConfig> =
-            BTreeMap::from([(10u64, rollup_config_with_interop_time(Some(42)))]);
+            BTreeMap::from([(10u64, rollup_config_with_lagoon_time(Some(42)))]);
 
         let err = require_dependency_set_for_configs(&configs, &None).unwrap_err();
         match err {
-            InteropHostError::InteropWithoutDependencySet { chain_id, interop_time } => {
+            InteropHostError::InteropWithoutDependencySet { chain_id, lagoon_time } => {
                 assert_eq!(chain_id, 10);
-                assert_eq!(interop_time, Some(42));
+                assert_eq!(lagoon_time, Some(42));
             }
             other => panic!("expected InteropWithoutDependencySet, got {other:?}"),
         }
@@ -410,7 +431,7 @@ mod tests {
     #[test]
     fn test_require_dependency_set_interop_scheduled_with_depset() {
         let configs: BTreeMap<u64, RollupConfig> =
-            BTreeMap::from([(10u64, rollup_config_with_interop_time(Some(42)))]);
+            BTreeMap::from([(10u64, rollup_config_with_lagoon_time(Some(42)))]);
         let depset = Some(PathBuf::from("/tmp/depset.json"));
 
         assert!(require_dependency_set_for_configs(&configs, &depset).is_ok());
@@ -419,9 +440,38 @@ mod tests {
     #[test]
     fn test_require_dependency_set_no_interop_no_depset() {
         let configs: BTreeMap<u64, RollupConfig> =
-            BTreeMap::from([(10u64, rollup_config_with_interop_time(None))]);
+            BTreeMap::from([(10u64, rollup_config_with_lagoon_time(None))]);
 
         assert!(require_dependency_set_for_configs(&configs, &None).is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_start_server_requires_dependency_set_when_interop_scheduled() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rollup_config_path = temp_dir.path().join("rollup.json");
+        std::fs::write(
+            &rollup_config_path,
+            serde_json::to_string(&rollup_config_with_lagoon_time(Some(42))).unwrap(),
+        )
+        .unwrap();
+
+        let host = InteropHost {
+            server: true,
+            rollup_config_paths: Some(vec![rollup_config_path]),
+            ..Default::default()
+        };
+        let hint = BidirectionalChannel::new().unwrap();
+        let preimage = BidirectionalChannel::new().unwrap();
+
+        let err = host.start_server(hint.host, preimage.host).await.unwrap_err();
+
+        match err {
+            InteropHostError::InteropWithoutDependencySet { chain_id, lagoon_time } => {
+                assert_eq!(chain_id, 0);
+                assert_eq!(lagoon_time, Some(42));
+            }
+            other => panic!("expected InteropWithoutDependencySet, got {other:?}"),
+        }
     }
 
     #[test]

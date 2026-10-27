@@ -1,7 +1,9 @@
 //! Implementation of the [`ExecuteEvm`] trait for the [`OpEvm`].
 use crate::{
-    L1BlockInfo, OpHaltReason, OpSpecId, OpTransactionError, evm::OpEvm, handler::OpHandler,
-    transaction::OpTxTr,
+    L1BlockInfo, OpHaltReason, OpSpecId, OpTransactionError,
+    evm::OpEvm,
+    handler::OpHandler,
+    transaction::{OpTxTr, bvm_eth::JournalColdExt},
 };
 use revm::{
     DatabaseCommit, ExecuteCommitEvm, ExecuteEvm,
@@ -25,7 +27,7 @@ use revm::{
 /// Type alias for Optimism context
 pub trait OpContextTr:
     ContextTr<
-        Journal: JournalTr<State = EvmState>,
+        Journal: JournalTr<State = EvmState> + JournalColdExt,
         Tx: OpTxTr,
         Cfg: Cfg<Spec = OpSpecId>,
         Chain = L1BlockInfo,
@@ -35,7 +37,7 @@ pub trait OpContextTr:
 
 impl<T> OpContextTr for T where
     T: ContextTr<
-            Journal: JournalTr<State = EvmState>,
+            Journal: JournalTr<State = EvmState> + JournalColdExt,
             Tx: OpTxTr,
             Cfg: Cfg<Spec = OpSpecId>,
             Chain = L1BlockInfo,

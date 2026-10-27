@@ -15,6 +15,7 @@ use kona_cli::cli_styles;
 use kona_genesis::{L1ChainConfig, RollupConfig};
 use kona_preimage::{
     BidirectionalChannel, Channel, HintReader, HintWriter, OracleReader, OracleServer,
+    VerifyingPreimageFetcher,
 };
 use kona_proof::HintType;
 use kona_providers_alloy::{OnlineBeaconClient, OnlineBlobProvider};
@@ -127,6 +128,17 @@ pub enum SingleChainHostError {
     /// A JSON parse error.
     #[error("Failed deserializing RollupConfig: {0}")]
     ParseError(#[from] serde_json::Error),
+
+    /// `[MANTLE]` The rollup config schedules Mantle hardforks out of order.
+    #[error("Invalid Mantle hardfork schedule: {0}")]
+    MantleForkOrder(#[from] kona_genesis::MantleForkOrderError),
+
+    /// `[MANTLE]` The rollup config schedules Mantle hardforks this build does not implement.
+    #[error(
+        "Rollup config schedules Mantle hardfork(s) this build does not implement: {0}. \
+         op-node would activate them and kona would not, so refusing to start."
+    )]
+    UnimplementedMantleForks(String),
     /// Task failed to execute to completion.
     #[error("Join error: {0}")]
     ExecutionError(#[from] tokio::task::JoinError),
@@ -171,7 +183,7 @@ impl SingleChainHost {
                 PreimageServer::new(
                     OracleServer::new(preimage),
                     HintReader::new(hint),
-                    Arc::new(OfflineHostBackend::new(kv_store)),
+                    Arc::new(VerifyingPreimageFetcher::new(OfflineHostBackend::new(kv_store))),
                 )
                 .start()
                 .await
@@ -185,13 +197,13 @@ impl SingleChainHost {
                 providers,
                 SingleChainHintHandler,
             )
-            .with_proactive_hint(HintType::L2PayloadWitness);
+            .with_high_level_hint(HintType::L2PayloadWitness);
 
             task::spawn(async {
                 PreimageServer::new(
                     OracleServer::new(preimage),
                     HintReader::new(hint),
-                    Arc::new(backend),
+                    Arc::new(VerifyingPreimageFetcher::new(backend)),
                 )
                 .start()
                 .await
@@ -236,8 +248,27 @@ impl SingleChainHost {
         // Read the serialized config from the file system.
         let ser_config = std::fs::read_to_string(path)?;
 
+        // [MANTLE] Scan the raw keys before trusting the deserialized value. `RollupConfig`
+        // flattens `MantleHardForkConfig`, which makes its `deny_unknown_fields` inert, so an
+        // unimplemented `mantle_*_time` would otherwise be dropped in silence.
+        let raw: serde_json::Value =
+            serde_json::from_str(&ser_config).map_err(SingleChainHostError::ParseError)?;
+        let unknown = crate::mantle_config::unknown_mantle_forks(&raw);
+        if !unknown.is_empty() {
+            return Err(SingleChainHostError::UnimplementedMantleForks(unknown.join(", ")));
+        }
+
         // Deserialize the config and return it.
-        serde_json::from_str(&ser_config).map_err(SingleChainHostError::ParseError)
+        let cfg: RollupConfig =
+            serde_json::from_value(raw).map_err(SingleChainHostError::ParseError)?;
+
+        // [MANTLE] op-node validates the Mantle fork schedule at startup (`CheckMantleForks`,
+        // reached through `AlignOpWithMantle`). Without this, a rollup.json that schedules a
+        // fork whose predecessor is missing — or out of order — is rejected by op-node and
+        // silently accepted here, which is exactly the class of mistake a new fork invites.
+        cfg.check_mantle_fork_order()?;
+
+        Ok(cfg)
     }
 
     /// Reads the [`L1ChainConfig`] from the file system and returns the deserialized configuration.

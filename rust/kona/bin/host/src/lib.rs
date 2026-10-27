@@ -16,6 +16,9 @@ pub use kv::{
 mod backend;
 pub use backend::{HintHandler, OfflineHostBackend, OnlineHostBackend, OnlineHostBackendCfg};
 
+// [MANTLE] See the module docs: `deny_unknown_fields` cannot cover the flattened path.
+mod mantle_config;
+
 pub mod eth;
 
 #[cfg(feature = "single")]

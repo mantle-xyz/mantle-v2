@@ -1,0 +1,111 @@
+[
+  {
+    "name": "debug_getRawTransaction_latest",
+    "method": "debug_getRawTransaction",
+    "params": [
+      "{{latest_tx_hash}}"
+    ],
+    "description": "Raw RLP of the latest transaction (expected to match byte for byte)"
+  },
+  {
+    "name": "debug_getRawTransaction_not_found",
+    "method": "debug_getRawTransaction",
+    "params": [
+      "0x0000000000000000000000000000000000000000000000000000000000000000"
+    ],
+    "description": "Nonexistent transaction hash (boundary case for not-found responses)"
+  },
+  {
+    "name": "debug_traceBlockByHash_latest",
+    "method": "debug_traceBlockByHash",
+    "params": [
+      "{{latest_block_hash}}",
+      {}
+    ],
+    "description": "Trace the latest block by hash using the default structLog tracer"
+  },
+  {
+    "name": "debug_traceBlockByHash_callTracer",
+    "method": "debug_traceBlockByHash",
+    "params": [
+      "{{latest_block_hash}}",
+      {
+        "tracer": "callTracer"
+      }
+    ],
+    "description": "Trace the latest block by hash using callTracer"
+  },
+  {
+    "name": "debug_traceBlock_block1_rlp",
+    "method": "debug_traceBlock",
+    "params": [
+      "{{block_one_rlp}}",
+      {}
+    ],
+    "description": "Trace devnet block 1 using its runtime-fetched raw RLP"
+  },
+  {
+    "name": "debug_traceBlock_block1_callTracer",
+    "method": "debug_traceBlock",
+    "params": [
+      "{{block_one_rlp}}",
+      {
+        "tracer": "callTracer"
+      }
+    ],
+    "description": "Trace block 1 using runtime-fetched RLP and callTracer"
+  },
+  {
+    "name": "eth_getStorageValues_l1block",
+    "method": "eth_getStorageValues",
+    "params": [
+      {
+        "0x4200000000000000000000000000000000000015": [
+          "0x0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      },
+      "{{latest_block_number}}"
+    ],
+    "description": "Read multiple storage slots across addresses (a reth extension also implemented by geth). Fix {{latest_block_number}} to avoid comparing different latest blocks; L1Block storage changes each block."
+  },
+  {
+    "name": "debug_intermediateRoots_latest",
+    "method": "debug_intermediateRoots",
+    "params": [
+      "{{latest_block_hash}}"
+    ],
+    "description": "Intermediate state roots; reth can compute these only for recent blocks because older state is pruned. Use latest_block_hash; a newly produced block can still cause an occasional empty reth result."
+  },
+  {
+    "name": "debug_printBlock_stub_diff",
+    "method": "debug_printBlock",
+    "params": [
+      1
+    ],
+    "description": "Request a block dump using a numeric block number."
+  },
+  {
+    "name": "eth_config_geth_crash_diff",
+    "method": "eth_config",
+    "params": [],
+    "description": "Query chain configuration and compare the returned result or RPC error."
+  },
+  {
+    "name": "admin_peers_empty",
+    "method": "admin_peers",
+    "params": [],
+    "description": "Peer list: devnet execution clients have P2P discovery disabled, so both should return []."
+  },
+  {
+    "name": "debug_freeOSMemory",
+    "method": "debug_freeOSMemory",
+    "params": [],
+    "description": "Force GC to return memory; both endpoints return null (a harmless operational method)."
+  },
+  {
+    "name": "admin_nodeInfo_structdiff",
+    "method": "admin_nodeInfo",
+    "params": [],
+    "description": "Node-local identity values may differ; protocol and configuration fields remain strictly compared."
+  }
+]

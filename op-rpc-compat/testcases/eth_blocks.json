@@ -1,0 +1,212 @@
+[
+  {
+    "name": "eth_getBlockByNumber_latest",
+    "method": "eth_getBlockByNumber",
+    "params": ["latest", false],
+    "description": "Get the latest block without full transaction details"
+  },
+  {
+    "name": "eth_getBlockByNumber_latest_template",
+    "method": "eth_getBlockByNumber",
+    "params": ["{{latest_block_number}}", false],
+    "description": "Get the latest block using the latest_block_number template variable"
+  },
+  {
+    "name": "eth_getBlockByNumber_latest_full",
+    "method": "eth_getBlockByNumber",
+    "params": ["latest", true],
+    "description": "Get the latest block with full transactions"
+  },
+  {
+    "name": "eth_getBlockByNumber_earliest",
+    "method": "eth_getBlockByNumber",
+    "params": ["earliest", false],
+    "description": "Get the genesis block"
+  },
+  {
+    "name": "eth_getBlockByNumber_0x0",
+    "method": "eth_getBlockByNumber",
+    "params": ["0x0", false],
+    "description": "Get block 0"
+  },
+  {
+    "name": "eth_getBlockByNumber_0x1",
+    "method": "eth_getBlockByNumber",
+    "params": ["0x1", false],
+    "description": "Get block 1"
+  },
+  {
+    "name": "eth_getBlockByNumber_0x1_full",
+    "method": "eth_getBlockByNumber",
+    "params": ["0x1", true],
+    "description": "Get block 1 with full transactions"
+  },
+  {
+    "name": "eth_getBlockByNumber_pending",
+    "method": "eth_getBlockByNumber",
+    "params": ["pending", false],
+    "description": "Get the pending block"
+  },
+  {
+    "name": "eth_getBlockByNumber_safe",
+    "method": "eth_getBlockByNumber",
+    "params": ["safe", false],
+    "description": "Get the safe block"
+  },
+  {
+    "name": "eth_getBlockByNumber_finalized",
+    "method": "eth_getBlockByNumber",
+    "params": ["finalized", false],
+    "description": "Get the finalized block"
+  },
+  {
+    "name": "eth_getBlockTransactionCountByNumber_latest",
+    "method": "eth_getBlockTransactionCountByNumber",
+    "params": ["latest"],
+    "description": "Get the transaction count in the latest block"
+  },
+  {
+    "name": "eth_getBlockTransactionCountByNumber_0x0",
+    "method": "eth_getBlockTransactionCountByNumber",
+    "params": ["0x0"],
+    "description": "Get the transaction count in the genesis block"
+  },
+  {
+    "name": "eth_getBlockTransactionCountByNumber_0x1",
+    "method": "eth_getBlockTransactionCountByNumber",
+    "params": ["0x1"],
+    "description": "Get the transaction count in block 1"
+  },
+  {
+    "name": "eth_getUncleCountByBlockNumber_latest",
+    "method": "eth_getUncleCountByBlockNumber",
+    "params": ["latest"],
+    "description": "Get the uncle count in the latest block"
+  },
+  {
+    "name": "eth_getUncleCountByBlockNumber_0x0",
+    "method": "eth_getUncleCountByBlockNumber",
+    "params": ["0x0"],
+    "description": "Get the uncle count in the genesis block"
+  },
+  {
+    "name": "eth_getUncleByBlockNumberAndIndex_latest",
+    "method": "eth_getUncleByBlockNumberAndIndex",
+    "params": ["latest", "0x0"],
+    "description": "Get an uncle (usually returns null)"
+  },
+  {
+    "name": "eth_getHeaderByNumber_latest",
+    "method": "eth_getHeaderByNumber",
+    "params": ["latest"],
+    "description": "Get the latest block header"
+  },
+  {
+    "name": "eth_getHeaderByNumber_0x0",
+    "method": "eth_getHeaderByNumber",
+    "params": ["0x0"],
+    "description": "Get the genesis block header"
+  },
+  {
+    "name": "eth_getHeaderByNumber_0x1",
+    "method": "eth_getHeaderByNumber",
+    "params": ["0x1"],
+    "description": "Get the header of block 1"
+  },
+  {
+    "name": "eth_getBlockReceipts_latest",
+    "method": "eth_getBlockReceipts",
+    "params": ["latest"],
+    "description": "Get all receipts in the latest block"
+  },
+  {
+    "name": "eth_getBlockReceipts_latest_template",
+    "method": "eth_getBlockReceipts",
+    "params": ["{{latest_block_number}}"],
+    "description": "Get all receipts in the latest block using the latest_block_number template variable"
+  },
+  {
+    "name": "eth_getBlockReceipts_0x1",
+    "method": "eth_getBlockReceipts",
+    "params": ["0x1"],
+    "description": "Get all receipts in block 1"
+  },
+  {
+    "name": "eth_getTransactionByBlockNumberAndIndex_latest_0",
+    "method": "eth_getTransactionByBlockNumberAndIndex",
+    "params": ["latest", "0x0"],
+    "description": "Get a transaction by block number and index"
+  },
+  {
+    "name": "eth_getTransactionByBlockNumberAndIndex_0x1_0",
+    "method": "eth_getTransactionByBlockNumberAndIndex",
+    "params": ["0x1", "0x0"],
+    "description": "Get transaction 0 in block 1"
+  },
+  {
+    "name": "eth_getRawTransactionByBlockNumberAndIndex_latest_0",
+    "method": "eth_getRawTransactionByBlockNumberAndIndex",
+    "params": ["latest", "0x0"],
+    "description": "Get a raw transaction by block number and index"
+  },
+  {
+    "name": "eth_getRawTransactionByBlockNumberAndIndex_0x1_0",
+    "method": "eth_getRawTransactionByBlockNumberAndIndex",
+    "params": ["0x1", "0x0"],
+    "description": "Get raw transaction 0 in block 1"
+  },
+  {
+    "name": "eth_getRawTransactionByBlockHashAndIndex_latest_0",
+    "method": "eth_getRawTransactionByBlockHashAndIndex",
+    "params": [
+      "{{latest_block_hash}}",
+      "0x0"
+    ],
+    "description": "Get a raw transaction by latest block hash and index"
+  },
+  {
+    "name": "eth_getRawTransactionByBlockHashAndIndex_invalid",
+    "method": "eth_getRawTransactionByBlockHashAndIndex",
+    "params": [
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "0x0"
+    ],
+    "description": "Get a raw transaction by invalid block hash (may return null)"
+  },
+  {
+    "name": "eth_getTransactionByBlockHashAndIndex_latest_0",
+    "method": "eth_getTransactionByBlockHashAndIndex",
+    "params": [
+      "{{latest_block_hash}}",
+      "0x0"
+    ],
+    "description": "Get a transaction by latest block hash and index"
+  },
+  {
+    "name": "eth_getTransactionByBlockHashAndIndex_invalid",
+    "method": "eth_getTransactionByBlockHashAndIndex",
+    "params": [
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "0x0"
+    ],
+    "description": "Get a transaction by invalid block hash (may return null)"
+  },
+  {
+    "name": "eth_getUncleByBlockHashAndIndex_latest_0",
+    "method": "eth_getUncleByBlockHashAndIndex",
+    "params": [
+      "{{latest_block_hash}}",
+      "0x0"
+    ],
+    "description": "Get an uncle by latest block hash and index (usually returns null)"
+  },
+  {
+    "name": "eth_getUncleByBlockHashAndIndex_invalid",
+    "method": "eth_getUncleByBlockHashAndIndex",
+    "params": [
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "0x0"
+    ],
+    "description": "Get an uncle by invalid block hash (may return null)"
+  }
+]

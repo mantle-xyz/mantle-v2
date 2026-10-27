@@ -50,7 +50,7 @@ lazy_static::lazy_static! {
     /// [`DependencySet`]; chains in disjoint clusters map to **different** values.
     /// Cross-cluster proofs must be rejected by the consumer (see `BootInfo::load`).
     pub static ref DEPENDENCY_SETS: HashMap<u64, DependencySet> = {
-        let raw = include_str!("../etc/depsets.json");
+        let raw = include_str!(concat!(env!("KONA_REGISTRY_DIR"), "/depsets.json"));
         let depsets: Vec<DependencySet> = serde_json::from_str(raw)
             .expect("parse embedded etc/depsets.json");
         let mut by_chain: HashMap<u64, DependencySet> = HashMap::default();
@@ -154,6 +154,7 @@ mod tests {
     const CUSTOM_CONFIGS_TEST_ENABLED: Option<&str> = option_env!("KONA_CUSTOM_CONFIGS_TEST");
     const CUSTOM_CONFIGS: Option<&str> = option_env!("KONA_CUSTOM_CONFIGS");
     const CUSTOM_CONFIGS_DIR: Option<&str> = option_env!("KONA_CUSTOM_CONFIGS_DIR");
+    const CUSTOM_CONFIGS_CFG: bool = cfg!(kona_custom_configs = "true");
 
     #[test]
     fn custom_chain_is_loaded_when_enabled() {
@@ -161,12 +162,19 @@ mod tests {
             return;
         };
         assert!(
-            CUSTOM_CONFIGS == Some("true"),
-            "KONA_CUSTOM_CONFIGS is required when KONA_CUSTOM_CONFIGS_TEST is set"
+            CUSTOM_CONFIGS == Some("true") || CUSTOM_CONFIGS_CFG,
+            "KONA_CUSTOM_CONFIGS=true or --cfg kona_custom_configs=\"true\" is required when \
+             KONA_CUSTOM_CONFIGS_TEST is set"
         );
         assert!(
-            CUSTOM_CONFIGS_DIR.is_some(),
-            "KONA_CUSTOM_CONFIGS_DIR is required when KONA_CUSTOM_CONFIGS_TEST is set"
+            CUSTOM_CONFIGS_DIR.is_some() || CUSTOM_CONFIGS_CFG,
+            "KONA_CUSTOM_CONFIGS_DIR or --cfg kona_custom_configs_dir=\"...\" is required when \
+             KONA_CUSTOM_CONFIGS_TEST is set"
+        );
+        assert_eq!(
+            env!("KONA_REGISTRY_DIR").strip_prefix(env!("OUT_DIR")),
+            Some("/registry-etc"),
+            "custom configs must be merged outside the committed registry snapshot"
         );
 
         let test1_chain_id = 123999119;
@@ -209,13 +217,51 @@ mod tests {
         assert_eq!(DEPENDENCY_SETS.get(&test1_chain_id), DEPENDENCY_SETS.get(&test2_chain_id));
     }
 
+    /// Custom-config chains keep the preimage-oracle fallback, so they are exempt from the
+    /// registry depset invariants below.
+    fn custom_configs_baked_in() -> bool {
+        CUSTOM_CONFIGS == Some("true") || CUSTOM_CONFIGS_CFG
+    }
+
     #[test]
-    fn embedded_depsets_empty_by_default() {
-        // Without KONA_CUSTOM_CONFIGS or KONA_BIND, etc/depsets.json is `[]`.
-        if CUSTOM_CONFIGS_TEST_ENABLED == Some("true") {
-            // The custom test path embeds the fixture; skip.
+    fn test_every_registry_chain_has_a_depset() {
+        if custom_configs_baked_in() {
             return;
         }
-        assert!(DEPENDENCY_SETS.is_empty(), "default build should not embed any depsets");
+        for chain in &CHAINS.chains {
+            let depset = DEPENDENCY_SETS.get(&chain.chain_id).unwrap_or_else(|| {
+                panic!(
+                    "no embedded depset for `{}` (chain id {})",
+                    chain.identifier, chain.chain_id
+                )
+            });
+            assert!(
+                depset.dependencies.contains_key(&chain.chain_id),
+                "depset for `{}` does not contain the chain itself",
+                chain.identifier
+            );
+        }
     }
+
+    #[test]
+    fn test_chains_without_interop_config_get_self_only_depsets() {
+        if custom_configs_baked_in() {
+            return;
+        }
+        for (chain_id, config) in OPCHAINS.iter().filter(|(_, c)| c.interop.is_none()) {
+            let depset = DEPENDENCY_SETS
+                .get(chain_id)
+                .unwrap_or_else(|| panic!("no embedded depset for chain id {chain_id}"));
+            assert_eq!(
+                depset.dependencies.keys().copied().collect::<Vec<_>>(),
+                alloc::vec![*chain_id],
+                "`{}` declares no interop dependencies but is not a single-chain cluster",
+                config.name
+            );
+            assert!(depset.override_message_expiry_window.is_none());
+        }
+    }
+
+    // TODO(#21760): Add the registry-derived interop cluster test back when
+    // there are interop-staging networks in the superchain registry. @jelias2
 }

@@ -4,7 +4,6 @@ use crate::{BlockBuildingOutcome, ExecutorResult, StatelessL2Builder, TrieDBProv
 // [MANTLE] Imports used by the Mantle additions in this module
 // (Chain helpers for chain-id construction, URL parsing for the HTTP fetcher).
 use alloy_chains::Chain;
-use reqwest::Url;
 use alloy_consensus::Header;
 use alloy_op_evm::OpEvmFactory;
 use alloy_primitives::{B256, Bytes, Sealable};
@@ -15,8 +14,8 @@ use alloy_rpc_types_engine::PayloadAttributes;
 use alloy_transport_http::{Client, Http};
 use kona_genesis::RollupConfig;
 use kona_mpt::{NoopTrieHinter, TrieNode, TrieProvider};
-use kona_registry::ROLLUP_CONFIGS;
 use op_alloy_rpc_types_engine::OpPayloadAttributes;
+use reqwest::Url;
 use rocksdb::{DB, Options};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -66,13 +65,14 @@ pub async fn load_test_fixture(fixture_path: PathBuf) -> LoadedExecutorTestFixtu
 pub fn execute_loaded_fixture(
     loaded: LoadedExecutorTestFixture,
     sdm_active_override: Option<bool>,
-) -> ExecutorResult<BlockBuildingOutcome> {
+) -> ExecutorResult<BlockBuildingOutcome<op_alloy_consensus::OpReceiptEnvelope>> {
     let LoadedExecutorTestFixture { fixture_dir: _fixture_dir, fixture, provider } = loaded;
     let ExecutorTestFixture { rollup_config, parent_header, executing_payload, .. } = fixture;
 
     let mut executor = StatelessL2Builder::new(
         &rollup_config,
         OpEvmFactory::<alloy_op_evm::OpTx>::default(),
+        alloy_op_evm::block::OpAlloyReceiptBuilder::default(),
         provider,
         NoopTrieHinter,
         parent_header.seal_slow(),
@@ -130,14 +130,14 @@ pub struct ExecutorTestFixtureCreator {
 
 impl ExecutorTestFixtureCreator {
     /// Creates a new [`ExecutorTestFixtureCreator`] with the hardcoded
-    /// [`mock_rollup_config`]. Prefer [`Self::new_with_options_and_config`]
+    /// `mock_rollup_config`. Prefer [`Self::new_with_options_and_config`]
     /// when the caller can supply a real `RollupConfig`.
     pub fn new(provider_url: &str, block_number: u64, base_fixture_directory: PathBuf) -> Self {
         Self::new_with_options(provider_url, block_number, base_fixture_directory, false)
     }
 
     /// Creates a new [`ExecutorTestFixtureCreator`] with skip_save option,
-    /// using the hardcoded [`mock_rollup_config`].
+    /// using the hardcoded `mock_rollup_config`.
     pub fn new_with_options(
         provider_url: &str,
         block_number: u64,
@@ -341,6 +341,7 @@ impl ExecutorTestFixtureCreator {
                 withdrawals: Default::default(),
                 suggested_fee_recipient: executing_header.beneficiary,
                 slot_number: Default::default(),
+                target_gas_limit: None,
             },
             gas_limit: Some(executing_header.gas_limit),
             transactions: Some(encoded_executing_transactions),
@@ -375,6 +376,7 @@ impl ExecutorTestFixtureCreator {
         let mut executor = StatelessL2Builder::new(
             &rollup_config,
             OpEvmFactory::<alloy_op_evm::OpTx>::default(),
+            alloy_op_evm::block::OpAlloyReceiptBuilder::default(),
             self,
             NoopTrieHinter,
             parent_header,

@@ -1,0 +1,66 @@
+[
+  {
+    "name": "eth_getProof_safe",
+    "method": "eth_getProof",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", [], "safe"],
+    "description": "Get a Merkle proof at the safe block"
+  },
+  {
+    "name": "eth_getProof_finalized",
+    "method": "eth_getProof",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", [], "finalized"],
+    "description": "Get a Merkle proof at the finalized block"
+  },
+  {
+    "name": "eth_getProof_single_storage_key",
+    "method": "eth_getProof",
+    "params": ["0x4200000000000000000000000000000000000015", ["0x0000000000000000000000000000000000000000000000000000000000000000"], "latest"],
+    "description": "Single storage key"
+  },
+  {
+    "name": "eth_getProof_multiple_storage_keys",
+    "method": "eth_getProof",
+    "params": ["0x4200000000000000000000000000000000000015", ["0x0", "0x1", "0x2", "0x3"], "latest"],
+    "description": "Multiple storage keys"
+  },
+  {
+    "name": "eth_getProof_contract_no_storage",
+    "method": "eth_getProof",
+    "params": ["0x4200000000000000000000000000000000000015", [], "latest"],
+    "description": "Contract account without a storage key"
+  },
+  {
+    "name": "eth_getProof_precompile",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000001", [], "latest"],
+    "description": "Precompile address"
+  },
+  {
+    "name": "eth_getProof_system_contract",
+    "method": "eth_getProof",
+    "params": ["0x4200000000000000000000000000000000000015", [], "latest"],
+    "description": "OP system contract (L1Block)"
+  },
+  {
+    "name": "eth_getProof_system_contract_with_storage",
+    "method": "eth_getProof",
+    "params": ["0x4200000000000000000000000000000000000015", ["0x0", "0x1"], "latest"],
+    "description": "OP system contract with a storage key"
+  },
+  {
+    "name": "eth_getProof_deposit_contract",
+    "method": "eth_getProof",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", [], "latest"],
+    "description": "Deposit contract address"
+  },
+  {
+    "name": "eth_getProof_nonexistent_contract",
+    "method": "eth_getProof",
+    "params": [
+      "0x1234567890abcdef1234567890abcdef12345678",
+      [],
+      "latest"
+    ],
+    "description": "Nonexistent contract address"
+  }
+]

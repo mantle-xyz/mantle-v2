@@ -1,0 +1,62 @@
+[
+  {
+    "name": "trace_call_basic",
+    "method": "trace_call",
+    "params": [{"to": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "data": "0x"}, ["trace"], "latest"],
+    "description": "Basic trace_call"
+  },
+  {
+    "name": "trace_call_with_vmTrace",
+    "method": "trace_call",
+    "params": [{"to": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "data": "0x"}, ["vmTrace"], "latest"],
+    "description": "trace_call with vmTrace"
+  },
+  {
+    "name": "trace_call_with_stateDiff",
+    "method": "trace_call",
+    "params": [{"to": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "data": "0x"}, ["stateDiff"], "latest"],
+    "description": "trace_call with stateDiff"
+  },
+  {
+    "name": "trace_callMany_basic",
+    "method": "trace_callMany",
+    "params": [[[{"to": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "data": "0x"}, ["trace"]]], "latest"],
+    "description": "Basic trace_callMany"
+  },
+  {
+    "name": "trace_replayBlockTransactions_latest",
+    "method": "trace_replayBlockTransactions",
+    "params": ["latest", ["trace"]],
+    "description": "Replay transactions in the latest block"
+  },
+  {
+    "name": "trace_replayBlockTransactions_0x1",
+    "method": "trace_replayBlockTransactions",
+    "params": ["0x1", ["trace"]],
+    "description": "Replay transactions in block 1"
+  },
+  {
+    "name": "trace_block_latest",
+    "method": "trace_block",
+    "params": ["latest"],
+    "description": "Trace the latest block"
+  },
+  {
+    "name": "trace_block_0x1",
+    "method": "trace_block",
+    "params": ["0x1"],
+    "description": "Trace block 1"
+  },
+  {
+    "name": "trace_filter_basic",
+    "method": "trace_filter",
+    "params": [{"fromBlock": "0x0", "toBlock": "0x5"}],
+    "description": "Basic trace_filter"
+  },
+  {
+    "name": "trace_filter_with_address",
+    "method": "trace_filter",
+    "params": [{"fromBlock": "0x0", "toBlock": "0x5", "toAddress": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"]}],
+    "description": "trace_filter with an address"
+  }
+]
