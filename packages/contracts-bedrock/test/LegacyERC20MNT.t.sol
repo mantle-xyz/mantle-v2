@@ -19,6 +19,17 @@ contract LegacyERC20MNT_Test is CommonTest {
         assertEq(mnt.symbol(), "MNT");
         assertEq(mnt.decimals(), 18);
     }
+
+    /// @notice L2Genesis (and Bridge_Initializer) etch only the runtime code at the predeploy address;
+    ///         metadata must not depend on constructor-written storage.
+    function test_etchedMetadata_succeeds() external {
+        vm.etch(Predeploys.LEGACY_ERC20_MNT, address(mnt).code);
+        LegacyERC20MNT predeploy = LegacyERC20MNT(Predeploys.LEGACY_ERC20_MNT);
+        assertEq(predeploy.name(), "Mantle Token");
+        assertEq(predeploy.symbol(), "MNT");
+        assertEq(predeploy.bridge(), Predeploys.L2_STANDARD_BRIDGE);
+        assertEq(predeploy.remoteToken(), LocalConstants.L1_MNT);
+    }
     //TODO : add the L1 MNT address for test. For now, it only support for local dev network constants.
 
     function test_crossDomain_succeeds() external view {

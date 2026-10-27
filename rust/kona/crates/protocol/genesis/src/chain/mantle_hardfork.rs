@@ -36,6 +36,13 @@ pub struct MantleHardForkConfig {
     /// otherwise.
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub mantle_arsia_time: Option<u64>,
+    /// `mantle_hoodi_bvm_upgrade_time` sets the activation time for the Mantle Hoodi BVM upgrade, an
+    /// irregular state transition that writes the BVM_ETH and LegacyERC20MNT predeploy code. Only
+    /// scheduled on Mantle Hoodi.
+    /// Active if `mantle_hoodi_bvm_upgrade_time` != None && L2 block timestamp >=
+    /// Some(mantle_hoodi_bvm_upgrade_time), inactive otherwise.
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub mantle_hoodi_bvm_upgrade_time: Option<u64>,
 }
 
 impl MantleHardForkConfig {
@@ -48,6 +55,7 @@ impl MantleHardForkConfig {
             ("Mantle Skadi", self.mantle_skadi_time),
             ("Mantle Limb", self.mantle_limb_time),
             ("Mantle Arsia", self.mantle_arsia_time),
+            ("Mantle Hoodi BVM Upgrade", self.mantle_hoodi_bvm_upgrade_time),
         ]
         .into_iter()
     }
@@ -64,6 +72,7 @@ impl MantleHardForkConfig {
             || self.mantle_skadi_time.is_some()
             || self.mantle_limb_time.is_some()
             || self.mantle_arsia_time.is_some()
+            || self.mantle_hoodi_bvm_upgrade_time.is_some()
     }
 }
 
@@ -77,7 +86,8 @@ mod tests {
         let raw: &str = r#"
         {
             "mantle_base_fee_time": 1000,
-            "mantle_arsia_time": 2000
+            "mantle_arsia_time": 2000,
+            "mantle_hoodi_bvm_upgrade_time": 3000
         }
         "#;
 
@@ -88,6 +98,7 @@ mod tests {
             mantle_skadi_time: None,
             mantle_limb_time: None,
             mantle_arsia_time: Some(2000),
+            mantle_hoodi_bvm_upgrade_time: Some(3000),
         };
 
         let deserialized: MantleHardForkConfig = serde_json::from_str(raw).unwrap();
@@ -103,6 +114,7 @@ mod tests {
             mantle_skadi_time: Some(15),
             mantle_limb_time: Some(16),
             mantle_arsia_time: Some(17),
+            mantle_hoodi_bvm_upgrade_time: Some(18),
         };
 
         let mut iter = hardforks.iter();
@@ -112,6 +124,7 @@ mod tests {
         assert_eq!(iter.next(), Some(("Mantle Skadi", Some(15))));
         assert_eq!(iter.next(), Some(("Mantle Limb", Some(16))));
         assert_eq!(iter.next(), Some(("Mantle Arsia", Some(17))));
+        assert_eq!(iter.next(), Some(("Mantle Hoodi BVM Upgrade", Some(18))));
         assert_eq!(iter.next(), None);
     }
 
@@ -125,6 +138,7 @@ mod tests {
             mantle_skadi_time: Some(15),
             mantle_limb_time: Some(16),
             mantle_arsia_time: Some(17),
+            mantle_hoodi_bvm_upgrade_time: None,
         };
         assert!(all_hardforks.has_any_hardfork());
 
@@ -150,6 +164,7 @@ mod tests {
         let all_none = MantleHardForkConfig {
             mantle_base_fee_time: None,
             mantle_everest_time: None,
+            mantle_hoodi_bvm_upgrade_time: None,
             mantle_euboea_time: None,
             mantle_skadi_time: None,
             mantle_limb_time: None,

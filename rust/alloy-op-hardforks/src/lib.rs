@@ -22,7 +22,10 @@ pub mod base;
 pub use base::{mainnet as base_mainnet, mainnet::*, sepolia as base_sepolia, sepolia::*};
 
 pub mod mantle;
-pub use mantle::{mainnet as mantle_mainnet, mainnet::*, sepolia as mantle_sepolia, sepolia::*};
+pub use mantle::{
+    MANTLE_BLOCK_TIME, hoodi as mantle_hoodi, hoodi::*, mainnet as mantle_mainnet, mainnet::*,
+    sepolia as mantle_sepolia, sepolia::*,
+};
 
 hardfork!(
     /// The name of an optimism hardfork.
@@ -187,6 +190,10 @@ hardfork!(
         Limb,
         /// Arsia: Activates Canyon through Holocene + Jovian + operator fee.
         Arsia,
+        /// HoodiBvmUpgrade: Mantle Hoodi only. Writes the BVM_ETH and LegacyERC20MNT (BVM_MNT)
+        /// predeploy code that Hoodi's genesis left incomplete. Not scheduled on mainnet or
+        /// Sepolia.
+        HoodiBvmUpgrade,
     }
 );
 
@@ -334,6 +341,12 @@ pub trait OpHardforks: EthereumHardforks {
 
     /// Returns `true` if Mantle Arsia is active at the given timestamp.
     fn is_mantle_arsia_active_at_timestamp(&self, _timestamp: u64) -> bool {
+        false
+    }
+
+    /// Returns `true` if the Mantle Hoodi BVM upgrade (Mantle Hoodi only) is active at the given
+    /// timestamp.
+    fn is_mantle_hoodi_bvm_upgrade_active_at_timestamp(&self, _timestamp: u64) -> bool {
         false
     }
 }
@@ -763,9 +776,13 @@ mod tests {
 
     #[test]
     fn check_mantle_hardfork_from_str() {
-        let hardfork_str = ["sKaDi", "lImB", "aRsIa"];
-        let expected_hardforks =
-            [MantleHardfork::Skadi, MantleHardfork::Limb, MantleHardfork::Arsia];
+        let hardfork_str = ["sKaDi", "lImB", "aRsIa", "hOoDiBvMuPgRaDe"];
+        let expected_hardforks = [
+            MantleHardfork::Skadi,
+            MantleHardfork::Limb,
+            MantleHardfork::Arsia,
+            MantleHardfork::HoodiBvmUpgrade,
+        ];
 
         let hardforks: alloc::vec::Vec<MantleHardfork> =
             hardfork_str.iter().map(|h| MantleHardfork::from_str(h).unwrap()).collect();

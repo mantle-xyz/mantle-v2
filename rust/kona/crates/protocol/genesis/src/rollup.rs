@@ -487,6 +487,11 @@ impl RollupConfig {
         self.mantle_hardforks.mantle_arsia_time.is_some_and(|t| timestamp >= t)
     }
 
+    /// Returns true if the Mantle Hoodi BVM upgrade is active at the given timestamp.
+    pub fn is_mantle_hoodi_bvm_upgrade_active(&self, timestamp: u64) -> bool {
+        self.mantle_hardforks.mantle_hoodi_bvm_upgrade_time.is_some_and(|t| timestamp >= t)
+    }
+
     /// Returns true if the timestamp marks the first Mantle Arsia block.
     pub fn is_first_mantle_arsia_block(&self, timestamp: u64) -> bool {
         self.is_mantle_arsia_active(timestamp) &&
@@ -647,6 +652,12 @@ impl OpHardforks for RollupConfig {
             _ => ForkCondition::Never,
         }
     }
+
+    /// [MANTLE] Lets the shared `alloy-op-evm` block executor apply the Hoodi BVM upgrade
+    /// when kona re-executes blocks (fault/validity proofs).
+    fn is_mantle_hoodi_bvm_upgrade_active_at_timestamp(&self, timestamp: u64) -> bool {
+        self.is_mantle_hoodi_bvm_upgrade_active(timestamp)
+    }
 }
 
 #[cfg(test)]
@@ -657,6 +668,17 @@ mod tests {
     use alloy_primitives::address;
     #[cfg(feature = "serde")]
     use alloy_primitives::{U256, b256};
+
+    #[test]
+    fn test_mantle_hoodi_bvm_upgrade_activation() {
+        let mut config = RollupConfig::default();
+        assert!(!config.is_mantle_hoodi_bvm_upgrade_active(u64::MAX));
+
+        config.mantle_hardforks.mantle_hoodi_bvm_upgrade_time = Some(10);
+        assert!(!config.is_mantle_hoodi_bvm_upgrade_active(9));
+        assert!(config.is_mantle_hoodi_bvm_upgrade_active(10));
+        assert!(config.is_mantle_hoodi_bvm_upgrade_active_at_timestamp(10));
+    }
 
     #[test]
     #[cfg(feature = "arbitrary")]
@@ -837,7 +859,8 @@ mod tests {
             ..Default::default()
         };
 
-        // Before mantle_skadi: ecotone active via ecotone_time, isthmus inactive (isthmus_time=60 > 25)
+        // Before mantle_skadi: ecotone active via ecotone_time, isthmus inactive (isthmus_time=60 >
+        // 25)
         assert!(!config_with_skadi.is_ecotone_active(25)); // ecotone_time is 30, so not active at 25
         assert!(!config_with_skadi.is_isthmus_active(25));
 

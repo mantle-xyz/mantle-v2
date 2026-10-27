@@ -48,6 +48,7 @@ use crate::post_exec::{
 };
 
 mod canyon;
+pub mod hoodi_bvm_upgrade;
 pub mod receipt_builder;
 
 /// Trait for OP transaction environments. Allows to recover the transaction encoded bytes if
@@ -719,6 +720,17 @@ where
         //     self.evm.db_mut(),
         // )
         // .map_err(BlockExecutionError::other)?;
+
+        // [MANTLE] Mantle Hoodi only: write the BVM_ETH and LegacyERC20MNT predeploy code in the
+        // HoodiBvmUpgrade activation block. Runs before any transaction, so the block's first
+        // transaction already sees the new code.
+        hoodi_bvm_upgrade::ensure_bvm_predeploys(
+            &self.spec,
+            self.evm.chain_id(),
+            self.evm.block().timestamp().saturating_to(),
+            self.evm.db_mut(),
+        )
+        .map_err(BlockExecutionError::other)?;
 
         Ok(())
     }
