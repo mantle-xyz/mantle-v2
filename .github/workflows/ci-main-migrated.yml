@@ -25,7 +25,7 @@ jobs:
       main_go: ${{ steps.filter.outputs.main_go }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
         with:
           fetch-depth: 0
       - name: Detect CI-relevant changes
@@ -100,12 +100,12 @@ jobs:
     timeout-minutes: 75
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
         with:
           fetch-depth: 0
           submodules: recursive
       - name: Install toolchain via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # jdx/mise-action@v2.4.4
       - name: Install contracts dependencies
         run: git submodule update --init --recursive --force -j 8
       - name: Build contracts (ci profile)
@@ -118,7 +118,7 @@ jobs:
         working-directory: op-deployer
         run: just copy-contract-artifacts
       - name: Save forge artifacts to cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # actions/cache/save@v4.3.0
         with:
           path: |
             packages/contracts-bedrock/forge-artifacts
@@ -136,16 +136,16 @@ jobs:
     if: github.event_name == 'pull_request' && needs.detect-changes.outputs.contracts_bedrock == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
         with:
           fetch-depth: 0
           submodules: recursive
       - name: Install toolchain via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # jdx/mise-action@v2.4.4
       - name: Install contracts dependencies
         run: git submodule update --init --recursive --force -j 8
       - name: Restore forge artifacts
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # actions/cache/restore@v4.3.0
         with:
           path: |
             packages/contracts-bedrock/forge-artifacts
@@ -197,16 +197,16 @@ jobs:
     if: needs.detect-changes.outputs.contracts_bedrock == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
         with:
           fetch-depth: 0
           submodules: recursive
       - name: Install toolchain via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # jdx/mise-action@v2.4.4
       - name: Install contracts dependencies
         run: git submodule update --init --recursive --force -j 8
       - name: Restore forge artifacts
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # actions/cache/restore@v4.3.0
         with:
           path: |
             packages/contracts-bedrock/forge-artifacts
@@ -239,16 +239,16 @@ jobs:
       - contracts-bedrock-build
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
         with:
           fetch-depth: 0
           submodules: recursive
       - name: Install toolchain via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # jdx/mise-action@v2.4.4
       - name: Install contracts dependencies
         run: git submodule update --init --recursive --force -j 8
       - name: Restore forge artifacts from cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # actions/cache/restore@v4.3.0
         with:
           path: |
             packages/contracts-bedrock/forge-artifacts
@@ -264,9 +264,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
       - name: Install toolchain via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # jdx/mise-action@v2.4.4
       - name: Check forge version in op-deployer
         working-directory: op-deployer
         run: just check-forge-version
@@ -279,7 +279,7 @@ jobs:
       image: returntocorp/semgrep:latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
         with:
           fetch-depth: 0
       - name: Run semgrep local rules
@@ -295,7 +295,7 @@ jobs:
       image: returntocorp/semgrep:latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
       - name: Run semgrep tests
         run: semgrep scan --test --config .semgrep/rules/ .semgrep/tests/
 
@@ -308,14 +308,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
         with:
           submodules: recursive
       - name: Install toolchain via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # jdx/mise-action@v2.4.4
       - name: Restore forge artifacts from cache
         id: cache-restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # actions/cache/restore@v4.3.0
         with:
           path: |
             packages/contracts-bedrock/forge-artifacts
@@ -328,7 +328,7 @@ jobs:
           cd packages/contracts-bedrock && just build-no-tests
           cd ../../op-deployer && just copy-contract-artifacts
       - name: Restore golangci-lint cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # actions/cache@v4.3.0
         with:
           path: ~/.cache/golangci-lint
           key: golangci-v1-${{ hashFiles('.golangci.yaml') }}
@@ -348,9 +348,9 @@ jobs:
           - op-chain-ops
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
       - name: Install toolchain via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # jdx/mise-action@v2.4.4
       - name: Install parallel
         run: sudo apt-get update && sudo apt-get install -y parallel
       - name: Run Go fuzz target
@@ -363,7 +363,7 @@ jobs:
           find "./${{ matrix.package_name }}" -type d -name "fuzz" -exec sh -c 'cp -r "{}"/* fuzzdata/ 2>/dev/null || true' \;
       - name: Upload fuzz artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4.6.2
         with:
           name: fuzzdata-${{ matrix.package_name }}
           path: fuzzdata
@@ -377,14 +377,14 @@ jobs:
     if: needs.detect-changes.outputs.main_go == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
         with:
           submodules: recursive
       - name: Install toolchain via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # jdx/mise-action@v2.4.4
       - name: Restore forge artifacts from cache
         id: cache-restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # actions/cache/restore@v4.3.0
         with:
           path: |
             packages/contracts-bedrock/forge-artifacts
@@ -407,9 +407,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
       - name: Install toolchain via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # jdx/mise-action@v2.4.4
       - name: Check generated mocks for op-node
         run: make generate-mocks-op-node && git diff --exit-code
 
@@ -419,9 +419,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
       - name: Install toolchain via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # jdx/mise-action@v2.4.4
       - name: Check generated mocks for op-service
         run: make generate-mocks-op-service && git diff --exit-code
 
@@ -431,7 +431,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Check TODO issues
@@ -443,9 +443,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
       - name: Install toolchain via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # jdx/mise-action@v2.4.4
       - name: Run shellcheck + shfmt validation
         run: just shellcheck
 
@@ -467,14 +467,14 @@ jobs:
             dockerfile: op-proposer/Dockerfile
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
         with:
           fetch-depth: 0
           submodules: recursive
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # docker/setup-buildx-action@v3.12.0
       - name: Build Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # docker/build-push-action@v6.19.2
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -498,18 +498,18 @@ jobs:
       GO111MODULE: "on"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
         with:
           fetch-depth: 0
           submodules: recursive
       - name: Install toolchain via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # jdx/mise-action@v2.4.4
 
       - name: Install contracts dependencies
         run: git submodule update --init --recursive --force -j 8
       - name: Restore forge artifacts from cache
         id: cache-restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # actions/cache/restore@v4.3.0
         with:
           path: |
             packages/contracts-bedrock/forge-artifacts
@@ -523,7 +523,7 @@ jobs:
           cd ../../op-deployer && just copy-contract-artifacts
 
       - name: Cache Go modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # actions/cache@v4.3.0
         with:
           path: ~/go/pkg/mod
           key: go-mod-v1-${{ hashFiles('go.sum') }}
@@ -568,14 +568,14 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4.6.2
         with:
           name: acceptance-test-results
           path: op-acceptance-tests/results
 
       - name: Upload test logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4.6.2
         with:
           name: acceptance-test-logs
           path: op-acceptance-tests/logs
@@ -597,12 +597,12 @@ jobs:
       GO111MODULE: "on"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
         with:
           fetch-depth: 0
           submodules: recursive
       - name: Install toolchain via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # jdx/mise-action@v2.4.4
 
       # The elysium suite needs an Amsterdam-capable L1 EL. mise builds it from the pinned
       # go-ethereum commit (see mise.toml), so fail here with a clear message rather than deep
@@ -627,7 +627,7 @@ jobs:
         run: git submodule update --init --recursive --force -j 8
       - name: Restore forge artifacts from cache
         id: cache-restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # actions/cache/restore@v4.3.0
         with:
           path: |
             packages/contracts-bedrock/forge-artifacts
@@ -641,7 +641,7 @@ jobs:
           cd ../../op-deployer && just copy-contract-artifacts
 
       - name: Cache Go modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # actions/cache@v4.3.0
         with:
           path: ~/go/pkg/mod
           key: go-mod-v1-${{ hashFiles('go.sum') }}
@@ -686,14 +686,14 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4.6.2
         with:
           name: acceptance-test-results-elysium
           path: op-acceptance-tests/results
 
       - name: Upload test logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4.6.2
         with:
           name: acceptance-test-logs-elysium
           path: op-acceptance-tests/logs
@@ -712,12 +712,12 @@ jobs:
       DEVSTACK_L2EL_KIND: "op-reth"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
         with:
           fetch-depth: 0
           submodules: recursive
       - name: Install toolchain via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # jdx/mise-action@v2.4.4
 
       - name: Install op-reth
         env:
@@ -738,7 +738,7 @@ jobs:
         run: git submodule update --init --recursive --force -j 8
       - name: Restore forge artifacts from cache
         id: cache-restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # actions/cache/restore@v4.3.0
         with:
           path: |
             packages/contracts-bedrock/forge-artifacts
@@ -752,7 +752,7 @@ jobs:
           cd ../../op-deployer && just copy-contract-artifacts
 
       - name: Cache Go modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # actions/cache@v4.3.0
         with:
           path: ~/go/pkg/mod
           key: go-mod-v1-${{ hashFiles('go.sum') }}
@@ -799,14 +799,14 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4.6.2
         with:
           name: acceptance-test-results-reth
           path: op-acceptance-tests/results
 
       - name: Upload test logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact@v4.6.2
         with:
           name: acceptance-test-logs-reth
           path: op-acceptance-tests/logs
@@ -820,11 +820,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4.4.0
         with:
           fetch-depth: 0
       - name: Install toolchain via mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # jdx/mise-action@v2.4.4
       - name: Check forge fmt on changed .sol files
         working-directory: packages/contracts-bedrock
         run: |
