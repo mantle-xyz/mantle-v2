@@ -7,13 +7,15 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum-optimism/optimism/gas-oracle/bindings"
-	"github.com/ethereum-optimism/optimism/gas-oracle/tokenratio"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/ethereum-optimism/optimism/gas-oracle/bindings"
+	"github.com/ethereum-optimism/optimism/gas-oracle/tokenratio"
+	"github.com/ethereum-optimism/optimism/op-service/hsm"
 )
 
 var (
@@ -42,6 +44,8 @@ type GasPriceOracle struct {
 	l1Backend  bind.ContractTransactor
 	tokenRatio *tokenratio.Client
 	config     *Config
+	// awsSigner is initialized at startup when the aws-kms hsm provider is selected.
+	awsSigner *hsm.AWSKMSSigner
 }
 
 // Start runs the GasPriceOracle
@@ -105,7 +109,7 @@ func (g *GasPriceOracle) TokenRatioLoop() {
 	timer := time.NewTicker(time.Duration(g.config.TokenRatioEpochLengthSeconds) * time.Second)
 	defer timer.Stop()
 
-	updateTokenRatio, err := wrapUpdateTokenRatio(g.l1Backend, g.l2Backend, g.tokenRatio, g.config)
+	updateTokenRatio, err := wrapUpdateTokenRatio(g.l1Backend, g.l2Backend, g.tokenRatio, g.config, g.awsSigner)
 	if err != nil {
 		panic(err)
 	}
@@ -123,6 +127,10 @@ func (g *GasPriceOracle) TokenRatioLoop() {
 
 // NewGasPriceOracle creates a new GasPriceOracle based on a Config
 func NewGasPriceOracle(cfg *Config) (*GasPriceOracle, error) {
+	if err := cfg.CheckSigner(); err != nil {
+		return nil, fmt.Errorf("invalid signer config: %w", err)
+	}
+
 	tokenRatioClient, err := NewTokenRatioClient(cfg.EthereumHttpUrl, cfg.LayerTwoHttpUrl, cfg.TokenRatioCexURL, cfg.TokenRatioDexURL,
 		cfg.TokenRatioUpdateFrequencySecond)
 	if err != nil {
@@ -205,6 +213,21 @@ func NewGasPriceOracle(cfg *Config) (*GasPriceOracle, error) {
 		l2Backend:  tokenRatioClient.l2Client,
 		l1Backend:  tokenRatioClient.l1Client,
 		tokenRatio: tokenRatioClient.tokenRatio,
+	}
+
+	// Initialize the AWS KMS signer synchronously so that configuration, permission
+	// and address problems fail startup instead of the background update loop.
+	if cfg.useAWSKMS() {
+		signer, err := hsm.NewAWSKMSSigner(context.Background(), hsm.AWSKMSConfig{
+			KeyARN:          cfg.AWSKMSKeyID,
+			ExpectedAddress: cfg.HsmAddress,
+			Timeout:         hsm.DefaultAWSKMSTimeout,
+			Logger:          log.Root(),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("could not init aws kms signer: %w", err)
+		}
+		gpo.awsSigner = signer
 	}
 
 	if err := gpo.ensure(); err != nil {
