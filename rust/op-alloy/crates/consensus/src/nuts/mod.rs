@@ -74,7 +74,8 @@ impl NutBundle {
                     value: U256::ZERO,
                     gas_limit: tx.gas_limit,
                     is_system_transaction: false,
-                    // NutBundle upgrade transactions (OP fork upgrade txs) have no BVM_ETH semantics.
+                    // NutBundle upgrade transactions (OP fork upgrade txs) have no BVM_ETH
+                    // semantics.
                     eth_value: U256::ZERO,
                     input: tx.data.clone(),
                     eth_tx_value: None,
@@ -204,10 +205,7 @@ mod tests {
 
         let tx0 = TxDeposit::decode_2718(&mut encoded[0].as_ref()).unwrap();
         assert_eq!(tx0.from, Address::ZERO);
-        assert_eq!(
-            tx0.to,
-            TxKind::Call(address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"))
-        );
+        assert_eq!(tx0.to, TxKind::Call(address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266")));
         assert_eq!(tx0.gas_limit, 1_000_000);
         assert_eq!(tx0.input.as_ref(), hex!("abcdef").as_slice());
         assert_eq!(tx0.mint, 0);
@@ -219,10 +217,7 @@ mod tests {
 
         let tx1 = TxDeposit::decode_2718(&mut encoded[1].as_ref()).unwrap();
         assert_eq!(tx1.from, address!("000000000000000000000000000000000000abba"));
-        assert_eq!(
-            tx1.to,
-            TxKind::Call(address!("4200000000000000000000000000000000000015"))
-        );
+        assert_eq!(tx1.to, TxKind::Call(address!("4200000000000000000000000000000000000015")));
         assert_eq!(tx1.gas_limit, 5_000_000);
         assert_eq!(tx1.input.as_ref(), hex!("feedface").as_slice());
         assert_eq!(tx1.eth_value, 0);

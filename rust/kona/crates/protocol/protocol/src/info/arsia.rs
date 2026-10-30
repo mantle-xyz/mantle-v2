@@ -1,11 +1,11 @@
 //! Arsia L1 Block Info transaction types.
 //!
-//! [MANTLE] Arsia is a Mantle hardfork stacked on top of OP Jovian. At the
+//! `[MANTLE]` Arsia is a Mantle hardfork stacked on top of OP Jovian. At the
 //! L1-attributes ABI level it introduces only a new function selector —
 //! `setL1BlockValuesArsia()` = `0x49e72383` — while keeping the exact same
 //! 174-byte payload layout as Jovian (verified by reverse-engineering the
 //! `arsia_l1_block.hex` dispatcher in `kona-hardforks`). Mantle execution
-//! semantics (BVM_ETH, token_ratio, DA footprint accounting, Arsia fee
+//! semantics (`BVM_ETH`, `token_ratio`, DA footprint accounting, Arsia fee
 //! validation) are handled in `mantle-elysium revm`; this module concerns
 //! only the L1 attributes calldata codec.
 
@@ -64,10 +64,7 @@ pub trait L1BlockInfoArsiaBaseFields: L1BlockInfoJovianBaseFields {}
 impl L1BlockInfoArsiaBaseFields for L1BlockInfoArsia {}
 
 /// Accessors for all Arsia fields.
-pub trait L1BlockInfoArsiaFields:
-    L1BlockInfoJovianBaseFields + L1BlockInfoArsiaBaseFields
-{
-}
+pub trait L1BlockInfoArsiaFields: L1BlockInfoJovianBaseFields + L1BlockInfoArsiaBaseFields {}
 
 impl L1BlockInfoArsiaFields for L1BlockInfoArsia {}
 
@@ -200,10 +197,7 @@ mod tests {
         // Correct length, wrong selector — must reject before decoding the body.
         let mut r = vec![0u8; L1BlockInfoArsia::L1_INFO_TX_LEN];
         r[..4].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
-        assert_eq!(
-            L1BlockInfoArsia::decode_calldata(&r),
-            Err(DecodeError::InvalidSelector)
-        );
+        assert_eq!(L1BlockInfoArsia::decode_calldata(&r), Err(DecodeError::InvalidSelector));
     }
 
     #[test]

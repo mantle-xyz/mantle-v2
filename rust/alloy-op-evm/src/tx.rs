@@ -25,6 +25,25 @@ fn deposit_tx_env(tx: &TxDeposit, caller: Address) -> TxEnv {
     }
 }
 
+/// Builds the [`TxEnv`] for a post-exec transaction.
+///
+/// `chain_id` must be set explicitly: `TxEnv::default()` assumes mainnet (`Some(1)`), which fails
+/// revm's chain-id validation on any other chain. The remaining fields mirror the transaction so
+/// the env stays honest for anything that inspects it — post-exec transactions themselves are
+/// never transacted (the EVM short-circuits them with the consensus-defined no-op result), and
+/// preserving the zero gas limit ensures accidental execution fails intrinsic gas validation.
+pub fn post_exec_tx_env(tx: &TxPostExec, caller: Address) -> TxEnv {
+    TxEnv {
+        caller,
+        chain_id: tx.chain_id(),
+        data: tx.input().clone(),
+        gas_limit: tx.gas_limit(),
+        kind: tx.kind(),
+        tx_type: tx.ty(),
+        ..Default::default()
+    }
+}
+
 /// Newtype wrapper around [`OpTransaction<TxEnv>`] that allows implementing foreign traits.
 #[derive(Clone, Debug, Default)]
 pub struct OpTx(pub OpTransaction<TxEnv>);
@@ -61,6 +80,14 @@ impl OpTxEnv for OpTx {
     }
 }
 
+/// UPSTREAM-MIRROR(delegate): revm-context-interface@41.0.0 `revm_context_interface::Transaction`
+///
+/// Forwards the required getters and `effective_gas_price` to the inner `OpTransaction<TxEnv>`,
+/// which overrides `tx_type` and `effective_gas_price` for deposits. The remaining defaulted
+/// methods (`max_fee_per_gas`, `total_blob_gas`, `calc_max_data_fee` and the balance-spending
+/// helpers) are inherited from the trait and derive from the forwarded getters. On each bump
+/// check for a new defaulted method that `OpTransaction<T>` overrides and forward it too;
+/// `kona/bin/client/src/fpvm_evm/tx.rs` duplicates this impl and needs the same edit.
 impl revm::context::Transaction for OpTx {
     type AccessListItem<'a>
         = <OpTransaction<TxEnv> as revm::context::Transaction>::AccessListItem<'a>
@@ -115,6 +142,9 @@ impl revm::context::Transaction for OpTx {
     }
     fn max_priority_fee_per_gas(&self) -> Option<u128> {
         self.0.max_priority_fee_per_gas()
+    }
+    fn effective_gas_price(&self, base_fee: u128) -> u128 {
+        self.0.effective_gas_price(base_fee)
     }
 }
 
@@ -248,9 +278,8 @@ impl FromTxWithEncoded<TxDeposit> for OpTx {
             source_hash: tx.source_hash,
             mint: Some(tx.mint),
             is_system_transaction: tx.is_system_transaction,
-            // Mantle BVM_ETH: TxDeposit.eth_value (U256) -> DepositTransactionParts.eth_value
-            // (Option<U256>). Treat 0 as "no mint" -> None; otherwise Some(...). The `0 -> None`
-            // convention is the wire contract, not an artefact of the old `u128` width.
+            // Mantle BVM_ETH: `TxDeposit.eth_value` (`U256`) -> `DepositTransactionParts
+            // .eth_value` (`Option<U256>`). Treat 0 as "no mint" -> None; otherwise Some(...).
             eth_value: (!tx.eth_value.is_zero()).then_some(tx.eth_value),
             eth_tx_value: tx.eth_tx_value,
         };
@@ -267,7 +296,7 @@ impl FromRecoveredTx<TxPostExec> for OpTx {
 
 impl FromTxWithEncoded<TxPostExec> for OpTx {
     fn from_encoded_tx(tx: &TxPostExec, caller: Address, encoded: Bytes) -> Self {
-        let base = TxEnv { tx_type: tx.ty(), caller, kind: tx.kind(), ..Default::default() };
+        let base = post_exec_tx_env(tx, caller);
         Self(OpTransaction { base, enveloped_tx: Some(encoded), deposit: Default::default() })
     }
 }
@@ -283,5 +312,47 @@ impl TransactionEnvMut for OpTx {
 
     fn set_access_list(&mut self, access_list: alloy_eips::eip2930::AccessList) {
         self.0.base.access_list = access_list;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+    use op_alloy::consensus::{
+        POST_EXEC_TX_TYPE_ID,
+        post_exec::{SDMGasEntry, build_post_exec_tx},
+    };
+
+    #[test]
+    fn post_exec_tx_env_reflects_transaction_fields() {
+        let tx = build_post_exec_tx(42, vec![SDMGasEntry { index: 0, gas_refund: 7 }]);
+
+        let env = OpTx::from_recovered_tx(&tx, Address::from([0x11; 20]));
+
+        assert_eq!(env.base.tx_type, POST_EXEC_TX_TYPE_ID);
+        assert_eq!(env.base.caller, Address::ZERO);
+        assert_eq!(env.base.chain_id, None);
+        assert_eq!(env.base.gas_limit, 0);
+        assert_eq!(env.base.data, tx.input);
+        assert_eq!(env.base.kind, TxKind::Call(Address::ZERO));
+        assert_eq!(env.enveloped_tx, Some(Bytes::from(tx.encoded_2718())));
+    }
+
+    #[test]
+    fn post_exec_tx_env_mirrors_transaction() {
+        let tx = build_post_exec_tx(7, vec![SDMGasEntry { index: 0, gas_refund: 42 }]);
+        let env = OpTx::from_encoded_tx(&tx, Address::ZERO, tx.encoded_2718().into());
+
+        let expected = TxEnv {
+            tx_type: tx.ty(),
+            caller: Address::ZERO,
+            kind: tx.kind(),
+            gas_limit: tx.gas_limit(),
+            chain_id: tx.chain_id(),
+            data: tx.input().clone(),
+            ..Default::default()
+        };
+        assert_eq!(env.0.base, expected);
     }
 }

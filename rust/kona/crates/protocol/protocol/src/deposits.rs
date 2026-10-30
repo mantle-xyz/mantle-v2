@@ -20,9 +20,9 @@ pub const DEPOSIT_EVENT_VERSION_0: B256 = B256::ZERO;
 
 /// The version 1 of the deposit event log.
 ///
-/// [MANTLE] BVM_ETH: Mantle's `OptimismPortal` emits `DEPOSIT_VERSION = 1` for every user
+/// `[MANTLE]` `BVM_ETH`: Mantle's `OptimismPortal` emits `DEPOSIT_VERSION = 1` for every user
 /// deposit. The v1 `opaqueData` carries two extra 32-byte fields (`eth_value` = `msg.value`
-/// and `eth_tx_value`) between `value` and `gasLimit`. See [`unmarshal_deposit_version1`].
+/// and `eth_tx_value`) between `value` and `gasLimit`. See `unmarshal_deposit_version1`.
 pub const DEPOSIT_EVENT_VERSION_1: B256 =
     b256!("0000000000000000000000000000000000000000000000000000000000000001");
 
@@ -88,11 +88,18 @@ pub enum DepositError {
     /// Failed to decode the deposit gas value.
     #[error("Failed to decode the u64 deposit gas value: {0}")]
     GasDecode(Bytes),
-    /// [MANTLE] Failed to decode the deposit `eth_value` (BVM_ETH mint value).
-    #[error("Failed to decode the u128 deposit eth_value: {0}")]
+    /// `[MANTLE]` Failed to decode the deposit `eth_value` (`BVM_ETH` mint value).
+    ///
+    /// **Currently unreachable.** Since `eth_value` widened from `u128` to `U256` (§3.2b) the
+    /// decoder reads the whole 32-byte ABI word with `U256::from_be_slice`, which cannot fail on
+    /// a slice of that length — the length check happens upstream in `decode_deposit`. The
+    /// variant is kept as the landing spot should the field decode ever become fallible again.
+    #[error("Failed to decode the deposit eth_value (32-byte BVM_ETH word): {0}")]
     EthValueDecode(Bytes),
-    /// [MANTLE] Failed to decode the deposit `eth_tx_value` (BVM_ETH tx value).
-    #[error("Failed to decode the u128 deposit eth_tx_value: {0}")]
+    /// `[MANTLE]` Failed to decode the deposit `eth_tx_value` (`BVM_ETH` tx value).
+    ///
+    /// **Currently unreachable**, for the same reason as [`Self::EthValueDecode`].
+    #[error("Failed to decode the deposit eth_tx_value (32-byte BVM_ETH word): {0}")]
     EthTxValueDecode(Bytes),
 }
 
@@ -271,7 +278,7 @@ pub(crate) fn unmarshal_deposit_version0(
     Ok(())
 }
 
-/// [MANTLE] Unmarshals a version-1 deposit transaction from the opaque data.
+/// `[MANTLE]` Unmarshals a version-1 deposit transaction from the opaque data.
 ///
 /// Mantle's `OptimismPortal` packs the `TransactionDeposited` event's `opaqueData` as:
 /// `abi.encodePacked(_mntValue, _mntTxValue, msg.value, _ethTxValue, _gasLimit, _isCreation,
@@ -281,7 +288,7 @@ pub(crate) fn unmarshal_deposit_version0(
 /// |--------|-------|--------------|----------------------------|
 /// | 0      | 32    | `_mntValue`  | `mint` (u128, low 16 bytes)|
 /// | 32     | 32    | `_mntTxValue`| `value` (U256)             |
-/// | 64     | 32    | `msg.value`  | `eth_value` (u128)         |
+/// | 64     | 32    | `msg.value`  | `eth_value` (U256)         |
 /// | 96     | 32    | `_ethTxValue`| `eth_tx_value` (0 => None) |
 /// | 128    | 8     | `_gasLimit`  | `gas_limit` (u64)          |
 /// | 136    | 1     | `_isCreation`| `to` (Create/Call)         |
@@ -306,7 +313,7 @@ pub(crate) fn unmarshal_deposit_version1(
     offset += 32;
 
     // uint256 eth_value (BVM_ETH mint = msg.value)
-    tx.eth_value = decode_u256_field(data, offset).unwrap_or_default();
+    tx.eth_value = decode_u256_field(data, offset).unwrap_or(U256::ZERO);
     offset += 32;
 
     // uint256 eth_tx_value (BVM_ETH tx value; 0 is represented as None)
@@ -337,33 +344,42 @@ pub(crate) fn unmarshal_deposit_version1(
     Ok(())
 }
 
-/// [MANTLE] Decodes a 32-byte big-endian field as a `u128` (low 16 bytes), returning `None`
-/// when the value is zero (matching op-node's `nil`-when-zero convention for mint values).
+/// `[MANTLE]` Decodes one 32-byte ABI word of `opaqueData` as a `BVM_ETH` amount.
+///
+/// Reads the **whole** word, exactly as op-node does with
+/// `new(big.Int).SetBytes(opaqueData[offset : offset+32])`
+/// (op-node/rollup/derive/deposit_log.go). Zero maps to `None`, matching op-node's
+/// "0 mint is represented as nil to skip minting code".
+///
+/// This used to narrow the word to its low 16 bytes to fit a `u128`, which silently produced a
+/// different value — and so a different deposit hash and post-state — from op-node for anything
+/// at or above 2^128. `_ethTxValue` is an unbounded `uint256` that any EOA can set through
+/// `OptimismPortal.depositTransaction`, so a single L1 transaction could split the chain. The
+/// field is `U256` throughout now, so the full word round-trips.
+/// Decodes one 32-byte ABI word as a `u128` amount, for the upstream `mint` field.
+///
+/// Unlike the Mantle `BVM_ETH` fields this stays `u128`, matching upstream op-alloy's
+/// `TxDeposit::mint`. op-node holds `Mint` as a `big.Int` too, so the same truncation exists in
+/// principle — but `mint` is MNT, whose supply is bounded well below 2^128, so the wide range is
+/// unreachable. Widening it would diverge from upstream op-alloy for no gain.
 fn decode_u128_field<E>(
     data: &[u8],
     offset: usize,
     error_fn: impl FnOnce(Bytes) -> E,
 ) -> Result<Option<u128>, E> {
-    let raw_value: [u8; 16] = data[offset + 16..offset + 32]
+    let raw: [u8; 16] = data[offset + 16..offset + 32]
         .try_into()
         .map_err(|_| error_fn(Bytes::copy_from_slice(&data[offset + 16..offset + 32])))?;
-    let value = u128::from_be_bytes(raw_value);
-    Ok(if value == 0 { None } else { Some(value) })
+    let value = u128::from_be_bytes(raw);
+    Ok((value != 0).then_some(value))
 }
 
-/// `[MANTLE]` Decodes a 32-byte big-endian ABI word, mapping zero to `None`.
-///
-/// Used for the two BVM_ETH value fields. The portal packs them as full `uint256` words and
-/// op-node decodes them with `new(big.Int).SetBytes(opaqueData[off:off+32])` across all 32
-/// bytes, so reading only the low 16 (as [`decode_u128_field`] does for `mint`) would narrow
-/// the value and derive a different transaction. Infallible: the slice bounds are already
-/// checked by the caller, and `U256::from_be_slice` cannot fail on 32 bytes.
 fn decode_u256_field(data: &[u8], offset: usize) -> Option<U256> {
     let value = U256::from_be_slice(&data[offset..offset + 32]);
     (!value.is_zero()).then_some(value)
 }
 
-/// [MANTLE] Decodes an 8-byte big-endian field as a `u64` (used for `gasLimit`).
+/// `[MANTLE]` Decodes an 8-byte big-endian field as a `u64` (used for `gasLimit`).
 fn decode_u8_field<E>(
     data: &[u8],
     offset: usize,
@@ -805,6 +821,39 @@ mod test {
         assert_eq!(tx.to, TxKind::Call(address!("5555555555555555555555555555555555555555")));
     }
 
+    /// `[MANTLE]` The full 32-byte word must survive, matching op-node's `big.Int`. This used to
+    /// read only the low 16 bytes, so anything at or above 2^128 decoded to a different value
+    /// (often `None`) than op-node — a different deposit hash and post-state, reachable by any
+    /// EOA through `OptimismPortal.depositTransaction`'s unbounded `_ethTxValue`.
+    #[test]
+    fn test_decode_u256_field_preserves_the_full_word() {
+        // Zero -> None, matching op-node's "0 mint is represented as nil".
+        assert_eq!(decode_u256_field(&[0u8; 32], 0), None);
+
+        let mut one = [0u8; 32];
+        one[31] = 1;
+        assert_eq!(decode_u256_field(&one, 0), Some(U256::from(1u128)));
+
+        // u128::MAX: the largest value the old narrow field could hold.
+        let mut u128_max = [0u8; 32];
+        u128_max[16..].fill(0xFF);
+        assert_eq!(decode_u256_field(&u128_max, 0), Some(U256::from(u128::MAX)));
+
+        // 2^128 — the old code read the low half only and returned `None` here.
+        let mut two_pow_128 = [0u8; 32];
+        two_pow_128[15] = 1;
+        assert_eq!(decode_u256_field(&two_pow_128, 0), Some(U256::from(1u128) << 128));
+
+        // U256::MAX round-trips.
+        assert_eq!(decode_u256_field(&[0xFFu8; 32], 0), Some(U256::MAX));
+
+        // Offsets are honoured.
+        let mut buf = [0u8; 64];
+        buf[63] = 7;
+        assert_eq!(decode_u256_field(&buf, 0), None);
+        assert_eq!(decode_u256_field(&buf, 32), Some(U256::from(7u128)));
+    }
+
     #[test]
     fn test_unmarshal_deposit_version1_invalid_len() {
         // Data must have at least length 137 (32+32+32+32+8+1)
@@ -833,11 +882,11 @@ mod test {
         let value: [u8; 32] = U256::from(200).to_be_bytes();
         data[32..64].copy_from_slice(&value);
 
-        // u128 eth_value (32 bytes, but only last 16 bytes are used)
+        // eth_value: full 32-byte word (this fixture keeps the value inside the low 16 bytes)
         let eth_value: [u8; 16] = 500_u128.to_be_bytes();
         data[80..96].copy_from_slice(&eth_value);
 
-        // u128 eth_tx_value (32 bytes, but only last 16 bytes are used)
+        // eth_tx_value: full 32-byte word (value fits in the low 16 bytes here)
         let eth_tx_value: [u8; 16] = 300_u128.to_be_bytes();
         data[112..128].copy_from_slice(&eth_tx_value);
 
@@ -862,61 +911,13 @@ mod test {
 
         assert_eq!(tx.mint, 1000);
         assert_eq!(tx.value, U256::from(200));
-        assert_eq!(tx.eth_value, U256::from(500u64));
-        assert_eq!(tx.eth_tx_value, Some(U256::from(300u64)));
+        assert_eq!(tx.eth_value, U256::from(500u128));
+        assert_eq!(tx.eth_tx_value, Some(U256::from(300u128)));
         assert_eq!(tx.gas_limit, 21000);
         assert_eq!(tx.to, TxKind::Call(to));
         // The input includes all remaining data (including padding)
         assert!(tx.input.starts_with(tx_data));
         assert_eq!(tx.input.len(), data.len() - 137);
-    }
-
-    /// `[MANTLE]` Range guard for the BVM_ETH value fields at the derivation boundary.
-    ///
-    /// `OptimismPortal.depositTransaction` packs `msg.value` and `_ethTxValue` as full 32-byte
-    /// ABI words, and op-node decodes each with
-    /// `new(big.Int).SetBytes(opaqueData[off:off+32])` — all 32 bytes. This pins that a value
-    /// occupying the high half of the word survives decoding intact.
-    ///
-    /// The earlier decoder read only `data[offset + 16..offset + 32]`, so anything above
-    /// `u128::MAX` came out reduced mod 2^128 and produced a different transaction than
-    /// op-node for the same log.
-    #[test]
-    fn mantle_unmarshal_deposit_version1_keeps_the_full_32_byte_word() {
-        let mut data = vec![0u8; 256];
-
-        // mint stays u128-shaped: the portal backs it with a real MNT transferFrom.
-        data[16..32].copy_from_slice(&1000_u128.to_be_bytes());
-
-        // uint256 value
-        data[32..64].copy_from_slice(&U256::from(200).to_be_bytes::<32>());
-
-        // eth_value: 2^200 — high half of the word occupied, far beyond u128::MAX.
-        let eth_value: U256 = U256::from(1u64) << 200;
-        data[64..96].copy_from_slice(&eth_value.to_be_bytes::<32>());
-
-        // eth_tx_value: (3 << 128) | 1234 — non-zero in BOTH halves, so a decoder that keeps
-        // only the low 16 bytes yields 1234 and one that keeps only the high 16 yields 3 << 128.
-        let eth_tx_value: U256 = (U256::from(3u64) << 128) | U256::from(1234u64);
-        data[96..128].copy_from_slice(&eth_tx_value.to_be_bytes::<32>());
-
-        data[128..136].copy_from_slice(&21000_u64.to_be_bytes());
-        data[136] = 0;
-
-        let mut tx = TxDeposit {
-            from: address!("1111111111111111111111111111111111111111"),
-            ..Default::default()
-        };
-        let to = address!("2222222222222222222222222222222222222222");
-
-        unmarshal_deposit_version1(&mut tx, to, &data).unwrap();
-
-        assert_eq!(tx.eth_value, eth_value, "eth_value lost its high bytes");
-        assert_eq!(tx.eth_tx_value, Some(eth_tx_value), "eth_tx_value lost its high bytes");
-
-        // Spell out what truncation would have produced, so the failure mode is legible.
-        assert_ne!(tx.eth_tx_value, Some(U256::from(1234u64)), "decoded only the low 16 bytes");
-        assert_eq!(tx.mint, 1000, "mint is unaffected by the widening");
     }
 
     #[test]
@@ -931,11 +932,11 @@ mod test {
         let value: [u8; 32] = U256::from(1000).to_be_bytes();
         data[32..64].copy_from_slice(&value);
 
-        // u128 eth_value
+        // eth_value (32-byte word)
         let eth_value: [u8; 16] = 2000_u128.to_be_bytes();
         data[80..96].copy_from_slice(&eth_value);
 
-        // u128 eth_tx_value
+        // eth_tx_value (32-byte word)
         let eth_tx_value: [u8; 16] = 1500_u128.to_be_bytes();
         data[112..128].copy_from_slice(&eth_tx_value);
 
@@ -957,8 +958,8 @@ mod test {
 
         assert_eq!(tx.mint, 5000);
         assert_eq!(tx.value, U256::from(1000));
-        assert_eq!(tx.eth_value, U256::from(2000u64));
-        assert_eq!(tx.eth_tx_value, Some(U256::from(1500u64)));
+        assert_eq!(tx.eth_value, U256::from(2000u128));
+        assert_eq!(tx.eth_tx_value, Some(U256::from(1500u128)));
         assert_eq!(tx.gas_limit, 50000);
         assert_eq!(tx.to, TxKind::Create);
         // The input includes all remaining data (including padding)
@@ -985,10 +986,65 @@ mod test {
 
         assert_eq!(tx.mint, 0);
         assert_eq!(tx.value, U256::ZERO);
-        assert_eq!(tx.eth_value, U256::from(0u64));
-        assert_eq!(tx.eth_tx_value, None); // decode_u128_field returns None for zero
+        assert_eq!(tx.eth_value, U256::from(0u128));
+        assert_eq!(tx.eth_tx_value, None); // decode_u256_field returns None for zero
         assert_eq!(tx.gas_limit, 21000);
         assert_eq!(tx.to, TxKind::Call(to));
+    }
+
+    /// `[MANTLE]` End-to-end regression for the `BVM_ETH` truncation divergence.
+    ///
+    /// `OptimismPortal.depositTransaction` puts `_ethTxValue` (and `msg.value`) on chain as a
+    /// full `uint256` with no upper bound, so any EOA can emit a `TransactionDeposited` whose
+    /// `opaqueData` carries a value at or above 2^128. op-node reads the whole word into a
+    /// `big.Int`; kona used to read only the low 16 bytes, so it derived a *different*
+    /// transaction -- a different deposit hash, a different block hash, a consensus split
+    /// (and, once kona-node replaces op-node, a cheap way to stall derivation).
+    ///
+    /// The old low-16-byte read is specifically what these vectors catch: each has a non-zero
+    /// high half and a deliberately misleading low half.
+    #[test]
+    fn test_unmarshal_deposit_version1_bvm_eth_above_u128_max() {
+        // High half set, low half zero: the old decoder read 0 and dropped the value entirely
+        // (`eth_tx_value` became `None`, i.e. "no BVM_ETH transfer" instead of 2^200).
+        let eth_value: U256 = U256::from(1u128) << 200;
+        // High half set, low half non-zero: the old decoder silently returned just the low half.
+        let eth_tx_value: U256 = (U256::from(3u128) << 128) | U256::from(1234u128);
+
+        let mut data = vec![0u8; 200];
+        data[64..96].copy_from_slice(&eth_value.to_be_bytes::<32>());
+        data[96..128].copy_from_slice(&eth_tx_value.to_be_bytes::<32>());
+        data[128..136].copy_from_slice(&21000_u64.to_be_bytes());
+        data[136] = 0;
+
+        let mut tx = TxDeposit::default();
+        let to = address!("5555555555555555555555555555555555555555");
+        unmarshal_deposit_version1(&mut tx, to, &data).unwrap();
+
+        assert_eq!(tx.eth_value, eth_value, "eth_value truncated to its low 16 bytes");
+        assert_eq!(
+            tx.eth_tx_value,
+            Some(eth_tx_value),
+            "eth_tx_value truncated to its low 16 bytes",
+        );
+        // Guard against the failure mode being masked by a coincidence: the truncated readings
+        // must genuinely differ from the correct ones.
+        assert_ne!(tx.eth_value, U256::ZERO);
+        assert_ne!(tx.eth_tx_value, Some(U256::from(1234u128)));
+
+        // A full-width word must also survive, and the fields after it must stay aligned.
+        let mut data = vec![0u8; 200];
+        data[64..96].copy_from_slice(&U256::MAX.to_be_bytes::<32>());
+        data[96..128].copy_from_slice(&U256::MAX.to_be_bytes::<32>());
+        data[128..136].copy_from_slice(&21000_u64.to_be_bytes());
+        data[136] = 1;
+
+        let mut tx = TxDeposit::default();
+        unmarshal_deposit_version1(&mut tx, to, &data).unwrap();
+        assert_eq!(tx.eth_value, U256::MAX);
+        assert_eq!(tx.eth_tx_value, Some(U256::MAX));
+        assert_eq!(tx.gas_limit, 21000);
+        assert_eq!(tx.to, TxKind::Create);
     }
 
     #[test]
@@ -1019,11 +1075,11 @@ mod test {
         let value: [u8; 32] = U256::ZERO.to_be_bytes();
         data[96..128].copy_from_slice(&value);
 
-        // u128 eth_value (0)
+        // eth_value (zero)
         let eth_value: [u8; 16] = 0_u128.to_be_bytes();
         data[144..160].copy_from_slice(&eth_value);
 
-        // u128 eth_tx_value (0)
+        // eth_tx_value (zero)
         let eth_tx_value: [u8; 16] = 0_u128.to_be_bytes();
         data[176..192].copy_from_slice(&eth_tx_value);
 

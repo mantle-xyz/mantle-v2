@@ -1,13 +1,14 @@
 //! Contains a utility method to check if attributes match a block.
 
-use alloy_eips::{Decodable2718, eip1559::BaseFeeParams};
+use alloy_eips::{Encodable2718, eip1559::BaseFeeParams};
 use alloy_network::TransactionResponse;
 use alloy_primitives::{Address, B256, Bytes};
 use alloy_rpc_types_eth::{Block, BlockTransactions, Withdrawals};
 use kona_genesis::RollupConfig;
 use kona_protocol::OpAttributesWithParent;
 use op_alloy_consensus::{
-    EIP1559ParamError, OpTxEnvelope, decode_holocene_extra_data, decode_jovian_extra_data,
+    EIP1559ParamError, OpTxEnvelope, decode_2718_canonical, decode_holocene_extra_data,
+    decode_jovian_extra_data,
 };
 use op_alloy_rpc_types::Transaction;
 
@@ -60,7 +61,17 @@ impl AttributesMatch {
         let attr_withdrawals = attr_withdrawals.map(|w| Withdrawals::new(w.clone()));
         let block_withdrawals = block.withdrawals.as_ref();
 
-        if config.is_canyon_active(block.header.timestamp) {
+        // [MANTLE] op-node computes these two as
+        // `IsCanyon(ts) || IsMantleSkadi(ts)` and `IsIsthmus(ts) || IsMantleSkadi(ts)`
+        // (rollup/attributes/engine_consolidate.go). On a Mantle chain every OP fork is pinned
+        // to `mantle_arsia_time`, so in the `[Skadi, Arsia)` window both would read false here
+        // while op-geth is already producing Canyon/Isthmus-shaped blocks — consolidation would
+        // reject every one of them as a `BedrockWithdrawals` mismatch and force a full re-derive.
+        let mantle_skadi = config.is_mantle_skadi_active(block.header.timestamp);
+        let is_canyon = config.is_canyon_active(block.header.timestamp) || mantle_skadi;
+        let is_isthmus = config.is_isthmus_active(block.header.timestamp) || mantle_skadi;
+
+        if is_canyon {
             // In canyon, the withdrawals list should be some and empty
             if attr_withdrawals.is_none_or(|w| !w.is_empty()) {
                 return Self::Mismatch(AttributesMismatch::CanyonWithdrawalsNotEmpty);
@@ -68,7 +79,7 @@ impl AttributesMatch {
             if block_withdrawals.is_none_or(|w| !w.is_empty()) {
                 return Self::Mismatch(AttributesMismatch::CanyonWithdrawalsNotEmpty);
             }
-            if !config.is_isthmus_active(block.header.timestamp) {
+            if !is_isthmus {
                 // In canyon, the withdrawals root should be set to the empty value
                 let empty_hash = alloy_consensus::EMPTY_ROOT_HASH;
                 if block.header.inner.withdrawals_root != Some(empty_hash) {
@@ -82,7 +93,7 @@ impl AttributesMatch {
             }
         }
 
-        if config.is_isthmus_active(block.header.timestamp) {
+        if is_isthmus {
             // In isthmus, the withdrawals root must be set
             if block.header.inner.withdrawals_root.is_none() {
                 return Self::Mismatch(AttributesMismatch::IsthmusMissingWithdrawalsRoot);
@@ -147,23 +158,22 @@ impl AttributesMatch {
                 block_tx_hash = %block_tx.tx_hash(),
                 "Checking attributes transaction against block transaction",
             );
-            // Let's try to deserialize the attributes transaction
-            let Ok(attr_tx) = OpTxEnvelope::decode_2718(&mut &attr_tx_bytes[..]) else {
-                error!(
-                    "Impossible to deserialize transaction from attributes. If we have stored these attributes it means the transactions where well formatted. This is a bug"
+            // Compare the raw bytes, as op-node does: bytes that merely decode to the same
+            // transaction are still a mismatch.
+            if attr_tx_bytes.as_ref() == block_tx.inner.inner.inner().encoded_2718().as_slice() {
+                continue;
+            }
+            let Ok(attr_tx) = decode_2718_canonical::<OpTxEnvelope>(attr_tx_bytes) else {
+                warn!(
+                    target: "engine",
+                    ?attr_tx_bytes,
+                    "Attributes transaction is not a canonically encoded transaction"
                 );
-
                 return AttributesMismatch::MalformedAttributesTransaction.into();
             };
-
-            if &attr_tx != block_tx.inner.inner.inner() {
-                warn!(target: "engine", ?attr_tx, ?block_tx, "Transaction mismatch in derived attributes");
-                return AttributesMismatch::TransactionContent(
-                    attr_tx.tx_hash(),
-                    block_tx.tx_hash(),
-                )
+            warn!(target: "engine", ?attr_tx, ?block_tx, "Transaction mismatch in derived attributes");
+            return AttributesMismatch::TransactionContent(attr_tx.tx_hash(), block_tx.tx_hash())
                 .into();
-            }
         }
 
         Self::Match
@@ -397,7 +407,6 @@ impl From<AttributesMismatch> for AttributesMatch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::AttributesMismatch::EIP1559Parameters;
     use alloy_consensus::EMPTY_ROOT_HASH;
     use alloy_primitives::{Bytes, FixedBytes, address, b256};
     use alloy_rpc_types_eth::BlockTransactions;
@@ -635,6 +644,28 @@ mod tests {
         assert!(check.is_mismatch());
     }
 
+    /// Attribute transaction bytes must equal the block transaction's encoding byte for byte, as
+    /// op-node compares. Bytes that merely decode to the same transaction (a typed body without
+    /// its type byte) are a mismatch.
+    #[test]
+    fn test_attributes_mismatch_non_canonical_transaction_encoding() {
+        let cfg = default_rollup_config();
+        // Retry until the random set contains a typed signed transaction to strip the tag from.
+        let (attributes, block, idx) = loop {
+            let (attributes, block) = test_transactions_match_helper();
+            let txs = attributes.attributes.transactions.as_ref().unwrap();
+            if let Some(idx) = txs.iter().position(|tx| matches!(tx[0], 0x01 | 0x02 | 0x04)) {
+                break (attributes, block, idx);
+            }
+        };
+        let mut attributes = attributes;
+        let txs = attributes.attributes.transactions.as_mut().unwrap();
+        txs[idx] = Bytes::copy_from_slice(&txs[idx][1..]);
+
+        let check = AttributesMatch::check(cfg, &attributes, &block);
+        assert_eq!(check, AttributesMismatch::MalformedAttributesTransaction.into());
+    }
+
     /// Checks the edge case where the attributes array is empty.
     #[test]
     fn test_attributes_mismatch_empty_tx_attributes() {
@@ -795,8 +826,9 @@ mod tests {
         assert!(check.is_mismatch());
     }
 
-    /// Check that, when the eip1559 params are specified and empty, the check fails because we
-    /// fallback on canyon params for the attributes but not for the block (edge case).
+    /// Check that, when the eip1559 params are specified and empty, the check fails: the attributes
+    /// fall back to canyon params, but the block's all-zero extraData is rejected at decode (a zero
+    /// denominator is invalid per the Holocene header rules).
     #[test]
     fn test_eip1559_parameters_specified_both_and_empty() {
         let (cfg, mut attributes, mut block) = eip1559_test_setup();
@@ -807,9 +839,8 @@ mod tests {
         let check = AttributesMatch::check(&cfg, &attributes, &block);
         assert_eq!(
             check,
-            AttributesMatch::Mismatch(EIP1559Parameters(
-                BaseFeeParams { max_change_denominator: 250, elasticity_multiplier: 6 },
-                BaseFeeParams { max_change_denominator: 0, elasticity_multiplier: 0 }
+            AttributesMatch::Mismatch(AttributesMismatch::UnknownExtraDataDecodingError(
+                EIP1559ParamError::ZeroDenominator
             ))
         );
         assert!(check.is_mismatch());
@@ -975,16 +1006,13 @@ mod tests {
 
         let check = AttributesMatch::check(&cfg, &attributes, &block);
 
-        // Note that in this case we *always* have a mismatch because there isn't enough bytes in
-        // the default representation of the extra params to represent a u128
+        // The block's all-zero extraData is rejected at decode (a zero denominator is invalid per
+        // the Holocene header rules), so the check fails there regardless of the attributes'
+        // (here intentionally oversized) canyon params.
         assert_eq!(
             check,
-            AttributesMatch::Mismatch(EIP1559Parameters(
-                BaseFeeParams {
-                    max_change_denominator: u64::MAX as u128,
-                    elasticity_multiplier: u64::MAX as u128
-                },
-                BaseFeeParams { max_change_denominator: 0, elasticity_multiplier: 0 }
+            AttributesMatch::Mismatch(AttributesMismatch::UnknownExtraDataDecodingError(
+                EIP1559ParamError::ZeroDenominator
             ))
         );
         assert!(check.is_mismatch());
@@ -999,5 +1027,74 @@ mod tests {
         let check = AttributesMatch::check(cfg, &attributes, &block);
         assert_eq!(check, AttributesMatch::Match);
         assert!(check.is_match());
+    }
+
+    /// `[MANTLE]` Consolidation in the `[Skadi, Arsia)` window.
+    ///
+    /// op-geth produces Canyon/Isthmus-shaped blocks from Skadi on (empty withdrawals list plus
+    /// a withdrawals root), and op-node's consolidation expects exactly that via
+    /// `IsCanyon || IsMantleSkadi` / `IsIsthmus || IsMantleSkadi`. Reading only the OP
+    /// predicates — which are pinned to `mantle_arsia_time` — takes the Bedrock branch and
+    /// rejects every such block as `BedrockWithdrawals`.
+    #[test]
+    fn test_check_withdrawals_mantle_skadi_before_arsia() {
+        use kona_genesis::MantleHardForkConfig;
+
+        let cfg = RollupConfig {
+            mantle_hardforks: MantleHardForkConfig {
+                mantle_skadi_time: Some(0),
+                mantle_arsia_time: Some(u64::MAX),
+                ..MantleHardForkConfig::NONE
+            },
+            ..Default::default()
+        };
+        // Premise: neither OP fork is active, so the un-fixed code takes the Bedrock branch.
+        assert!(!cfg.is_canyon_active(1));
+        assert!(!cfg.is_isthmus_active(1));
+
+        let mut attributes = default_attributes();
+        attributes.attributes.payload_attributes.withdrawals = Some(Vec::new());
+
+        let mut block = Block::<Transaction>::default();
+        block.header.inner.timestamp = 1;
+        block.withdrawals = Some(Default::default());
+        block.header.inner.withdrawals_root = Some(EMPTY_ROOT_HASH);
+
+        assert_eq!(
+            AttributesMatch::check_withdrawals(&cfg, &attributes, &block),
+            AttributesMatch::Match,
+        );
+
+        // A missing withdrawals root must still be caught — Skadi turns the Isthmus rule on,
+        // it does not turn checking off.
+        block.header.inner.withdrawals_root = None;
+        assert_eq!(
+            AttributesMatch::check_withdrawals(&cfg, &attributes, &block),
+            AttributesMatch::Mismatch(AttributesMismatch::IsthmusMissingWithdrawalsRoot),
+        );
+    }
+
+    /// Before Skadi a Mantle chain is still on the Bedrock shape.
+    #[test]
+    fn test_check_withdrawals_mantle_pre_skadi_is_bedrock() {
+        use kona_genesis::MantleHardForkConfig;
+
+        let cfg = RollupConfig {
+            mantle_hardforks: MantleHardForkConfig {
+                mantle_skadi_time: Some(1_000),
+                mantle_arsia_time: Some(u64::MAX),
+                ..MantleHardForkConfig::NONE
+            },
+            ..Default::default()
+        };
+        let mut attributes = default_attributes();
+        attributes.attributes.payload_attributes.withdrawals = Some(Vec::new());
+        let mut block = Block::<Transaction>::default();
+        block.header.inner.timestamp = 1;
+
+        assert_eq!(
+            AttributesMatch::check_withdrawals(&cfg, &attributes, &block),
+            AttributesMatch::Mismatch(AttributesMismatch::BedrockWithdrawals),
+        );
     }
 }

@@ -1,8 +1,8 @@
 //! Contains the [`SystemConfigUpdate`].
 
 use crate::{
-    BaseFeeUpdate, BatcherUpdate, Eip1559Update, GasConfigUpdate, GasLimitUpdate, OperatorFeeUpdate,
-    SystemConfig, SystemConfigUpdateKind, UnsafeBlockSignerUpdate,
+    BaseFeeUpdate, BatcherUpdate, Eip1559Update, GasConfigUpdate, GasLimitUpdate,
+    OperatorFeeUpdate, SystemConfig, SystemConfigUpdateKind, UnsafeBlockSignerUpdate,
     updates::{DaFootprintGasScalarUpdate, MinBaseFeeUpdate},
 };
 
@@ -19,7 +19,7 @@ pub enum SystemConfigUpdate {
     GasLimit(GasLimitUpdate),
     /// The unsafe block signer update.
     UnsafeBlockSigner(UnsafeBlockSignerUpdate),
-    /// [MANTLE] The base fee update.
+    /// `[MANTLE]` The base fee update.
     BaseFee(BaseFeeUpdate),
     /// The EIP-1559 parameters update.
     Eip1559(Eip1559Update),

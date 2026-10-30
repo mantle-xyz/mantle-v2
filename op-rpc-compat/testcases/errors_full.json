@@ -1,0 +1,422 @@
+[
+  {
+    "name": "error_invalid_method",
+    "method": "eth_invalidMethod",
+    "params": [],
+    "description": "Error: call to a nonexistent method"
+  },
+  {
+    "name": "error_invalid_method_name",
+    "method": "invalid_method_name",
+    "params": [],
+    "description": "Error: invalid method name format"
+  },
+  {
+    "name": "error_empty_method",
+    "method": "",
+    "params": [],
+    "description": "Error: empty method name"
+  },
+
+  {
+    "name": "error_missing_required_param",
+    "method": "eth_getBalance",
+    "params": [],
+    "description": "Error: missing required parameter"
+  },
+  {
+    "name": "error_insufficient_params",
+    "method": "eth_getBlockByNumber",
+    "params": ["0x1"],
+    "description": "Error: too few parameters"
+  },
+  {
+    "name": "error_too_many_params",
+    "method": "eth_blockNumber",
+    "params": ["extra_param"],
+    "description": "Error: too many parameters"
+  },
+
+  {
+    "name": "error_invalid_block_tag",
+    "method": "eth_getBlockByNumber",
+    "params": ["invalid", false],
+    "description": "Error: invalid block tag"
+  },
+  {
+    "name": "error_invalid_hex_number",
+    "method": "eth_getBlockByNumber",
+    "params": ["0xGGG", false],
+    "description": "Error: invalid hexadecimal number"
+  },
+  {
+    "name": "error_negative_block_number",
+    "method": "eth_getBlockByNumber",
+    "params": ["-0x1", false],
+    "description": "Error: negative block number"
+  },
+  {
+    "name": "error_future_block",
+    "method": "eth_getBlockByNumber",
+    "params": ["0xffffffff", false],
+    "description": "Error: request for a future block"
+  },
+  {
+    "name": "error_very_large_block",
+    "method": "eth_getBlockByNumber",
+    "params": ["0xffffffffffffffff", false],
+    "description": "Error: excessively large block number"
+  },
+
+  {
+    "name": "error_invalid_address_format",
+    "method": "eth_getBalance",
+    "params": ["not_an_address", "latest"],
+    "description": "Error: invalid address format"
+  },
+  {
+    "name": "error_invalid_address_length_short",
+    "method": "eth_getBalance",
+    "params": ["0x123", "latest"],
+    "description": "Error: address is too short"
+  },
+  {
+    "name": "error_invalid_address_length_long",
+    "method": "eth_getBalance",
+    "params": ["0x0000000000000000000000000000000000000000000", "latest"],
+    "description": "Error: address is too long"
+  },
+  {
+    "name": "error_address_without_0x",
+    "method": "eth_getBalance",
+    "params": ["f39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "latest"],
+    "description": "Error: address lacks the 0x prefix"
+  },
+
+  {
+    "name": "error_invalid_hash_format",
+    "method": "eth_getTransactionByHash",
+    "params": ["not_a_hash"],
+    "description": "Error: invalid hash format"
+  },
+  {
+    "name": "error_invalid_hash_length",
+    "method": "eth_getTransactionByHash",
+    "params": ["0x123"],
+    "description": "Error: incorrect hash length"
+  },
+  {
+    "name": "error_nonexistent_tx_hash",
+    "method": "eth_getTransactionByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "Error: nonexistent transaction hash"
+  },
+  {
+    "name": "error_nonexistent_block_hash",
+    "method": "eth_getBlockByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000", false],
+    "description": "Error: nonexistent block hash"
+  },
+
+  {
+    "name": "error_eth_call_invalid_to",
+    "method": "eth_call",
+    "params": [{"to": "invalid"}, "latest"],
+    "description": "Error: eth_call with an invalid to address"
+  },
+  {
+    "name": "error_eth_call_invalid_data",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "data": "not_hex"}, "latest"],
+    "description": "Error: eth_call data is not hexadecimal"
+  },
+  {
+    "name": "error_eth_call_invalid_value",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "value": "invalid"}, "latest"],
+    "description": "Error: eth_call with an invalid value"
+  },
+  {
+    "name": "error_eth_call_invalid_gas",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "gas": "invalid"}, "latest"],
+    "description": "Error: eth_call with an invalid gas value"
+  },
+  {
+    "name": "error_eth_call_negative_gas",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "gas": "-0x1"}, "latest"],
+    "description": "Error: eth_call with a negative gas value"
+  },
+  {
+    "name": "error_eth_call_oog",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "gas": "0x1", "data": "0x12345678"}, "latest"],
+    "description": "Error: eth_call with insufficient gas (out of gas)"
+  },
+  {
+    "name": "error_eth_call_revert_empty",
+    "method": "eth_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "data": "0xffffffff"}, "latest"],
+    "description": "Error: eth_call that may revert"
+  },
+
+  {
+    "name": "error_eth_estimateGas_invalid_to",
+    "method": "eth_estimateGas",
+    "params": [{"to": "invalid"}],
+    "description": "Error: eth_estimateGas with an invalid to address"
+  },
+  {
+    "name": "error_eth_estimateGas_invalid_data",
+    "method": "eth_estimateGas",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "data": "not_hex"}],
+    "description": "Error: eth_estimateGas data is not hexadecimal"
+  },
+  {
+    "name": "error_eth_estimateGas_invalid_value",
+    "method": "eth_estimateGas",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "value": "invalid"}],
+    "description": "Error: eth_estimateGas with an invalid value"
+  },
+  {
+    "name": "error_eth_estimateGas_insufficient_funds",
+    "method": "eth_estimateGas",
+    "params": [{"from": "0x0000000000000000000000000000000000000001", "to": "0x0000000000000000000000000000000000000002", "value": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}],
+    "description": "Error: eth_estimateGas with insufficient funds"
+  },
+  {
+    "name": "error_eth_estimateGas_always_revert",
+    "method": "eth_estimateGas",
+    "params": [{"to": "0x0000000000000000000000000000000000000000", "data": "0xffffffff"}],
+    "description": "Error: eth_estimateGas for a call that reverts"
+  },
+
+  {
+    "name": "error_eth_getLogs_invalid_fromBlock",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "invalid", "toBlock": "latest"}],
+    "description": "Error: eth_getLogs with an invalid fromBlock"
+  },
+  {
+    "name": "error_eth_getLogs_invalid_toBlock",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "invalid"}],
+    "description": "Error: eth_getLogs with an invalid toBlock"
+  },
+  {
+    "name": "error_eth_getLogs_invalid_address",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "address": "invalid"}],
+    "description": "Error: eth_getLogs with an invalid address"
+  },
+  {
+    "name": "error_eth_getLogs_invalid_topic",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "latest", "topics": ["invalid"]}],
+    "description": "Error: eth_getLogs with an invalid topic"
+  },
+  {
+    "name": "error_eth_getLogs_invalid_blockhash",
+    "method": "eth_getLogs",
+    "params": [{"blockHash": "invalid"}],
+    "description": "Error: eth_getLogs with an invalid blockHash"
+  },
+  {
+    "name": "error_eth_getLogs_blockhash_with_range",
+    "method": "eth_getLogs",
+    "params": [{"blockHash": "0x0000000000000000000000000000000000000000000000000000000000000000", "fromBlock": "0x0", "toBlock": "latest"}],
+    "description": "Error: eth_getLogs with both blockHash and a block range"
+  },
+  {
+    "name": "error_eth_getLogs_range_too_large",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x0", "toBlock": "0xffffff"}],
+    "description": "Error: eth_getLogs with an excessively large block range"
+  },
+  {
+    "name": "error_eth_getLogs_from_greater_than_to",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0x10", "toBlock": "0x1"}],
+    "description": "Error: eth_getLogs with fromBlock > toBlock"
+  },
+  {
+    "name": "error_eth_getLogs_from_greater_than_head",
+    "method": "eth_getLogs",
+    "params": [{"fromBlock": "0xffffffff", "toBlock": "latest"}],
+    "description": "Error: eth_getLogs with fromBlock beyond the chain head"
+  },
+
+  {
+    "name": "error_eth_getStorageAt_invalid_position",
+    "method": "eth_getStorageAt",
+    "params": ["0x0000000000000000000000000000000000000000", "invalid", "latest"],
+    "description": "Error: eth_getStorageAt with an invalid position"
+  },
+  {
+    "name": "error_eth_getStorageAt_invalid_address",
+    "method": "eth_getStorageAt",
+    "params": ["invalid", "0x0", "latest"],
+    "description": "Error: eth_getStorageAt with an invalid address"
+  },
+
+  {
+    "name": "error_eth_getCode_invalid_address",
+    "method": "eth_getCode",
+    "params": ["invalid", "latest"],
+    "description": "Error: eth_getCode with an invalid address"
+  },
+  {
+    "name": "error_eth_getCode_invalid_block",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000000", "invalid"],
+    "description": "Error: eth_getCode with an invalid block"
+  },
+
+  {
+    "name": "error_eth_getTransactionCount_invalid_address",
+    "method": "eth_getTransactionCount",
+    "params": ["invalid", "latest"],
+    "description": "Error: eth_getTransactionCount with an invalid address"
+  },
+  {
+    "name": "error_eth_getTransactionCount_invalid_block",
+    "method": "eth_getTransactionCount",
+    "params": ["0x0000000000000000000000000000000000000000", "invalid"],
+    "description": "Error: eth_getTransactionCount with an invalid block"
+  },
+
+  {
+    "name": "error_eth_getBlockTransactionCountByNumber_invalid",
+    "method": "eth_getBlockTransactionCountByNumber",
+    "params": ["invalid"],
+    "description": "Error: eth_getBlockTransactionCountByNumber with an invalid parameter"
+  },
+  {
+    "name": "error_eth_getBlockTransactionCountByHash_invalid",
+    "method": "eth_getBlockTransactionCountByHash",
+    "params": ["invalid"],
+    "description": "Error: eth_getBlockTransactionCountByHash with an invalid parameter"
+  },
+
+  {
+    "name": "error_eth_getTransactionByBlockNumberAndIndex_invalid_block",
+    "method": "eth_getTransactionByBlockNumberAndIndex",
+    "params": ["invalid", "0x0"],
+    "description": "Error: eth_getTransactionByBlockNumberAndIndex with an invalid block"
+  },
+  {
+    "name": "error_eth_getTransactionByBlockNumberAndIndex_invalid_index",
+    "method": "eth_getTransactionByBlockNumberAndIndex",
+    "params": ["latest", "invalid"],
+    "description": "Error: eth_getTransactionByBlockNumberAndIndex with an invalid index"
+  },
+  {
+    "name": "error_eth_getTransactionByBlockNumberAndIndex_out_of_range",
+    "method": "eth_getTransactionByBlockNumberAndIndex",
+    "params": ["latest", "0xffffff"],
+    "description": "Error: eth_getTransactionByBlockNumberAndIndex with an out-of-range index"
+  },
+
+  {
+    "name": "error_eth_feeHistory_invalid_block_count",
+    "method": "eth_feeHistory",
+    "params": ["invalid", "latest", [25, 75]],
+    "description": "Error: eth_feeHistory with an invalid block count"
+  },
+  {
+    "name": "error_eth_feeHistory_zero_block_count",
+    "method": "eth_feeHistory",
+    "params": ["0x0", "latest", [25, 75]],
+    "description": "Error: eth_feeHistory with a block count of zero"
+  },
+  {
+    "name": "error_eth_feeHistory_invalid_percentiles",
+    "method": "eth_feeHistory",
+    "params": ["0x4", "latest", [101]],
+    "description": "Error: eth_feeHistory with a percentile above 100"
+  },
+  {
+    "name": "error_eth_feeHistory_negative_percentiles",
+    "method": "eth_feeHistory",
+    "params": ["0x4", "latest", [-1]],
+    "description": "Error: eth_feeHistory with a negative percentile"
+  },
+
+  {
+    "name": "error_eth_getProof_invalid_address",
+    "method": "eth_getProof",
+    "params": ["invalid", [], "latest"],
+    "description": "Error: eth_getProof with an invalid address"
+  },
+  {
+    "name": "error_eth_getProof_invalid_storage_key",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000000", ["invalid"], "latest"],
+    "description": "Error: eth_getProof with an invalid storageKey"
+  },
+  {
+    "name": "error_eth_getProof_invalid_block",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000000", [], "invalid"],
+    "description": "Error: eth_getProof with an invalid block"
+  },
+
+  {
+    "name": "error_eth_createAccessList_invalid_to",
+    "method": "eth_createAccessList",
+    "params": [{"to": "invalid"}, "latest"],
+    "description": "Error: eth_createAccessList with an invalid to address"
+  },
+  {
+    "name": "error_eth_createAccessList_invalid_block",
+    "method": "eth_createAccessList",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, "invalid"],
+    "description": "Error: eth_createAccessList with an invalid block"
+  },
+
+  {
+    "name": "error_web3_sha3_invalid_hex",
+    "method": "web3_sha3",
+    "params": ["not_hex"],
+    "description": "Error: web3_sha3 parameter is not hexadecimal"
+  },
+
+  {
+    "name": "error_eth_getFilterChanges_invalid_filter",
+    "method": "eth_getFilterChanges",
+    "params": ["0xffffffffffffffff"],
+    "description": "Error: eth_getFilterChanges with an invalid filter ID"
+  },
+  {
+    "name": "error_eth_uninstallFilter_invalid_filter",
+    "method": "eth_uninstallFilter",
+    "params": ["0xffffffffffffffff"],
+    "description": "Error: eth_uninstallFilter with an invalid filter ID"
+  },
+
+  {
+    "name": "error_type_string_instead_of_number",
+    "method": "eth_getBlockByNumber",
+    "params": ["hello", false],
+    "description": "Error: type mismatch - string instead of number"
+  },
+  {
+    "name": "error_type_number_instead_of_bool",
+    "method": "eth_getBlockByNumber",
+    "params": ["0x1", 1],
+    "description": "Error: type mismatch - number instead of boolean"
+  },
+  {
+    "name": "error_type_array_instead_of_object",
+    "method": "eth_call",
+    "params": [["invalid"], "latest"],
+    "description": "Error: type mismatch - array instead of object"
+  },
+  {
+    "name": "error_type_null_required_param",
+    "method": "eth_getBalance",
+    "params": [null, "latest"],
+    "description": "Error: type mismatch - null for a required parameter"
+  }
+]
