@@ -69,7 +69,9 @@ error cases, txpool, and debug methods. It does not submit chain transactions,
 although methods such as `eth_newFilter` create temporary node-local state. A
 live chain can change between the two requests. The default `--suite core` runs
 cases with deterministic comparison prerequisites. `--suite diagnostic` runs
-`pending`, `safe`, and `finalized` cases separately; `--suite all` runs both.
+`pending`, `safe`, and `finalized` cases separately, together with
+`eth_getBlockRange`, which Mantle reth retires from `dev/mantle-v1.7.0` while op-geth
+still serves it; `--suite all` runs both.
 The report lists excluded cases rather than counting them as passes. A selected
 case without a comparable snapshot is still `INCONCLUSIVE` and fails that run.
 For `latest`, `safe`, and `finalized`, the tool checks both endpoints' block

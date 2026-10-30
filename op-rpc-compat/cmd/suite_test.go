@@ -26,6 +26,8 @@ func TestCaseSuiteRequiresDiagnosticOnlyForUnstableTags(t *testing.T) {
 		{"local sync status", "eth_syncing", []any{}, "diagnostic"},
 		{"local peer count", "net_peerCount", []any{}, "diagnostic"},
 		{"local txpool status", "txpool_status", []any{}, "diagnostic"},
+		{"retired on reth", "eth_getBlockRange", []any{"0x0", "0x5", false}, "diagnostic"},
+		{"retired on reth, invalid range", "eth_getBlockRange", []any{"0x10", "0x1", false}, "diagnostic"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := caseSuite(report.TestCase{Method: tc.method, Params: tc.params}); got != tc.want {

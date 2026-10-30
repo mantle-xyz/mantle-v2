@@ -14,6 +14,11 @@ func caseSuite(tc report.TestCase) string {
 		}
 	case "txpool_contentFrom":
 		return "diagnostic"
+	case "eth_getBlockRange":
+		// Mantle reth retires this extension from dev/mantle-v1.7.0 (mantle-xyz/reth#144) while
+		// op-geth still serves it, so the pair has no shared behaviour to gate on. The cases stay
+		// runnable here to show what each side answers.
+		return "diagnostic"
 	}
 	for _, tag := range caseDynamicTags(tc) {
 		if tag == "pending" || tag == "safe" || tag == "finalized" {
