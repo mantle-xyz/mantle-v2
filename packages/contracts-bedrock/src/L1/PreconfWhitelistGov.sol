@@ -8,19 +8,24 @@ import { PreconfWhitelist, PRECONF_MAX_BATCH } from "../L2/PreconfWhitelist.sol"
 /// @title PreconfWhitelistGov
 /// @notice L1 endpoint governing `PreconfWhitelist`; it is that contract's `authorizedL1`. Deposits
 ///         via OptimismPortal, never the messenger: a delta needs exactly-once, in-order delivery.
+///         SIZE: keep the L2 allowlist below about 10,000 rules in total (`rulesLength()` on L2).
+///         Past that, an update may not take effect in the block it lands in — see the SIZE note
+///         on `PreconfWhitelist`. Nothing here enforces it: L1 cannot see the L2 count, so check
+///         it on L2 before sending a batch that grows the allowlist.
 contract PreconfWhitelistGov is Ownable {
     /// @notice The same constant `PreconfWhitelist` caps a batch with, imported rather than copied
     ///         so the two cannot drift. An oversized batch reverts on L2 only after the deposit is
     ///         bought, so rejecting it here — where the length is plain calldata — is free.
     uint256 public constant MAX_BATCH = PRECONF_MAX_BATCH;
 
-    /// @notice Fixed part of the computed limit: dispatch, decode, the event's cold SLOADs and the
-    ///         cold length SSTORE are paid once per call, not per rule, so [`GAS_PER_RULE`]'s
-    ///         full-batch average under-buys small ones. One rule measures 91,597: 21,597 needed.
+    /// @notice Fixed part of the computed limit: dispatch, decode, the event's cold SLOADs, the
+    ///         cold length SSTORE and the `listsHash` update are paid once per call, not per rule, so
+    ///         [`GAS_PER_RULE`]'s full-batch average under-buys small ones. One rule measures 93,330:
+    ///         23,330 needed.
     uint64 public constant BASE_GAS = 30_000;
 
-    /// @notice Gas the computed limit buys per rule. A pair add measures 68,044 on L2 — the worst
-    ///         per-rule cost — so this carries a 2.9% margin, and a full batch buys 18.2M of the 20M
+    /// @notice Gas the computed limit buys per rule. A pair add measures 68,344 on L2 — the worst
+    ///         per-rule cost — so this carries a 2.4% margin, and a full batch buys 18.2M of the 20M
     ///         a deposit can. Raising `MAX_BATCH` past 281 breaks that; see the test.
     uint64 public constant GAS_PER_RULE = 70_000;
 
