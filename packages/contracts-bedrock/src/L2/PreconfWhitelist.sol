@@ -11,6 +11,9 @@ uint256 constant PRECONF_MAX_BATCH = 256;
 /// @title PreconfWhitelist
 /// @notice Preconf fast-path allowlist, governed only from `authorizedL1` by direct portal deposit.
 ///         LAYOUT IS LOAD-BEARING: op-reth reads slots 0/2/4/6/8 and a `Rule` spans two; never reorder.
+///         SIZE: keep the total rule count (`rulesLength()`, all three sets) below about 10,000.
+///         Past that, an update may not take effect in the block it lands in, because op-reth
+///         re-reads every set after `WhitelistUpdated` and a larger allowlist takes longer to read.
 contract PreconfWhitelist {
     /// @notice One allowlist rule as governance submits it. Both halves non-zero is an exact pair;
     ///         exactly one zero half is a wildcard on the other side. The zero address is a

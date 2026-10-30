@@ -8,6 +8,10 @@ import { PreconfWhitelist, PRECONF_MAX_BATCH } from "../L2/PreconfWhitelist.sol"
 /// @title PreconfWhitelistGov
 /// @notice L1 endpoint governing `PreconfWhitelist`; it is that contract's `authorizedL1`. Deposits
 ///         via OptimismPortal, never the messenger: a delta needs exactly-once, in-order delivery.
+///         SIZE: keep the L2 allowlist below about 10,000 rules in total (`rulesLength()` on L2).
+///         Past that, an update may not take effect in the block it lands in — see the SIZE note
+///         on `PreconfWhitelist`. Nothing here enforces it: L1 cannot see the L2 count, so check
+///         it on L2 before sending a batch that grows the allowlist.
 contract PreconfWhitelistGov is Ownable {
     /// @notice The same constant `PreconfWhitelist` caps a batch with, imported rather than copied
     ///         so the two cannot drift. An oversized batch reverts on L2 only after the deposit is
