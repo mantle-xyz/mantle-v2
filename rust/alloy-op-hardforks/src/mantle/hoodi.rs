@@ -4,7 +4,7 @@
 ///
 /// Mantle Hoodi's mainline fork times come from its genesis and rollup configuration. Only
 /// `HoodiBvmUpgrade` has a bundled activation time, see [`MANTLE_HOODI_BVM_UPGRADE_TIMESTAMP`].
-pub const MANTLE_HOODI_CHAIN_ID: u64 = 50002;
+pub const MANTLE_HOODI_CHAIN_ID: u64 = 56004803;
 
 /// `HoodiBvmUpgrade` activation timestamp for Mantle Hoodi. `None` until scheduled.
 ///
