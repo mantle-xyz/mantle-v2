@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/cliiface"
 	opcrypto "github.com/ethereum-optimism/optimism/op-service/crypto"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
+	"github.com/ethereum-optimism/optimism/op-service/hsm"
 	opsigner "github.com/ethereum-optimism/optimism/op-service/signer"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -52,6 +53,8 @@ const (
 	HsmAddressFlagName                 = "hsm-address"
 	HsmAPINameFlagName                 = "hsm-api-name"
 	HsmCredenFlagName                  = "hsm-creden"
+	HsmProviderFlagName                = "hsm-provider"
+	AWSKMSKeyIDFlagName                = "aws-kms-key-id"
 )
 
 var (
@@ -280,6 +283,18 @@ func CLIFlagsWithDefaults(envPrefix string, defaults DefaultFlagValues) []cli.Fl
 			Value:   "",
 			EnvVars: prefixEnvVars("HSM_CREDEN"),
 		},
+		&cli.StringFlag{
+			Name:    HsmProviderFlagName,
+			Usage:   "Managed key provider used when hsm is enabled: \"gcp\" or \"aws-kms\". Defaults to gcp when empty",
+			Value:   "",
+			EnvVars: prefixEnvVars("HSM_PROVIDER"),
+		},
+		&cli.StringFlag{
+			Name:    AWSKMSKeyIDFlagName,
+			Usage:   "Full AWS KMS key ARN (aliases are not accepted). Only used with --hsm-provider=aws-kms; the AWS region is taken from the ARN",
+			Value:   "",
+			EnvVars: prefixEnvVars("AWS_KMS_KEY_ID"),
+		},
 	}, opsigner.CLIFlags(envPrefix, "")...)
 }
 
@@ -313,6 +328,8 @@ type CLIConfig struct {
 	HsmCreden                  string
 	HsmAddress                 string
 	HsmAPIName                 string
+	HsmProvider                string
+	AWSKMSKeyID                string
 }
 
 func NewCLIConfig(l1RPCURL string, defaults DefaultFlagValues) CLIConfig {
@@ -386,6 +403,9 @@ func (m CLIConfig) Check() error {
 	if !atMostOneIsSet(m.PrivateKey != "", m.Mnemonic != "", m.SignerCLIConfig.Enabled()) {
 		return errors.New("can only provide at most one of: [private key, mnemonic, remote signer]")
 	}
+	if err := m.hsmSelection().Check(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -421,7 +441,44 @@ func ReadCLIConfig(ctx cliiface.Context) CLIConfig {
 		HsmAddress:                 ctx.String(HsmAddressFlagName),
 		HsmAPIName:                 ctx.String(HsmAPINameFlagName),
 		HsmCreden:                  ctx.String(HsmCredenFlagName),
+		HsmProvider:                ctx.String(HsmProviderFlagName),
+		AWSKMSKeyID:                ctx.String(AWSKMSKeyIDFlagName),
 	}
+}
+
+func (m CLIConfig) hsmSelection() hsm.SelectionConfig {
+	return hsm.SelectionConfig{
+		EnableHsm:             m.EnableHsm,
+		Provider:              m.HsmProvider,
+		AWSKMSKeyID:           m.AWSKMSKeyID,
+		HsmAddress:            m.HsmAddress,
+		HsmAPIName:            m.HsmAPIName,
+		HsmCreden:             m.HsmCreden,
+		OtherSignerConfigured: m.PrivateKey != "" || m.Mnemonic != "" || m.SignerCLIConfig.Enabled(),
+	}
+}
+
+// newSignerFactory creates the transaction signer. The AWS KMS backend is handled here;
+// every other configuration goes through the unchanged opcrypto.SignerFactoryFromConfig.
+func newSignerFactory(cfg CLIConfig, hdPath string, l log.Logger) (opcrypto.SignerFactory, common.Address, io.Closer, error) {
+	if !cfg.hsmSelection().UseAWSKMS() {
+		return opcrypto.SignerFactoryFromConfig(l, cfg.PrivateKey, cfg.Mnemonic, hdPath, cfg.SignerCLIConfig, cfg.EnableHsm, cfg.HsmCreden, cfg.HsmAddress, cfg.HsmAPIName)
+	}
+	// Each remote initialization step is bounded by its own NetworkTimeout.
+	signer, err := hsm.NewAWSKMSSigner(context.Background(), hsm.AWSKMSConfig{
+		KeyARN:          cfg.AWSKMSKeyID,
+		ExpectedAddress: cfg.HsmAddress,
+		Timeout:         cfg.NetworkTimeout,
+		Logger:          l,
+	})
+	if err != nil {
+		return nil, common.Address{}, nil, err
+	}
+	factory := func(chainID *big.Int) opcrypto.SignerFn {
+		return signer.TxSignerFn(chainID)
+	}
+	// The AWS SDK client owns no resources that need explicit release.
+	return factory, signer.Address(), io.NopCloser(nil), nil
 }
 
 func NewConfig(cfg CLIConfig, l log.Logger) (_ *Config, err error) {
@@ -451,7 +508,7 @@ func NewConfig(cfg CLIConfig, l log.Logger) (_ *Config, err error) {
 		hdPath = cfg.L2OutputHDPath
 	}
 
-	signerFactory, from, signerCloser, err := opcrypto.SignerFactoryFromConfig(l, cfg.PrivateKey, cfg.Mnemonic, hdPath, cfg.SignerCLIConfig, cfg.EnableHsm, cfg.HsmCreden, cfg.HsmAddress, cfg.HsmAPIName)
+	signerFactory, from, signerCloser, err := newSignerFactory(cfg, hdPath, l)
 	if err != nil {
 		return nil, fmt.Errorf("could not init signer: %w", err)
 	}
