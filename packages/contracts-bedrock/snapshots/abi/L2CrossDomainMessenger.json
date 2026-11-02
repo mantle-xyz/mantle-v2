@@ -31,6 +31,32 @@
     "type": "function"
   },
   {
+    "type": "function",
+    "name": "MAX_WITHDRAWAL_DATA_LENGTH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_WITHDRAWAL_GAS_LIMIT",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
     "inputs": [],
     "name": "MESSAGE_VERSION",
     "outputs": [

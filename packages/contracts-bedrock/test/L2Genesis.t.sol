@@ -48,7 +48,7 @@ contract L2Genesis_Test is Test {
         _assertVersion(Predeploys.L1_BLOCK_NUMBER, "1.0.0");
         _assertVersion(Predeploys.L1_BLOCK_ATTRIBUTES, "1.1.0");
         _assertVersion(Predeploys.L2_TO_L1_MESSAGE_PASSER, "1.0.0");
-        _assertVersion(Predeploys.L2_CROSS_DOMAIN_MESSENGER, "1.6.0");
+        _assertVersion(Predeploys.L2_CROSS_DOMAIN_MESSENGER, "1.7.0");
         _assertVersion(Predeploys.L2_STANDARD_BRIDGE, "1.1.0");
         _assertVersion(Predeploys.L2_ERC721_BRIDGE, "1.1.0");
         _assertVersion(Predeploys.SEQUENCER_FEE_WALLET, "1.1.0");
