@@ -10,13 +10,43 @@ when synchronizing future upstream changes via `git subtree pull`.
 
 | Item | Value |
 |---|---|
-| Upstream tracking point | optimism `kona-client/v1.5.1` @ `fbbf9089` (2026-05-12) |
-| Bridge tag | `rust-kona-client-v1.5.1` (= bridge split `a6c46d8a`) |
-| Bridge branch (last sync source) | `sync-kona-client-v1.5.1` |
+| Upstream tracking point | optimism `kona-client/v1.7.0` @ **`64b043ea5bbca9bc6e57e0f1c8df0404b4cf5f68`** (2026-09-05) |
+| Bridge tag | `rust-kona-client-v1.7.0` (= bridge split `fa7ef15efb72aaaabcebd6419578a58337507387`) |
+| Bridge branch (last sync source) | `sync-kona-client-v1.7.0` |
 | Bridge repo | https://github.com/mantle-xyz/optimism-rust-bridge |
 | `git subtree add` commit | `ba2cc4514` ("Add 'rust/' from commit '1ad181f05...'") |
-| Last subtree-pull merge commit | `5a629e1a` ("rust: subtree pull from bridge (sync-kona-client-v1.5.1)") |
-| Rust toolchain | 1.94 (see `rust/rust-toolchain.toml`) |
+| Last subtree-pull merge commit | `dc2f93af30386a8f995844cd2318d26c89adec32` (two parents: the previous branch tip and the bridge split — verify with `git cat-file -p <sha>`; a single-parent commit here means the merge base is lost for the next sync) |
+| Previous baseline | `kona-client/v1.5.1` @ `fbbf9089` / bridge split `a6c46d8a` |
+| Rust toolchain | 1.95 (see `rust/rust-toolchain.toml`) |
+
+**The source SHA is recorded above.** The v1.5.1 and op-reth/v2.4.2 rounds both omitted it; that
+gap is what the rest of this section used to document. Keep recording it.
+
+### How this sync was performed (read before the next one)
+
+| Item | Value |
+|---|---|
+| Bridge split method | **`git commit-tree`, not `git subtree split`.** A real split walks all 28170 optimism commits (>40 min). Instead: `TREE=$(git rev-parse '<commit>:rust')` then `git commit-tree "$TREE" -p <previous split>`. Semantically equivalent for this purpose — `git subtree pull` only needs a correct merge base, not rewritten per-commit history. |
+| Tag resolution trap | `kona-client/v1.7.0` is a **doubly-nested annotated tag**: `32e56287` (tag) → `a99cdaf0` (tag, = v1.7.0-rc.2) → `64b043ea` (commit). `gh api .../git/refs/tags/...`'s `.object.sha` returns the *inner tag object*, not the commit. Always resolve with `git rev-parse '<tag>^{commit}'`. |
+| `--no-commit` trap | git 2.39 (Apple Git-154) ships a `git subtree` that **does not support `--no-commit`**, so a dry run needs the equivalent form. `cmd_merge` in the `git-subtree` script is literally `git merge --no-ff -Xsubtree=<prefix> FETCH_HEAD`, so use:<br>`git merge --no-ff --no-commit -Xsubtree=rust/ FETCH_HEAD` |
+| Merge base | **`a6c46d8a`** (the v1.5.1 split), via real git ancestry. Note the most recent `git-subtree-split` *trailer* in history says `1ad181f05c` (from the original `subtree add`), because the v1.5.1 sync never wrote a trailer — but that trailer is only consulted by `find_latest_squash` in `--squash` mode. Non-squash merges use ancestry, and `5a629e1a` carries `a6c46d8a` as a real parent. |
+| Conflict surface | 184 files. **165 were mechanical** (134 `op-reth/` DU + 26 `revm-ee-tests/` + 5 `op-revm/`, all resolved by policy — see §3.9 / §2.1); only **19 needed judgment**. |
+| Do NOT "optimise" the merge base | It is tempting to record an intermediate `-s ours` split at `op-reth/v2.4.2` to shrink the conflict surface (820 → 503 files). **This is wrong.** Probing 67 files that upstream changed between v1.5.1 and v2.4.2 showed 55 byte-identical to **v1.5.1** and 0 to v2.4.2: the tree is *split* — non-kona crates sat at ~v2.4.2 but `kona/` was still v1.5.1. Declaring v2.4.2 as the base would have made the pull **silently skip 187 kona files**. |
+
+### Historical: the op-reth v2.4.2 round (superseded by the v1.7.0 sync above)
+
+The round before this one pulled from `ethereum-optimism/optimism @ op-reth/v2.4.2` directly
+rather than through the bridge, left no subtree merge commit, and did not record its source SHA.
+**The v1.7.0 sync above went back through the bridge and closed that gap** — `rust/` is once
+again bridge-mediated with a recorded upstream commit, and `git subtree pull` works normally.
+
+The table below is kept because two of its traps are still live when auditing this tree:
+
+| Item | Value |
+|---|---|
+| ⚠️ `op-revm` version trap | optimism's in-tree `op-revm` is a **path crate whose version string (20.0.0) is behind its content**. crates.io's published `op-revm 20.0.0` is *older* and **lacks** `catch_error_tx_error` / `catch_error_failed_deposit` / `discard_and_surface_error` / the `PostExec` arm. **Do not use the crates.io crate as "upstream" when auditing** — use the optimism tree at the anchor tag. |
+| ⚠️ `?ref=` trap | `gh api repos/ethereum-optimism/optimism/contents/rust/...` **without `?ref=`** returns the default branch, which is `develop`, not the anchor tag. An audit that omits `?ref=` will silently compare against `develop` and mis-attribute the base. |
+
 
 ### Migration status
 
@@ -29,42 +59,100 @@ when synchronizing future upstream changes via `git subtree pull`.
 | Phase 4 | redirect `alloy-evm` to `mantle-xyz/evm @ mantle-v0.34.0` | ↩️ reverted in Phase 5 |
 | Sync `rust-develop-20260511` → `rust-kona-client-v1.5.1` | 7 upstream commits, 38 files, 1 trivial conflict + 1 KARST fix | ✅ |
 | Phase 5 | remove `op-reth/` (EL node now lives in `mantle-xyz/reth`); revert `alloy-evm` to upstream `alloy-rs/evm` v0.34.0 + drop the 2 dead `token_ratio` stubs in `alloy-op-evm` | ✅ |
+| Sync `op-reth/v2.4.2` anchor → `kona-client/v1.7.0` | Back through the bridge. 184 conflicts (165 mechanical / 19 judged); kona compiles again — the 22 errors the previous round left are gone. Brings upstream PR #22126 (span-batch `uvarint` ↔ op-node parity, a **consensus** fix). `[MANTLE]` markers 101 → 208 across 71 files (re-measured 2026-09-16; the 117/44 figure recorded here originally was taken mid-sync and was never trued up). Verified: `check --workspace` 0/0; `cargo test` on the 8 Mantle-touched crates 931 pass / 0 fail; nightly fmt clean; clippy clean outside `op-revm/` (which carries a pre-existing baseline, §2.1); `no_std`/riscv32 20/20. **A full `cargo test --workspace` is not green** — see §4.3 for the four tests parked with `#[ignore]` and why. | ✅ |
+| Two consensus fixes in the `[Skadi, Arsia)` window | The L1 fork axis was riding the OP fork axis, so Cancun/Prague resolved to Arsia and the executor skipped EIP-4788 / EIP-2935 for the whole 252-day window; separately, deposit-nonce stripping was gated on Skadi, so pre-Skadi `receipts_root` was wrong. **Both latent on `main` and on `dev/mantle-v1.6.3`, neither introduced by the sync** — building `origin/main` and running the same blocks reproduces the same failure set. Surfaced only once an executor fixture came from *inside* the window, the gap §3.2c had flagged. See §3.2j. | ✅ |
+| Verification pipeline restored | `cargo nextest` executed **zero** tests (`binary(e2e_testsuite)` in upstream's config hard-errors against a workspace that excludes `op-reth/`); **every** `just` recipe aborted during parsing (upstream's `[script]` attribute is unstable in the pinned just 1.37.0); `mise.toml` pinned rust 1.94 against a workspace requiring 1.95. `cargo deny check sources` had never passed. See §4.3. | ✅ |
+| Upstream directories filtered out of the bridge (Strategy B) | `op-reth/` (180 files / ~60k lines), `lokahi/`, `op-reth-test-engine/` and `kona/sp1/` (64 files / 26,330 lines) are no longer carried by subtree pulls. Also removed the cannon/MIPS64 FPVM prestate family, the `release` recipe and the `docs-*` recipes from `rust/justfile` (483 lines). Dropping `sp1-sdk` with `kona/sp1/` took **310 packages** out of `Cargo.lock` and `cargo deny` advisories from 9 errors to 6. See §3.11. | ✅ |
 | Phase 2 | op-succinct upgrade (independent fork) | ⏸️ |
 | Phase 3 | kona security patch follow-up | ⏸️ |
 
 ## 2. Architecture decisions
 
-### 2.1 revm sourced from mantle-xyz/revm @ mantle-elysium
+### 2.1 revm sourced from mantle-xyz/revm @ branch `dev/mantle-v1.6.3`
 
-The `[patch.crates-io]` section in `rust/Cargo.toml` redirects every revm-family crate
-to the `mantle-elysium` branch of `mantle-xyz/revm`:
+The `[patch.crates-io]` section in `rust/Cargo.toml` redirects **12** revm-family crates
+to the `dev/mantle-v1.6.3` branch of `mantle-xyz/revm`:
 
 ```
 revm, revm-bytecode, revm-context, revm-context-interface, revm-database,
 revm-database-interface, revm-handler, revm-inspector, revm-interpreter,
-revm-precompile, revm-primitives, revm-state, op-revm
+revm-precompile, revm-primitives, revm-state
 ```
 
-`mantle-elysium` ships revm v38 plus Mantle protocol changes (ARSIA/JOVIAN hardforks,
+**`op-revm` is deliberately NOT in that list** — bluealloy removed `crates/op-revm` after v107,
+so it lives here as the workspace member `op-revm/` and is wired up as
+`op-revm = { version = "20.0.0", path = "op-revm/" }`.
+
+That branch ships revm v41 plus Mantle protocol changes (ARSIA/JOVIAN hardforks,
 BVM_ETH, token_ratio, DA footprint, Arsia fee validation). This avoids re-implementing
-those changes inside `rust/op-revm/`; that subtree is excluded from the workspace.
+those changes inside `rust/op-revm/`.
+
+⚠️ **The patch points at a mutable branch ref, not a tag or rev.** `Cargo.lock` currently pins
+`1903a86a50dde8c8148d8596f0123eadd48af7b7`. Two consequences: release builds are not
+reproducible from `Cargo.toml` alone, and during a sync an unexplained `cargo check` change may
+come from revm moving rather than from the sync — check that SHA before debugging further.
+Kept as a branch on purpose while revm is under active development (jay, 2026-09-10); revisit
+once that line settles, mirroring the reth `arsia.1`(branch) → `arsia.2`(tag) precedent.
+
+Consequences of `op-revm` being a compiled member (it was never built while `exclude`d):
+(a) lints and `no_std` now apply to it — it is in `justfile`'s `check-no-std` `no_std_packages`;
+(b) its `ee-tests` live in the workspace member `revm-ee-tests/`; (c) the 26
+`op_revm_testdata/*.json` snapshots were regenerated against revm 41. See the op-reth
+v2.2.1 → v2.4.2 upgrade runbook under `rde-v3/docs/`, sections 4.3 and 5.6.
+
+⚠️ **`op-revm/` and `revm-ee-tests/` are owned by the revm maintainer, not by whoever runs a
+subtree sync.** The v1.7.0 sync restored both directories wholesale
+(`git checkout <pre-sync ref> -- rust/op-revm/ rust/revm-ee-tests/`) rather than resolving their
+conflicts, so no upstream op-revm code entered. Keep doing this. Known consequence:
+`cargo clippy --workspace --all-features --all-targets --keep-going -- -D warnings` reports
+**50 pre-existing errors in `op-revm/`'s lib target and 91 in its lib-test target** (mostly
+`doc_markdown`, plus a handful of style lints). Re-measured 2026-09-16; the figures previously
+recorded here (51) and in §4.3 (93) were both wrong, and for the same reason — the first was
+taken without `--keep-going`, so cargo stopped scheduling after the first failing crate, and the
+two were then compared against each other. Always measure both sides of a baseline the same way.
+They are byte-for-byte inherited, not
+introduced by any sync; `cargo clippy --fix -p op-revm --all-targets` handles most of them.
+Note `--exclude op-revm` does **not** silence them: cargo only applies `--cap-lints allow` to
+registry/git dependencies, never to a path member of the same workspace.
 
 `reth-revm` is a reth-internal wrapper (from `paradigmxyz/reth`); not a member of the
-bluealloy revm family. Its internal `revm` dependency is still patched to mantle-elysium
-via `[patch.crates-io]`, so the actual EVM execution path is 100% on mantle-elysium.
+bluealloy revm family. Its internal `revm` dependency is still redirected by
+`[patch.crates-io]`, so the actual EVM execution path runs entirely on `mantle-xyz/revm`.
 
-### 2.2 Version skew with mantle-elysium
+### 2.2 Version skew with mantle-xyz/revm
 
-| Dimension | What develop expects | What mantle-elysium provides | Reconciliation |
+**The v19 skew is gone.** `op-revm` is now the in-tree path crate at v20 and `OpSpecId` carries
+`KARST` and `LAGOON` alongside Mantle's `OSAKA` / `ARSIA`. The rows below describe the *current*
+state; the old "adapt consumers to the v19 API / comment out KARST" guidance no longer applies
+and every such workaround has been removed.
+
+| Dimension | Upstream | This tree | Reconciliation |
 |---|---|---|---|
-| revm major version | v38 | v38 ✅ | — |
-| op-revm major version | v20 | v19 ⚠️ | Adapt Mantle consumers to v19 API |
-| `OpSpecId` variants | Includes `KARST` | No `KARST`; includes `OSAKA` + `ARSIA` | Replace KARST references with OSAKA/JOVIAN/ARSIA fallbacks or comment them out |
+| revm major version | v41 | v41 ✅ (`mantle-xyz/revm`, branch `dev/mantle-v1.6.3`) | — |
+| op-revm major version | v20 | v20 ✅ (in-tree path crate) | — |
+| `OpSpecId` variants | `… JOVIAN, KARST, LAGOON` | `… JOVIAN, OSAKA, ARSIA, KARST, LAGOON` | Mantle adds two variants; **there is no `INTEROP` variant** (upstream renamed that fork to Lagoon). Any `match` must cover OSAKA/ARSIA. |
+| Which spec a Mantle chain resolves to | — | **`ARSIA` / `OSAKA` / `ISTHMUS`, never `KARST` or `LAGOON`** | Mantle does not open newly added eth/op hardforks. Enforced structurally in `alloy_op_evm::spec_by_timestamp_after_bedrock`, which short-circuits on `is_mantle()` before the OP fork check. |
 
-### 2.3 alloy-evm sourced from upstream alloy-rs/evm v0.34.0 (crates.io)
+⚠️ **`is_mantle()` must be reachable through the `OpHardforks` trait.** The trait's Mantle
+predicates all default to `false`, so a type that implements `OpHardforks` without overriding
+them is classified as a plain OP chain and resolves `JOVIAN` where `ARSIA` is required — a
+consensus divergence. `RollupConfig` overrides all four (see §3.4). Any new `OpHardforks` impl
+that can carry a Mantle chain must do the same.
+
+⚠️ **`OpChainHardforks` does not override them, and it is the default `Spec` type parameter of
+`OpBlockExecutorFactory<R, Spec, EvmFactory>`.** Everything in this tree passes `RollupConfig`
+explicitly, so in-tree behaviour is correct. **Out-of-tree consumers of `alloy-op-evm` —
+notably `mantle-xyz/reth` — must not rely on that default**: `OpBlockExecutorFactory::default()`,
+or any instantiation leaving `Spec` unspecified, silently classifies a Mantle chain as a plain
+OP chain and resolves `JOVIAN` where `ARSIA` is required.
+
+### 2.3 alloy-evm sourced from upstream alloy-rs/evm (crates.io)
 
 `alloy-evm` is **not** patched in `[patch.crates-io]`; it resolves straight from
-crates.io at `0.34.0`, which is pristine upstream `alloy-rs/evm` v0.34.0.
+crates.io, i.e. pristine upstream `alloy-rs/evm`. Phase 5 pinned `0.34.0`; the
+op-reth v2.4.2 / revm 41 line moved it to `0.37.x` (whatever op-reth v2.4.2's
+`Cargo.toml` says — that file is the version anchor, see §1). Keep this section
+version-agnostic; the pin lives in `Cargo.toml`, not here.
 
 **History (Phase 4 → reverted in Phase 5).** Previously `alloy-evm` was redirected to the
 `mantle-v0.34.0` branch of `mantle-xyz/evm`, a fork whose only delta over upstream
@@ -121,10 +209,14 @@ grep -rn "\[MANTLE\]" rust/ --include="*.rs" --include="*.toml"
 
 | File | Change |
 |---|---|
-| `Cargo.toml` | `[patch.crates-io]` redirects all 13 revm-family crates to `mantle-xyz/revm@mantle-elysium`. |
-| `Cargo.toml` | Workspace `members` drops `"op-revm/"`; `exclude = ["op-revm"]` keeps the orphan subtree out of the build. |
-| `Cargo.toml` | `alloy-evm` is **not** patched — resolves from crates.io = upstream alloy-rs/evm v0.34.0 (Phase 5; see §2.3). |
-| `Cargo.toml` | Workspace `members` / `default-members` drop every `op-reth/*` entry, and the `reth-optimism-* / op-reth / reth-op` block is removed from `[workspace.dependencies]`; the `op-reth/` subtree is deleted (Phase 5; EL node now lives in `mantle-xyz/reth`, see §3.9 / §3.11). |
+| `Cargo.toml` | `[patch.crates-io]` redirects **12** revm-family crates to `mantle-xyz/revm`, branch `dev/mantle-v1.6.3`. `op-revm` is *not* patched — it is the local path crate. See §2.1. |
+| `Cargo.toml` | Workspace `members`: **`op-version/` added** — required, `kona/bin/node` declares `op-version.workspace = true`. `lokahi/` added (standalone CLI, only needs op-version + clap). |
+| `Cargo.toml` | Workspace `members`: **`op-reth-test-engine/` deliberately excluded** — it depends on the `reth-optimism-*` crates, which stay out of the workspace along with `op-reth/`. Upstream lists it; we do not. |
+| `Cargo.toml` | Workspace `members`: **`kona/sp1/crates/proposer` deliberately excluded** — it `include_str!`s OP's `packages/contracts-bedrock/snapshots/abi/ZKDisputeGame.json`, which Mantle does not ship. Standalone binary, no in-tree dependents; the directory stays on disk. The other five `kona/sp1/crates/*` **are** members and their `kona-sp1-*` path deps are required. |
+| `Cargo.toml` | The `# ==================== OP-RETH INTERNAL CRATES ====================` block upstream declares (`op-reth` + 16 `reth-optimism-*` path deps) is omitted. |
+| `Cargo.toml` | `op-revm/` and `revm-ee-tests/` are workspace `members`; the old `exclude = ["op-revm"]` is gone. (The only remaining `exclude` is `[workspace.package] exclude = ["**/target"]` — unrelated, and a false positive for any audit grepping `^exclude`.) |
+| `Cargo.toml` | `alloy-evm` is **not** patched — resolves from crates.io = upstream alloy-rs/evm. Was v0.34.0 (Phase 5; see §2.3); **on the revm-41 line it is v0.37.x**, aligned to op-reth v2.4.2 together with 35 other `alloy-*` crates. Note `alloy-op-evm` is *not* released in lockstep — its latest crates.io version is 0.32.0, which is what the vendored copy here declares; that is current, not stale. |
+| `Cargo.toml` | Workspace `members` / `default-members` drop every `op-reth/*` entry, and the `reth-optimism-* / op-reth / reth-op` block is removed from `[workspace.dependencies]`. As of 2026-09-16 the `op-reth/` **directory is not in this tree at all** — it is filtered out of the bridge split along with `lokahi/` and `op-reth-test-engine/`, see §3.11. EL node lives in `mantle-xyz/reth`. |
 
 ### 3.2 op-alloy — TxDeposit gains BVM_ETH fields + L1BlockInfo gains token_ratio
 
@@ -139,19 +231,524 @@ missed by the original audit and added in the 2026-05 pass.
 
 | File | Change |
 |---|---|
-| `op-alloy/crates/consensus/src/transaction/deposit.rs` | Add `eth_value: u128` and `eth_tx_value: Option<u128>` fields with their serde attrs. |
+| `op-alloy/crates/consensus/src/transaction/deposit.rs` | Add `eth_value: U256` and `eth_tx_value: Option<U256>` fields with their serde attrs. (Both were `u128` until the v1.7.0 sync — see §3.2b.) |
 | same | Update `rlp_decode_fields` / `rlp_encode_fields` / `rlp_encoded_fields_length` / `size()` to include the new fields. |
 | same | Switch `rlp_decode` to a `split_at(header.payload_length)` strict-boundary form (port of commit `4873ed6` from V230 — not `6637567`, which is the *block* decoder fix). |
-| same | Add the `decode_optional_u128_from_rlp` helper for the trailing optional u128. Strict form per `498abec`: returns `Err` on present-but-malformed input rather than swallowing decode errors as `None`. |
+| same | Add the `decode_optional_u256_from_rlp` helper for the trailing optional value. Strict form per `498abec`: returns `Err` on present-but-malformed input rather than swallowing decode errors as `None`. |
 | same (tests) | Add 0/None for both fields in 8 in-file `TxDeposit { ... }` literals; add `_` ignores in 1 alloy-compat destructure. |
 | same (tests) | Add `test_eth_value_zero`, `test_eth_value_and_eth_tx_value_both_zero`, `test_eth_value_max`, `test_eip2718_encode_decode_with_new_fields`, `test_eip2718_encode_decode_with_eth_tx_value_none`, `test_decode_optional_u128_boundary_values` (port of `3dc9696`). The companion implementation changes in `3dc9696` (lenient `decode_optional_u128_from_rlp` mid-form + `size()` switch from `Option<u128>` to `u128` for `eth_value`) are already present locally — the decode helper was later strictened by `498abec`. |
 | same (tests) | Add `test_rlp_decode_fields_rejects_malformed_present_eth_tx_value` and `test_decode_2718_rejects_malformed_present_eth_tx_value` (port of `498abec`'s two new test functions). |
 | `op-alloy/crates/consensus/src/transaction/envelope.rs` | Add 0/None in 2 test `TxDeposit` literals. |
-| `op-alloy/crates/consensus/src/reth_codec.rs` | `From<CompactTxDeposit>` fills 0/None for the new fields. **TODO**: `CompactTxDeposit` itself does not carry the new fields, so reth Compact round-trips drop BVM_ETH data. |
-| `op-alloy/crates/consensus/src/transaction/deposit.rs` (`bincode_compat`) | Same situation as `reth_codec`. **TODO**. |
+| `op-alloy/crates/consensus/src/reth_codec.rs` | `CompactTxDeposit` carries `eth_value` / `eth_tx_value` as `Option<U256>`, placed before `input`. The old **TODO** ("Compact round-trips drop BVM_ETH data") is resolved; layout compatibility is now proven byte-for-byte, see §3.2b. |
+| `op-alloy/crates/consensus/src/transaction/deposit.rs` (`bincode_compat`) | Carries both fields. No `skip_serializing_if` — bincode is not self-describing, so skipping a field makes the positional decoder run off the end. |
 | `op-alloy/crates/consensus/src/nuts/mod.rs` | NutBundle upgrade-tx literal fills 0/None. |
 | `op-alloy/crates/rpc-types/src/transaction/request.rs` | OpTransactionRequest destructure adds `_` ignores for the new fields. |
 | `op-alloy/crates/rpc-types/src/receipt.rs` | `L1BlockInfo` gains `pub token_ratio: Option<u128>` at the Jovian-class hardfork section (port of `57b9c10`). `parse_rpc_receipt` test JSON extended with `"tokenRatio": "0x1"` for round-trip coverage. Without this field, RPC clients would not see Mantle's eth/MNT ratio in receipts. |
+
+### 3.2b BVM_ETH widened from `u128` to `U256` (v1.7.0 sync)
+
+**Why.** `OptimismPortal.depositTransaction` takes `_ethTxValue` as an unbounded `uint256`, and
+op-node decodes both `msg.value` and `_ethTxValue` with
+`new(big.Int).SetBytes(opaqueData[off:off+32])` — the **whole** 32-byte ABI word. kona read only
+the low 16 bytes. Any EOA could therefore emit a `TransactionDeposited` with a value at or above
+2^128 and make kona derive a *different transaction* from op-node: different deposit hash,
+different block hash, consensus split. Once kona-node replaces op-node this also becomes a
+liveness hazard, which is why "reject the deposit instead" was rejected as a fix.
+
+**What changed.** `eth_value: u128 -> U256`, `eth_tx_value: Option<u128> -> Option<U256>`,
+across five crates: `op-alloy-consensus`, `op-revm`, `alloy-op-evm`, `kona-protocol`,
+`kona-hardforks`. `mint` deliberately stays `u128` — op-node holds it as a `big.Int` too, but it
+is MNT, whose supply is bounded far below 2^128, and widening it would diverge from upstream
+op-alloy for no gain. `kona-protocol` keeps a separate `decode_u128_field` for it.
+
+> This is the one place the "op-revm carries no upstream code" rule (§2.1) was deliberately
+> broken: `op-revm` is where the BVM_ETH arithmetic lives, so it had to move with the types.
+> Its arithmetic was already `U256` internally; the change removed identity `U256::from(...)`
+> conversions at the boundary rather than altering any overflow semantics.
+
+**Why this is consensus-neutral for existing data — measured, not assumed:**
+
+| Layer | Claim | Evidence |
+|---|---|---|
+| RLP (consensus wire) | Identical bytes below 2^128 | `u128` and `U256` both RLP-encode as minimal big-endian. Pinned by the existing `test_eip2718_encode_decode_*` + serde-JSON contract tests. |
+| reth Compact (on-disk) | Identical bytes for every `u128`-representable value | `mantle_compact_layout_tests` in `reth_codec.rs` keeps `FrozenCompactTxDeposit`, a frozen copy of the pre-widening struct, and asserts both encoders emit the same bytes across a 9×9×2 value matrix — plus `widened_decoder_reads_frozen_encoder_output` for the real upgrade path (old bytes, new binary). |
+| Real chain | No behaviour change | All 8 sepolia-qa3 executor fixtures still reproduce their real block hashes. |
+| bincode-compat | **Byte width DID change** | ruint writes a length-prefixed byte string, not a fixed 16-byte integer. Acceptable because bincode-compat is an in-process/IPC shim, not a persisted format. Nothing in this workspace or in mantle-xyz/reth stores it across restarts. |
+
+**Do not delete `FrozenCompactTxDeposit`.** It is dead code by design: it exists so the layout
+claim is checked against the historical shape instead of a hand-computed bitfield width. Its
+sensitivity was verified by negative control — swapping two fixed-size fields inside it flips
+the bitfield byte (35 -> 19) and fails the test.
+
+**Tests added:** `kona-protocol::deposits::test::test_unmarshal_deposit_version1_bvm_eth_above_u128_max`
+and `test_decode_u256_field_preserves_the_full_word` (both verified to fail when
+`decode_u256_field` is reverted to the low-16-byte read);
+`reth_codec::mantle_compact_layout_tests` (3);
+`mantle_txdeposit_compact_tests::roundtrip_bvm_eth_above_u128_max`.
+
+**Adaptations the widening forced, so the next type change knows where to look:**
+
+| surface | what it needed |
+|---|---|
+| serde | **No `alloy_serde::quantity` wrapper.** It only supports the primitive uints; `U256` already serialises as a hex quantity, which is what op-geth emits (`*hexutil.Big`, `json:"ethValue,omitempty"`) |
+| bincode | Both fields carried, and **no `skip_serializing_if`** — bincode is not self-describing, so skipping a field makes the positional decoder run off the end |
+| reth `Compact` / DB | `Option<U256>`; layout proven byte-identical, so **no database migration is required** |
+| RLP | `decode_u256_field` reads the whole word; `decode_optional_u256_from_rlp` for the trailing field |
+| `DepositError::{EthValueDecode, EthTxValueDecode}` | now **unreachable** — a 32-byte `U256::from_be_slice` cannot fail, unlike the old `[u8; 16]` `try_into`. Kept, documented, never constructed |
+
+#### Downstream consumers — this is a breaking API change
+
+`eth_value: u128 -> U256` is source-breaking for anything that constructs a `TxDeposit` literal.
+
+**`mantle-xyz/reth`** pins op-alloy to *this repository*:
+
+```toml
+op-alloy-consensus = { git = "https://github.com/mantle-xyz/mantle-v2", branch = "mantle-elysium" }
+```
+
+so it breaks the moment the widening reaches `mantle-elysium`. Measured: **18 literals**, all of
+them in test code — 8 in `op-reth/crates/rpc/src/eth/receipt.rs`, 4 in
+`op-reth/crates/txpool/src/transaction.rs`, 2 in `op-reth/crates/evm/src/l1.rs`, 4 in
+`mantle-reth/crates/integration-tests/`. The change is mechanical (`eth_value: 0` →
+`eth_value: U256::ZERO`; `eth_tx_value: None` is unaffected). **reth's production code never reads
+either field** — `.eth_value` / `.eth_tx_value` have zero hits outside those literals, because the
+BVM_ETH arithmetic lives in `op-revm`, which reth consumes. Still, the two repos have to land
+inside the same window or reth's CI is red in between.
+
+**`mantle-xyz/op-succinct`** depends on `kona-mpt` / `kona-derive` / `kona-driver` and others by
+**tag** (`v1.6.2` at the time of writing), so it is insulated until someone bumps the tag. When
+that happens the guest program's STF changes, which means **the vkey changes** and the on-chain
+verifier has to be upgraded in coordination — the widening is not a drop-in dependency bump there.
+
+### 3.2c Mantle Skadi — upgrade transactions and the `[Skadi, Arsia)` window
+
+**The shape of the problem.** `AlignOpWithMantle` pins Canyon…Jovian to `mantle_arsia_time`, so
+on a Mantle chain **every OP fork predicate is false until Arsia**. Skadi activates months
+earlier and turns on a set of behaviours that OP reaches through Canyon/Ecotone/Isthmus. op-node
+therefore writes every one of those gates as `IsOpFork(ts) || IsMantleSkadi(ts)`. kona had the
+OP half only — correct after Arsia, wrong for the entire window before it.
+
+The window is not hypothetical: on Mantle mainnet it is roughly eight months of blocks, and
+every one of them is re-derived by a node syncing from genesis.
+
+**Sites fixed** (each mirrors one op-node call site; each has a regression test):
+
+| kona | op-node reference | Symptom before |
+|---|---|---|
+| `kona-hardforks::Skadi` (new) + `MantleHardforks::SKADI` | `derive/skadi_upgrade_transactions.go` | kona emitted **no** upgrade transactions at the Skadi activation block. EIP-4788 and EIP-2935 were never deployed. |
+| `derive/attributes/stateful.rs` — Skadi bundle emission | `derive/attributes.go:124` | as above |
+| `derive/attributes/stateful.rs` — `withdrawals`, `parent_beacon_block_root` | `derive/attributes.go:154,159` | `None` for both where op-node sets `Some([])` / `Some(root)` → different block hash for every block in the window |
+| `protocol/batch/single.rs`, `batch/span.rs` — EIP-7702 gate | `derive/batches.go:185` | every 7702 batch in the window dropped → **safe head stalls**, not merely diverges |
+| `node/engine/attributes.rs` — `check_withdrawals` | `rollup/attributes/engine_consolidate.go:159` | consolidation took the Bedrock branch and rejected every op-geth block as `BedrockWithdrawals` |
+| `node/engine/versions.rs` — all three selectors | `rollup/types.go:727,742,754` | V2 chosen where op-node uses V3/V4; also `getPayloadV5` is reached through `IsMantleLimb`, not Osaka — Mantle never sets `karst_time`, so that branch was dead |
+| `node/gossip/handler.rs` — `topic()` | `p2p/gossip.go:619` | published on the V1 topic while the network reads V4 |
+
+Skadi's bytecode, deployer addresses (`0x0B79…C875`, `0x3462…D685`) and 250 000 gas limits are
+byte-identical to OP's Ecotone/Isthmus deployments — `Skadi` reuses `Ecotone::eip4788_creation_data`
+and `Isthmus::eip2935_creation_data` rather than keeping a second copy that could drift. **Only
+the `UpgradeDepositSource` intents differ**, and that is what makes the deposit hashes
+Mantle-specific. The two expected source hashes are pinned against values computed with
+`cast keccak` — independently of both kona and op-node — so the test cannot pass by agreeing
+with a bug in either.
+
+`Skadi::upgrade_gas()` is the trait default 0: op-node appends these transactions without
+touching `gasLimit`, and the system-config reconstruction at the next block would otherwise
+subtract an amount that was never added.
+
+**Deliberately not changed:**
+
+- `node/engine/query.rs` keeps `is_isthmus_active` for the message-passer storage root. Taking
+  the header-`withdrawals_root` shortcut early would be a guess about op-geth's Skadi header
+  semantics; the proof path it falls back to yields the true storage root either way.
+- `batch/span.rs` keeps its EIP-7702 check even though op-node's `checkSpanBatch` has none
+  (only `checkSingularBatch` does). kona is strictly stricter there, independent of Mantle;
+  only its *gate* was aligned so it cannot reject what op-node accepts.
+
+**Validated against the live chain.** Mantle Sepolia (`sepolia-testnet-qa1`, L2 chain 5003) is
+the config shape that matters — unlike `sepolia-qa3`, whose forks all sit at genesis:
+
+| fork | timestamp | |
+|---|---|---|
+| genesis | 1702194288 | |
+| `mantle_skadi_time` | **1752649200** | |
+| `mantle_limb_time` | 1764745200 | |
+| `mantle_arsia_time` | **1774422000** | |
+| `canyon_time` … `jovian_time` | 1774422000 | all equal Arsia — confirms `AlignOpWithMantle` |
+| `regolith_time` | 0 | confirms Regolith is *not* aligned |
+| `chain_op_config` | `{2, 8, 8}` | confirms §3.2e |
+
+**The `[Skadi, Arsia)` window on this chain is 252 days.** Skadi activates at block **25552264**
+(ts 1752649201; the previous block is 1752649199). That block carries, in order:
+
+| # | from | to | gas | `sourceHash` |
+|---|---|---|---|---|
+| 0 | `0xdead…0001` | `0x4200…0015` | 1 000 000 | L1-info |
+| 1 | `0x0b79…c875` | *create* | 250 000 | `0x195dba1b…ebcb9ec0` |
+| 2 | `0x3462…d685` | *create* | 250 000 | `0x70b82ada…9cfb0484` |
+
+Both source hashes are **exactly** the values `test_skadi_source_hashes_match_op_node` pins, which
+were derived with `cast keccak` before ever looking at the chain. The deployment inputs are
+byte-identical to `bytecode/eip4788_ecotone.hex` (106 B) and `bytecode/eip2935_isthmus.hex`
+(92 B). Same source hash + same input ⇒ same deposit hash.
+
+The block shape across the boundary confirms the `withdrawals` / `parent_beacon_block_root` fix
+too, and shows how long the pre-fix behaviour would have been wrong for:
+
+| block | `withdrawals` | `parentBeaconBlockRoot` | `withdrawalsRoot` |
+|---|---|---|---|
+| 25552263 (pre-Skadi) | `null` | null | null |
+| 25552264 (Skadi activation) | `[]` | set | set |
+| 25652264 (+100k, still pre-Arsia) | `[]` | set | set |
+
+Before these fixes kona emitted `None` for both fields and no upgrade transactions — a different
+block hash on **every block of a 252-day window**, plus two contracts that would never have been
+deployed.
+
+> Not yet covered: an executor fixture *inside* the window, which would exercise kona's own
+> execution rather than comparing against op-geth's output. Generating one needs L1 archive and
+> beacon endpoints for Sepolia, which this workstation does not have. Worth doing before the
+> next release.
+
+### 3.2d One config, two fork views — `op_fork_activation`
+
+`RollupConfig` answers "is fork X active?" through two independent paths:
+
+- the inherent `is_*_active` methods, via `mantle_op_fork_active` — used by derivation;
+- the `OpHardforks` / `EthereumHardforks` trait predicates, via `op_fork_activation` — used by
+  `spec_by_timestamp_after_bedrock` and the engine-version selectors.
+
+Only the first honoured the Arsia alignment. The second read the raw per-fork timestamps that
+`AlignOpWithMantle` overwrites, so a config whose `ecotone_time` differed from
+`mantle_arsia_time` resolved **two different forks at the same instant**, depending on which
+caller you were. `mantle_op_fork_condition` closes this for Canyon…Jovian (exactly the forks
+`AlignOpWithMantle` rewrites; Bedrock/Regolith and the newer Karst/Lagoon are left alone).
+
+Pinned by `test_mantle_inherent_and_trait_fork_predicates_agree`, which sweeps a config where
+every OP timestamp deliberately disagrees with `mantle_arsia_time` and asserts both paths give
+the same answer — and that the shared answer is the aligned one, not both-wrong-alike.
+
+> Prefer the `RollupConfig`-intrinsic fix over porting op-node's mutate-at-load
+> `AlignOpWithMantle`. kona deserializes `RollupConfig` from rollup.json, the registry and
+> dozens of tests; there is no single load point that could be relied on to call an align step.
+
+### 3.2e `MANTLE_BASE_FEE_CONFIG` corrected to `{2, 8, 8}`
+
+`MANTLE_EIP1559_ELASTICITY_MULTIPLIER` / `MANTLE_EIP1559_BASE_FEE_MAX_CHANGE_DENOMINATOR` held
+`{4, 50}` since the phase-1c genesis migration (`fb62e096e4`). That pair matches **nothing**:
+
+| Source | Elasticity | Denominator | `DenominatorCanyon` |
+|---|---|---|---|
+| `AlignOpWithMantle` fallback (`ChainOpConfig == nil`) | 2 | 8 | 8 |
+| `deploy-config/mantle-mainnet.json`, `mantle-sepolia.json` | 2 | 8 | — |
+| live sepolia-qa3 rollup config (executor fixtures) | 2 | 8 | 8 |
+| `deploy-config/mantle-devnet.json` | 10 | 50 | — |
+| kona, before this fix | **4** | **50** | **50** |
+
+50 is the *devnet* denominator, whose elasticity is 10 — the old pair looks like two values
+crossed from different chains. Nothing in op-node, op-chain-ops or any deploy config produces
+`{4, 50}`.
+
+**Blast radius.** The constant only governs chains whose rollup config omits `chain_op_config`
+(via `default_mantle_base_fee_config`) or that fall through `base_fee_params(chain_id)` /
+`base_fee_config(chain_id)` by chain ID. Real Mantle rollup.json files carry the field, which is
+why this never surfaced — and why no existing test caught it. When it does bite it silently
+yields a different base fee than op-node, hence a different block, with nothing to complain.
+
+Pinned by `params::tests::mantle_base_fee_fallback_matches_op_node`, which also asserts
+`denominator_canyon == denominator` (Mantle has no historical denominator change, matching
+`AlignOpWithMantle`'s `dCanyon := c.ChainOpConfig.EIP1559Denominator`) and that the
+`BaseFeeParams` pair is not transposed.
+
+> The executor fixtures cannot validate this: they embed a `chain_op_config`, so they exercise
+> the JSON value, not the constant. The evidence here is documentary — three independent
+> sources agreeing — not a reproduced block.
+
+### 3.2f Arsia deployment code hashes — a real failure hidden by a bare `#[ignore]`
+
+`test_verify_arsia_{l1_block,gas_price_oracle,operator_fee_vault}_deployment_code_hash` were all
+three marked `#[ignore] // TODO: fix this test` (`82fc1b98b`). Running them shows two passed and
+only the Gas Price Oracle failed — and it failed on the *expectation*, not the deployment:
+
+| | kona expected (before) | op-node asserts | kona computes |
+|---|---|---|---|
+| L1Block | `0x31281c99…` | `0x31281c99…` | ✅ |
+| Gas Price Oracle | `0x0b858803…` | **`0xfc61bf7a…`** | `0xfc61bf7a…` |
+| Operator Fee Vault | `0x8fc59a00…` | `0x8fc59a00…` | ✅ |
+
+The authoritative values are op-node's own
+`op-e2e/actions/mantletests/proofs/isthmus_fork_test.go:34-37`. `0x0b858803…` matches no op-node
+constant and no deployed contract; kona's result was right all along.
+
+Independently confirmed that the bundle itself is correct: all three `bytecode/arsia_*.hex` files
+are **byte-identical** to `op-node/rollup/derive/arsia_upgrade_transactions.go` (note the Go
+variable for the vault is `operatorFeeVaultArsiaDeploymentByteCode` — capital `C`, easy to miss
+when grepping), and both sides emit 7 transactions with the same intents in the same order.
+
+All three tests now run. **This is the argument against bare `#[ignore]`**: a one-line "TODO"
+took a passing-by-construction check offline for two of three contracts and buried the fact that
+the third was only a stale constant. Every remaining `#[ignore]` in this tree carries a reason —
+see §4.3's table.
+
+### 3.2g Mantle Elysium — implemented, and the L1 blob schedule un-pinned
+
+Elysium is Mantle's next scheduled hardfork. Its one production effect in op-node is to **end**
+the Arsia-era pin on L1's blob-fee schedule:
+
+```go
+// derive/l1_block_info.go:508
+if isMantleArsiaActivated && !isMantleElysiumActivated {
+    arsiaL1ChainConfig := eth.MantleArsiaL1ChainConfigByChainID(...)   // Ethereum mainnet only
+    if arsiaL1ChainConfig == nil { arsiaL1ChainConfig = l1ChainConfig } // …nil everywhere else
+    l1BlockInfo.BlobBaseFee = block.BlobBaseFee(arsiaL1ChainConfig)
+} else {
+    l1BlockInfo.BlobBaseFee = block.BlobBaseFee(l1ChainConfig)
+}
+```
+
+`MantleArsiaL1ChainConfigByChainID` (`op-service/eth/config.go:28`) is a hand-written Ethereum
+mainnet config carrying only the Cancun and Prague blob schedules and **no `OsakaTime`**. So from
+Arsia until Elysium, Mantle mainnet prices blobs with Prague parameters no matter what L1 has
+activated; from Elysium on, L1's real Osaka/BPO schedule applies. The helper returns `nil` for
+every other L1, so **the pin is a no-op on Sepolia** — that chain-scoping is load-bearing.
+
+**What kona had.** The pre-Elysium half only, and implemented in the wrong place:
+`kona-registry::l1` forced Ethereum mainnet's `osaka_time` and `bpo1..5_time` to `None`
+(`mantle-xyz/kona@72a20ab9`, "Blob fee parameters #26"). Right effect, two problems — it lied
+about L1 to every consumer of that config, and **it had no way to stop**: nulling the schedule is
+not a thing Elysium can undo.
+
+**What it has now.**
+
+| Piece | Location |
+|---|---|
+| `mantle_elysium_time` config field, `NONE`/`iter`/`has_any_hardfork` entries | `kona-genesis::MantleHardForkConfig` |
+| `is_mantle_elysium_active`, `is_first_mantle_elysium_block` | `kona-genesis::RollupConfig` |
+| `is_mantle_elysium_active_at_timestamp` trait override | `RollupConfig`; default `false` in `alloy-op-hardforks` |
+| `is_mantle_arsia_blob_schedule_pinned` — the composite gate | `kona-genesis::RollupConfig` |
+| the gate's use: ignore the scheduled BPO entries and `osaka_time` while pinned | `L1BlockInfoTx::try_new` |
+| `ETHEREUM_MAINNET_CHAIN_ID` — scopes the pin to L1 mainnet | `kona-genesis::chain` |
+| Ethereum mainnet's real `osaka_time` / `bpo1..5_time` restored | `kona-registry::l1` |
+
+Both halves of the gate use op-node's "active, but **not** on the activation block itself" form
+(`isMantleArsiaButNotFirstBlock`, `isMantleElysiumButNotFirstBlock`) — the L1-info transaction is
+emitted before the fork's upgrade transactions run. Concretely: the pin is still in force *on* the
+Elysium activation block and lifts on the next one.
+
+**Do not re-null `osaka_time`/`bpo1..5_time` in `kona-registry::l1`.** That would make activating
+Elysium a no-op. The registry now carries L1's truth and `try_new` is the only thing suppressing
+it — which is also why upstream's `test_get_l1_bpo_mainnet` could be un-ignored (see §4.3).
+
+**Tests** (`info::variant::test`), each negative-controlled:
+
+- `mantle_mainnet_pins_blob_schedule_to_prague_between_arsia_and_elysium` — asserts Prague pricing
+  on an L1 header past BPO1, *and* that Prague and BPO1 price that header differently, so the
+  assertion cannot pass vacuously. Fails when the pin is disabled.
+- `mantle_elysium_restores_the_real_l1_blob_schedule` — activation block still pinned, next block
+  not. Fails when the pin is disabled.
+- `mantle_on_sepolia_l1_is_never_pinned` — **fails when the `chain_id` guard is removed**, which
+  is what proves the guard is doing work rather than decorating.
+- `arsia_blob_schedule_pin_window` — the predicate alone, including "never scheduled Elysium stays
+  pinned forever" and "non-Mantle chains are never pinned".
+
+### 3.2h Mantle hardfork schedule validation
+
+kona had no equivalent of op-node's `CheckMantleForks` (`rollup/mantle_types.go`), which runs at
+startup via `AlignOpWithMantle` (`op-node/cmd/main.go`). A rollup.json that schedules a fork
+whose predecessor is missing, or schedules forks out of order, was **rejected by op-node and
+accepted silently by kona** — the exact mistake a newly schedulable fork invites.
+
+`MantleHardForkConfig::check_fork_order` ports it pairwise over `ordered()`, the single list that
+`iter()` also walks (so a newly added fork is covered by editing one place; pinned by
+`every_configured_fork_is_covered_by_the_order_check`). Equal timestamps are allowed — op-node
+only rejects `*a > *b` — and a *trailing* run of unscheduled forks is fine.
+
+Wired into both places a `RollupConfig` is read from disk:
+`SingleChainHost::read_rollup_config` and `InteropHost::read_rollup_configs`, each with its own
+`MantleForkOrder` error variant. Configs built in code or taken from the registry are covered by
+tests instead.
+
+### 3.2i `deny_unknown_fields` does not survive `#[serde(flatten)]`
+
+`MantleHardForkConfig` carries `#[serde(deny_unknown_fields)]`, which reads as "a Mantle fork
+kona has not implemented is a startup error, not a silent divergence". **That guarantee is false
+on the only path production uses.**
+
+`RollupConfig` embeds the struct with `#[serde(flatten)]` — it has to, because op-node writes the
+fork times at the *top level* of rollup.json (`op-node/rollup/types.go:138-162`). serde documents
+`deny_unknown_fields` as unsupported in combination with `flatten`, and it is **silently inert**
+rather than a compile error. Measured, not assumed:
+
+| deserialise | `mantle_someday_time: 40` |
+|---|---|
+| `MantleHardForkConfig` directly | rejected (`unknown field`) |
+| `RollupConfig` (flattened — the real path) | **accepted, value dropped** |
+
+So op-node would activate that fork and kona would not, with nothing logged. The real guard is a
+raw-key scan at the two places a config is read from disk —
+`kona_host::mantle_config::unknown_mantle_forks`, driven by `MantleHardForkConfig::TIME_KEYS` —
+which rejects any `mantle_*_time` key this build does not implement.
+
+Pinned by `flatten_defeats_deny_unknown_fields_on_the_real_path`, which asserts the *broken*
+behaviour on purpose so nobody re-derives the wrong conclusion from reading the attribute. If
+serde ever fixes this and that test starts failing, the scan becomes belt-and-braces rather than
+the only thing standing there — check before deleting it.
+
+> The same hole applies to `HardForkConfig` (the OP forks), which is flattened too. The
+> `deny_unknown_fields` hole itself is left alone — it is upstream's struct and upstream's
+> problem, and on Mantle every OP fork is pinned to Arsia anyway.
+>
+> `HardForkConfig` is **not** otherwise untouched, though. `kona/crates/protocol/genesis/src/chain/hardfork.rs`
+> carries a Mantle change: `lagoon_time` gets `serde(alias = "interop_time")`, because this
+> monorepo's Go op-node still serialises the field as `json:"interop_time"`
+> (`op-node/rollup/types.go`) while upstream kona renamed it. `#[serde(flatten)]` means unknown
+> keys are *silently dropped* rather than rejected, so without the alias kona would read an
+> op-node-produced rollup.json, see no `lagoon_time`, and conclude the fork never activates —
+> with no error anywhere. Pinned by `mantle_alias_tests::interop_time_alias_is_accepted`.
+
+### 3.2j The two fork axes — `[Skadi, Arsia)` state root and pre-Skadi receipts root
+
+**Consensus. Both were latent on `main` and on `dev/mantle-v1.6.3`; neither was introduced by the
+v1.7.0 sync.** They surfaced only once an executor fixture was taken from *inside* the window —
+the gap §3.2c flagged as "not yet covered".
+
+#### The shape of the mistake
+
+A Mantle chain has **two independent fork axes**, and op-node aligns them to *different* Mantle
+forks (`op-chain-ops/genesis/mantle_config.go:163-177`, `alignEthWithMantle`):
+
+```text
+ShanghaiTime = CancunTime = PragueTime = MantleSkadiTime
+OsakaTime                              = MantleLimbTime
+CanyonTime .. JovianTime               = MantleArsiaTime
+```
+
+kona only ever implemented the **third** line. `RollupConfig::ethereum_fork_activation` routes every
+L1 fork through `OpHardfork::activating_op_fork(fork)` → `op_fork_activation`, so Cancun resolved
+via Ecotone and Prague via Isthmus — both pinned to Arsia. For the whole `[Skadi, Arsia)` window
+(252 days / ~10.9M blocks on Mantle Sepolia) kona believed Cancun and Prague were inactive while
+op-geth had had them on since Skadi.
+
+`alloy-evm` gates the pre-block system calls on exactly those predicates —
+`is_cancun_active_at_timestamp` for EIP-4788 and `is_prague_active_at_timestamp` for EIP-2935
+(`alloy-evm-0.37.1/src/block/system_calls/{eip4788,eip2935}.rs`). So in the window the executor
+skipped both. Measured on block 28000000: op-geth writes 4 accounts (L1Block, the depositor's
+nonce, the 2935 ring buffer, the 4788 buffer); kona's bundle contained **2**. Every other header
+field matched byte for byte — only `state_root` differed.
+
+**Fix**: `RollupConfig::mantle_ethereum_fork_condition` overrides the L1 axis for Mantle chains.
+Guarded by `test_mantle_inherent_and_trait_fork_predicates_agree`, which now asserts the two axes
+are *separate* (Cancun on at Skadi while Ecotone is still off). That test previously asserted the
+**bug** — "Cancun rides Ecotone, Prague rides Isthmus" — so the defect was not merely untested, it
+was pinned. Anyone fixing it would have been greeted by a red test.
+
+#### The receipts root
+
+Independently, `compute_receipts_root` gated deposit-nonce stripping on
+`is_mantle_skadi_active(timestamp)`, so every block *before* Skadi kept the nonce in the receipts
+trie and produced a `receipts_root` the chain disagrees with.
+
+Mantle strips unconditionally. That is the empirical answer, not a translation of upstream's
+`[Regolith, Canyon)` window: Mantle's `regolith_time = 0` and `canyon_time = mantle_arsia_time`
+would imply `[0, Arsia)`, yet post-Arsia block 43000000 also reproduces *with* stripping. Gate is
+now `config.is_mantle()`, guarded by `mantle_receipts_root_tests`.
+
+#### Evidence
+
+`sepolia-testnet-qa1` (chain 5003), rollup config via `optimism_rollupConfig`, using
+`cargo run --release -p execution-fixture -- -r <L2 archive RPC> -b <n> --skip-save -c <cfg>`:
+
+| block | position | before | after |
+|---|---|---|---|
+| 20000000, 25552263 | pre-Skadi | ✗ `receipts_root` | ✓ |
+| 25552264 | Skadi activation | ✓ | ✓ |
+| 25552265, 28000000 | `[Skadi, Limb)` | ✗ `state_root` | ✓ |
+| 31600264 | Limb activation | ✗ | ✓ |
+| 33000000, 36438663 | `[Limb, Arsia)` | ✗ | ✓ |
+| 36438664 | Arsia activation | ✓ | ✓ |
+| 43000000 | post-Arsia | ✓ | ✓ |
+
+`origin/main` was built and run against the same blocks and the same config: **identical failure
+set**, which is what establishes these as pre-existing rather than sync regressions.
+
+Both regression tests were negative-controlled — disabling each fix turns its test red, restoring
+it turns it green.
+
+#### Not all four remapped forks carry the same weight
+
+Measured by removing them one at a time and re-running all 13 executor fixtures:
+
+| remapped fork | effect | guarded by |
+|---|---|---|
+| **Cancun** | consensus — gates EIP-4788 pre-block system call | `block-28000000`, `block-34065622` turn red |
+| **Prague** | consensus — gates EIP-2935 pre-block system call | same two fixtures turn red |
+| Shanghai | **inert today** — its only reachable consumer is `alloy-evm`'s withdrawal balance increment, and the OP executor always passes `withdrawals = None` | unit test only; all 13 fixtures stay green |
+| Osaka | **inert today** — its only consumer is `EngineGetPayloadVersion::from_cfg`, which already has an `is_mantle_limb_active` disjunct; the EVM's `OpSpecId` is chosen from the Mantle forks in `alloy_op_evm::spec_by_timestamp_after_bedrock` | unit test only; all 13 fixtures stay green |
+
+Shanghai and Osaka are mapped for parity with op-geth's chain config, not because kona depends on
+them today. If an `alloy` upgrade ever routes a live decision through them,
+`test_mantle_l1_fork_axis_is_pinned_for_every_variant` is the only warning that will fire.
+
+#### Third file: `kona/crates/node/engine/src/versions.rs`
+
+The fix changed a **third** test file, and this one lost coverage rather than gaining it. Its two
+Mantle tests previously pinned the `|| cfg.is_mantle_skadi_active(..)` / `|| cfg.is_mantle_limb_active(..)`
+disjuncts in the Engine-version selectors, because their premises (`!is_cancun_active(150)`,
+`!is_osaka_active(300)`) made the disjunct the only possible source of truth. Once Cancun/Prague
+ride Skadi and Osaka rides Limb, those disjuncts are **redundant** — deleting all three leaves
+every `versions.rs` test green, which was verified.
+
+Redundant code cannot be pinned through observable behaviour, so the equivalence itself is pinned
+instead, in `rollup.rs::test_mantle_l1_axis_matches_the_engine_disjuncts`. The disjuncts are kept
+(they are a local statement of op-node's rule and cost nothing) but the comments above them were
+rewritten: they previously claimed to be load-bearing, which is no longer true, and one of them —
+"Mantle configs never set `karst_time`, so the Osaka branch alone can never fire" — had become
+outright false.
+
+#### Fail-closed default on the L1 axis
+
+`mantle_ethereum_fork_condition`'s catch-all returns `ForkCondition::Never` rather than falling
+through to the OP ladder, matching `alignEthWithMantle`'s own default of leaving unlisted L1 forks
+nil. This matters because `alloy-op-hardforks` is an **in-tree** crate: if someone adds an
+`activates_l1_fork` mapping to any of Canyon..Jovian, a fall-through would light up an L1 fork at
+Arsia that op-geth has no configuration for — the exact class of divergence this section is about.
+
+The arm below Shanghai is expressed as an ordering test (`f if f < EthereumHardfork::Shanghai`)
+rather than a variant list, because `EthereumHardfork` carries `ArrowGlacier` and `GrayGlacier`
+between London and Paris; a variant list drafted from memory omitted them and would have flipped
+two `Block(0)` forks to `Never`. `test_mantle_l1_fork_axis_is_pinned_for_every_variant` iterates
+`EthereumHardfork::VARIANTS` so that an upstream insertion on either side of the boundary fails
+the build rather than changing consensus silently.
+
+#### Closing the fixture gap (§3.2c)
+
+Five fixtures generated from `sepolia-testnet-qa1` were added to
+`kona/crates/proof/executor/testdata/`, so the fork window is now covered by the normal
+`cargo test` path and not just by ad-hoc live-chain runs:
+
+| fixture | position |
+|---|---|
+| `block-25552263` | pre-Skadi |
+| `block-25552264` | Skadi activation (the two upgrade deposits) |
+| `block-28000000` | `[Skadi, Limb)`, L1-info only |
+| `block-34065622` | `[Limb, Arsia)`, carries 2 user transactions (`0x02`) alongside the L1-info deposit |
+| `block-36438664` | Arsia activation |
+
+Re-running the suite with both fixes disabled is what demonstrates the gap was real:
+
+```text
+old 8 fixtures (sepolia-qa3)   ... all ok      <- zero coverage of this defect class
+block-25552263                 ... FAILED
+block-28000000                 ... FAILED
+block-34065622                 ... FAILED
+block-25552264, block-36438664 ... ok          <- activation blocks are not sensitive
+```
+
+The pre-existing corpus is green with the bug present *and* absent. That is the structural reason
+four review rounds and "8/8 fixtures pass" missed a consensus defect: every fixture came from
+`sepolia-qa3`, where `mantle_arsia_time = 0`, so no fork-window branch is ever entered. When
+adding executor fixtures, check the embedded `rollup_config` has *staggered* fork times —
+otherwise the fixture cannot fail for fork-related reasons. See §3.2c for the chain-selection
+note (`sepolia-qa3` has every fork at genesis; `sepolia-testnet-qa1` has real staggered times).
 
 ### 3.3 kona-hardforks — Arsia + MantleHardforks
 
@@ -170,8 +767,10 @@ The largest sub-phase. Adds Mantle predicates, hardfork timestamps, and BaseFee 
 
 | File | Change |
 |---|---|
-| `kona/crates/protocol/genesis/src/rollup.rs` | `RollupConfig` gains `pub mantle_hardforks: MantleHardForkConfig` field. New methods: `is_mantle`, `revm_spec_id`, `is_mantle_skadi_active`, `is_mantle_limb_active`, `is_mantle_arsia_active`, `is_first_mantle_arsia_block`. `Default::default` switches `chain_op_config` to `MANTLE_BASE_FEE_CONFIG`. Existing `is_jovian_active` etc. get Mantle gating. New helper `default_mantle_base_fee_config` for serde defaulting. Comment out the `is_karst_active → OpSpecId::KARST` arm in `spec_id` — mantle-elysium's op-revm v19 has no KARST variant (post-sync addition, see §2.2 / §5.2). |
+| `kona/crates/protocol/genesis/src/rollup.rs` | `RollupConfig` gains `pub mantle_hardforks: MantleHardForkConfig`. Inherent methods `is_mantle`, `is_mantle_skadi_active`, `is_mantle_limb_active`, `is_mantle_arsia_active`, `is_first_mantle_arsia_block`. `Default::default` switches `chain_op_config` to `MANTLE_BASE_FEE_CONFIG`; helper `default_mantle_base_fee_config` for serde defaulting. Existing `is_jovian_active` etc. get Mantle gating. **`spec_id` / `revm_spec_id` / `mantle_spec_id` were deleted in the v1.7.0 sync** — upstream dropped kona-genesis's `revm` feature (and its `op-revm` optional dep), which silently `#[cfg]`-ed the whole block out. Spec resolution now lives solely in `alloy_op_evm::spec_by_timestamp_after_bedrock`. |
+| `kona/crates/protocol/genesis/src/rollup.rs` (`impl OpHardforks`) | **Overrides `is_mantle`, `is_mantle_skadi_active_at_timestamp`, `is_mantle_limb_active_at_timestamp`, `is_mantle_arsia_active_at_timestamp`**, delegating to the inherent methods. Consensus-critical: the trait defaults return `false`, so without these a Mantle `RollupConfig` passed to `evm_env_for_op_next_block` resolves `JOVIAN` instead of `ARSIA`. Note `is_mantle` duplicates the one-line inherent body on purpose — `Self::is_mantle(self)` resolves to the inherent method today, but becomes unbounded recursion if that method is ever removed. |
 | `kona/crates/protocol/genesis/src/chain/mantle_hardfork.rs` | New file. `MantleHardForkConfig` struct with the Mantle upgrade timestamps. |
+| `kona/crates/protocol/genesis/src/chain/mantle_hardfork.rs` | `pub const NONE: Self` — all fields `None`. Needed because `Default` is unusable from a `const` initializer and the `const RollupConfig`s in `kona-registry`'s `test_utils/op_{mainnet,sepolia}.rs` must set this field. Adding a Mantle hardfork now only needs a default here. |
 | `kona/crates/protocol/genesis/src/chain/mod.rs` | `MANTLE_MAINNET_CHAIN_ID = 5000` / `MANTLE_SEPOLIA_CHAIN_ID = 5003`; register `mod mantle_hardfork`. |
 | `kona/crates/protocol/genesis/src/chain/config.rs` | `ChainConfig::rollup_config` initialises `mantle_hardforks: MantleHardForkConfig::default()`. |
 | `kona/crates/protocol/genesis/src/updates/base_fee.rs` | New file. `BaseFeeUpdate` type (187 lines), with `apply()` and `TryFrom<&SystemConfigLog>`. |
@@ -195,9 +794,9 @@ The largest sub-phase. Adds Mantle predicates, hardfork timestamps, and BaseFee 
 | `kona/crates/protocol/protocol/src/info/{mod.rs, errors.rs}` | `mod arsia;` + `pub use` re-export; inheritance chain comment updated to `... < L1BlockInfoJovian < L1BlockInfoArsia`. `DecodeError::InvalidArsiaLength` added. (`DecodeError::InvalidInteropLength` is a pre-existing legacy variant that has no corresponding decoder — see note below.) |
 | `kona/crates/protocol/protocol/src/utils.rs` | `to_system_config`'s `match L1BlockInfoTx` extended for `Arsia` variant. |
 | `kona/crates/protocol/protocol/src/info/jovian.rs` | `L1BlockInfoJovianBaseFields` decorated with `#[delegatable_trait]` so `L1BlockInfoArsia` can `ambassador::Delegate` the trait into its embedded Jovian base. |
-| `kona/crates/protocol/hardforks/src/{ecotone,fjord,interop,isthmus,jovian}.rs` | 31 OP hardfork upgrade-tx literals filled `eth_value: 0, eth_tx_value: None` via the script in §6. |
+| `kona/crates/protocol/hardforks/src/{ecotone,fjord,isthmus,jovian,lagoon}.rs` | OP hardfork upgrade-tx literals filled `eth_value: 0, eth_tx_value: None`. **`interop.rs` is gone** — upstream v1.7.0 deleted it and replaced the fork with `lagoon.rs` (same OP upgrade #20, renamed and restructured onto the NUT bundle). Its two literals were patched by hand; see the §6 caveat. |
 | `kona/crates/protocol/protocol/src/{batch/single.rs, utils.rs}` test fixtures | Added Mantle `eth_value: 0, eth_tx_value: None` to one `TxDeposit { ... }` literal and `base_fee: None` to three `SystemConfig { ... }` literals (2026-05; previously the kona-protocol lib test target did not compile against the Mantle field additions). |
-| `kona/crates/protocol/registry/src/l1/mod.rs` | `default_blob_schedule()` excludes Osaka / BPO1 / BPO2 entries (already commented locally — kept that state). **2026-05 update**: `mainnet()` sets `osaka_time` / `bpo1_time` … `bpo5_time` to `None` instead of `EthereumHardfork::Osaka/Bpo1-5.mainnet_activation_timestamp()`, pinning Ethereum L1 blob-fee schedule to Prague behaviour on Mantle. Mirrors `mantle-xyz/kona@72a20ab9` ("Blob fee parameters #26", 2026-04-24, authored by QianXing). **Sepolia / Holesky `L1Config` unchanged** — `mantle-xyz/kona` only forced Mantle-mainnet onto Prague. **Known follow-up**: the kona-registry `test_get_l1_bpo_*` tests (originally added by upstream `59d420fc`) are now stale against this disabled schedule and will fail to compile/run; this matches mantle-xyz/kona@main's own state and is tracked as separate cleanup work. |
+| `kona/crates/protocol/registry/src/l1/mod.rs` | **Deliberately left at upstream's values — do NOT "restore" the historical Mantle patch here.** `mainnet()` carries Ethereum mainnet's **real** `osaka_time` / `bpo1_time` … `bpo5_time` (`EthereumHardfork::*::mainnet_activation_timestamp()`), and `default_blob_schedule()` includes the Osaka / BPO1 / BPO2 entries. The `test_get_l1_bpo_*` tests are live and passing. <br><br>**History, so nobody re-applies it**: `mantle-xyz/kona@72a20ab9` ("Blob fee parameters #26", 2026-04-24) nulled these fields to pin Mantle mainnet's L1 blob-fee schedule to Prague behaviour. That pin is now expressed **where it belongs** — as the Arsia→Elysium window in `RollupConfig::is_mantle_arsia_blob_schedule_pinned()` (§3.2g), mirroring op-node's `eth.MantleArsiaL1ChainConfigByChainID` (`derive/l1_block_info.go:508`). <br><br>**Consensus hazard if reverted**: re-nulling these fields makes the pin permanent and un-liftable — activating Elysium would become a silent no-op and Mantle mainnet would price blobs with Prague parameters forever. See §3.2g and the `[MANTLE]` note at `l1/mod.rs`. |
 
 **Per-hardfork decoder migration checklist** — every Mantle hardfork that
 changes `L1Block` calldata format (new selector or new fields) MUST be
@@ -240,8 +839,9 @@ pre-existing legacy and is currently dead code.
 
 | File | Change |
 |---|---|
-| `kona/crates/proof/executor/src/builder/env.rs` | `evm_cfg_env` calls `self.config.revm_spec_id(timestamp)` (Mantle-aware) instead of `spec_id(timestamp)`. `spec_id` continues to drive kona protocol-layer feature checks; `revm_spec_id` is the executor-facing variant that gates Jovian/Holocene/Granite behind `mantle_arsia` on Mantle chains. |
-| `kona/crates/proof/executor/src/test_utils.rs` | Test infrastructure additions (`alloy_chains::Chain`, `reqwest::Url` imports; `StatelessL2Builder::new` takes `&rollup_config`; placeholder `Ok(true)` return for `create_static_fixture`). |
+| `kona/crates/proof/executor/src/builder/env.rs` | **Rewritten by the v1.7.0 sync.** Upstream folded `evm_cfg_env` + `prepare_block_env` into one `evm_env` that delegates to `alloy_op_evm::evm_env_for_op_next_block`. Mantle-aware spec selection now arrives via the `OpHardforks` overrides (§3.4) instead of an explicit `revm_spec_id` call. **The Arsia base-fee gate had to be re-applied by hand**: pre-Arsia blocks inherit `parent_header.base_fee_per_gas` instead of recomputing. It lived in the deleted `prepare_block_env`; upstream recomputes unconditionally. Dropping it changes the base fee of every pre-Arsia block. |
+| `kona/crates/proof/executor/src/builder/assemble.rs` | `compute_receipts_root` gates deposit-nonce stripping on `config.is_mantle_skadi_active(timestamp)` instead of upstream's `is_regolith_active && !is_canyon_active` window. **Was unregistered and carried no `[MANTLE]` marker** until the v1.7.0 sync; a marker is now in place. |
+| `kona/crates/proof/executor/src/test_utils.rs` | Test infrastructure additions (`alloy_chains::Chain`, `reqwest::Url` imports; `StatelessL2Builder::new` takes `&rollup_config`). Earlier revisions of this file described `create_static_fixture` as a "placeholder `Ok(true)`" — **that was wrong**: the function is complete (fetch block → build → execute → verify header → write JSON → tar → clean up); `Ok(true)`/`Ok(false)` is just its soft-failure convention. It is what regenerates `testdata/*.tar.gz`, driven by `kona/examples/execution-fixture`. |
 | `kona/crates/proof/executor/Cargo.toml` | Declare optional deps `alloy-chains`, `reqwest`, `url`; list `dep:alloy-chains` under the `test-utils` feature. |
 | `kona/bin/client/src/fpvm_evm/tx.rs` | `FromTxWithEncoded<TxDeposit>` reads `tx.eth_value` / `tx.eth_tx_value` into `DepositTransactionParts` using the 0→None convention. |
 
@@ -263,24 +863,61 @@ Corresponds to mantle-xyz/evm commits `707922af`, `5f383c5`, `9fe2c85`, `760129f
 |---|---|
 | `alloy-op-evm/src/tx.rs` | `OpTxTr` impl adds `eth_value()` / `eth_tx_value()` methods (delegated to the wrapped `OpTransaction`). |
 | same | `FromTxWithEncoded<TxDeposit>` reads the new BVM_ETH fields into `DepositTransactionParts` (0→None). |
-| `alloy-op-evm/src/env.rs` | Comments out the `is_karst_active_at_timestamp => KARST` hook (no KARST on mantle-elysium). |
-| same (tests) | Comments out the `OpSpecId::KARST` `test_case`. |
+| `alloy-op-evm/src/env.rs` | **The KARST hook is no longer commented out** — op-revm v20 has the variant, and the v1.7.0 sync restored upstream's `is_karst_active_at_timestamp => KARST` / `is_lagoon_active_at_timestamp => LAGOON` arms. Safe because `spec_by_timestamp_after_bedrock` short-circuits on `is_mantle()` *before* the OP fork check, so a Mantle chain never reaches them. |
+| same (tests) | The `OpSpecId::KARST` `test_case` is restored, likewise. Mantle-specific coverage lives in `test_mantle_spec_routing_arsia` and `test_non_mantle_chain_uses_standard_routing`. |
 | `alloy-op-evm/src/block/mod.rs` | `deposit_receipt_version = None` (corresponds to commit 760129f). |
 | same | Comments out the `ensure_create2_deployer(...)` call and its `use canyon::ensure_create2_deployer;` import (origin: 707922af; re-applied in 5f383c5 against v0.25.2 baseline). |
-| same | Drops the `spec_id` argument from `operator_fee_charge` in two call sites to match mantle-elysium's older 2-arg signature. |
+| same | Drops the `spec_id` argument from `operator_fee_charge` in two call sites to match `mantle-xyz/revm`'s 2-arg signature. |
 | `alloy-op-evm/src/block/canyon.rs` | Adds `#![allow(dead_code)]` because the function is now unreachable (origin: 707922af). |
 | same (Jovian DA-footprint enforcement) | Kept **active** locally (`block/mod.rs` `jovian_da_footprint_estimation` + the pre-execute check + post-execute accumulation). This matches the post-`9fe2c85` Mantle stance; `707922af`'s transient disable is therefore not ported. |
 
-### 3.8 kona-client fpvm — adapts to mantle-elysium op-revm v19
+### 3.7b alloy-op-hardforks — Mantle fork enum + `OpHardforks` predicates
+
+⚠️ **This file carries 37 Mantle references and, until the v1.7.0 sync, had zero `[MANTLE]`
+markers and no registry entry at all.** A `grep "\[MANTLE\]"` audit could never see it; it was
+found only because it surfaced as a merge conflict. If a future sync takes upstream's side here,
+Mantle loses its fork enum *and* the trait predicates §3.4 depends on.
 
 | File | Change |
 |---|---|
-| `kona/bin/client/src/fpvm_evm/precompiles/provider.rs` | Drop the `karst` import. Collapse the `KARST` match arms into `JOVIAN \| OSAKA \| ARSIA \| INTEROP` and route them to `jovian()` / `accelerated_jovian` so the match remains exhaustive. |
+| `alloy-op-hardforks/src/lib.rs` | `hardfork!(MantleHardfork { Skadi, Limb, Arsia })` plus `from_chain_and_timestamp`, `mantle_mainnet()`, `mantle_sepolia()`, and the `MANTLE_*_TIMESTAMP` constants. |
+| same | `MANTLE_META_TX_PREFIX` (32-byte tag, permanently disabled since MantleEverest) + `is_mantle_meta_tx`. |
+| same (`OpHardforks` trait) | Default methods `is_mantle`, `is_mantle_skadi_active_at_timestamp`, `is_mantle_limb_active_at_timestamp`, `is_mantle_arsia_active_at_timestamp`, all returning `false`. **These defaults are the trap described in §2.2** — an implementor that forgets to override them is silently treated as a non-Mantle chain. |
+| same (tests) | `mantle_timestamp_constants` pins the fork ordering with `const { assert!(..) }`, so a bad activation timestamp fails the *build*, not just `cargo test`. |
 
-### 3.9 op-reth — REMOVED from this workspace (Phase 5)
+### 3.8 kona-client fpvm — `OpSpecId` match exhaustiveness
+
+| File | Change |
+|---|---|
+| `kona/bin/client/src/fpvm_evm/precompiles/provider.rs` | Both `OpSpecId` matches read `JOVIAN \| OSAKA \| ARSIA => jovian()` and `KARST \| LAGOON => karst()` (same shape for `accelerated_*`). The `karst` import is **required** — the old "drop the karst import" guidance is obsolete. Mantle's OSAKA/ARSIA stay on Jovian's precompile set: routing them to `karst()` would be a consensus change. There is no `INTEROP` variant to match on any more. |
+
+> ⚠️ **Known divergence, deliberately not fixed (jay, 2026-09-10): Mantle does not run fault
+> proofs.** This provider routes `OSAKA | ARSIA` to `jovian()`, whose bn254-pairing and
+> BLS12-381 MSM/pairing precompiles carry Jovian's *reduced* input limits (81,984 / 288,960 /
+> 278,784 / 156,672). op-revm's own `OpPrecompiles::new_with_spec` — what production execution
+> and the new `kona/sp1` client use — maps `ARSIA.into_eth_spec()` to `SpecId::OSAKA` and hands
+> back the plain Ethereum set, with no such limits. A call landing between the two would succeed
+> on chain and halt in the proof. This routing predates the v1.7.0 sync and was chosen for match
+> exhaustiveness, not consensus (the original comment said as much); the sync preserved it rather
+> than changing consensus silently. Revisit if Mantle ever adopts fraud proofs.
+
+### 3.9 op-reth — on disk, but OUT of the workspace
+
+**Superseded posture (v1.7.0 sync).** Phase 5 deleted the `op-reth/` subtree outright. The
+v1.7.0 `git subtree pull` re-introduced it — 180 files — exactly as §3.11 predicted, and the
+decision this round (jay, 2026-09-10) was **not to re-delete it**: the directory stays on disk
+but is deliberately kept out of `[workspace] members`, so it is never compiled, linted,
+`cargo deny`-ed or `no_std`-checked. Effectively the old `exclude` posture without the
+`exclude` key. `op-reth-test-engine/` is held out the same way (§3.1).
+
+⚠️ Consequence: `op-reth/crates/rpc/src/error.rs` there is the **upstream** version, without
+Mantle's `BvmEth(_) | TxL1CostOutOfRange` arm. Nothing consumes it today, but anyone who adds
+these crates back to the workspace inherits upstream behaviour, not Mantle's.
+
+Historically, the reasoning for removing it:
 
 The entire `op-reth/` subtree (the Mantle execution-layer node) was **deleted** from
-`rust/`. Nothing in `kona` / `op-alloy` / `alloy-op-evm` / `alloy-op-hardforks` ever
+`rust/` in Phase 5. Nothing in `kona` / `op-alloy` / `alloy-op-evm` / `alloy-op-hardforks` ever
 depended on the `reth-optimism-*` / `op-reth` / `reth-op` crates — `op-reth` was a
 standalone binary that merely shared this workspace (and the shared revm/alloy patches).
 
@@ -299,11 +936,27 @@ See §3.11 for the subtree-sync strategy.
 
 | File | Change |
 |---|---|
-| `<mantle-v2 root>/op-core/nuts/bundles/karst_nut_bundle.json` | Copied verbatim from optimism develop so `kona-hardforks/build.rs` can find it via its ancestor walk. |
+| `<mantle-v2 root>/op-core/nuts/bundles/karst_nut_bundle.json` | Copied verbatim from optimism so `kona-hardforks/build.rs` can find it via its ancestor walk. |
+| `<mantle-v2 root>/op-core/nuts/bundles/lagoon_nut_bundle.json` | Same, added in the v1.7.0 sync (blob `d154ba6c`). |
 
-**Note**: this file is *outside* `rust/`, so `git subtree pull` will not sync it. If a
+**Note**: these files are *outside* `rust/`, so `git subtree pull` will not sync them. If a
 future upstream build.rs looks for additional bundle files, add the corresponding JSONs
 under `op-core/nuts/bundles/` manually.
+
+**This note came true in the v1.7.0 sync.** `build.rs` gained a second bundle and the build
+died with `read .../lagoon_nut_bundle.json: No such file or directory` — *after* the whole
+subtree merge appeared to succeed. Fix:
+
+```bash
+git show <upstream commit>:op-core/nuts/bundles/lagoon_nut_bundle.json \
+  > op-core/nuts/bundles/lagoon_nut_bundle.json
+```
+
+⚠️ Note what `build.rs` does with it: the file is named `lagoon_*`, but the call is
+`generate("interop", &lagoon_bundle, ..)` and the label `"interop"` is **deliberate** — the
+generated `interop_nut_bundle()` fn and the embedded `fork_name: "Interop"` feed deposit
+`source_hash` derivation and must match op-node, which keeps `bundleLabel = "interop"`.
+**Do not "tidy" that label to `lagoon`.**
 
 ### 3.11 Intentionally absent — Mantle modules removed after review
 
@@ -312,45 +965,172 @@ in §B confirmed there are no real consumers. **Do not re-add these in a future 
 
 | Item | Origin | Why removed |
 |---|---|---|
-| `kona/crates/protocol/derive/src/sources/mantle_blob.rs` (817 lines) + `testdata/*.hex` | Mantle fork (originally vendored in Phase 1a) | Orphan code. Mantle's own fork constructs `EthereumDataSource::new_from_parts` everywhere — `MantleBlobSource` was never wired into any pipeline. The `mantle_format_failed` fallback is obsolete because post-Arsia all submissions use the standard blob format. |
+| `kona/crates/protocol/derive/src/sources/mantle_blob.rs` (817 lines) + `testdata/*.hex` | Mantle fork (originally vendored in Phase 1a) | Never constructed outside its own `#[cfg(test)]` module — every pipeline call site uses `EthereumDataSource::new_from_parts` with the upstream `BlobSource`, in Mantle's fork too. (Phase 1d's "wired" meant module registration, the re-export and the `reset()` plumbing, not construction.) **Deleting it is a deliberate scope decision, not dead-code cleanup — see §3.11.1.** |
 | `kona/crates/protocol/derive/src/sources/mantle_ethereum.rs` (222 lines) | Mantle fork (originally vendored in Phase 1a) | Orphan code. Even in Mantle's own fork, every pipeline call site uses the upstream `EthereumDataSource`. The file was an unfinished refactor. |
 | `DataAvailabilityProvider::reset()` trait method + `L1Retrieval::reset` calling `self.provider.reset()` | Phase 1d addition | Existed solely to clear `MantleBlobSource::mantle_format_failed` — moot after the above two deletions. The trait method was a default-empty no-op with no overriders. |
 | `op-reth/` — entire subtree (bin + the 16 `reth-optimism-*` crates + examples) | optimism `rust/` subtree | **Phase 5.** The Mantle EL node moved to its own repo `mantle-xyz/reth@mantle-elysium`. No kona-side crate depends on it. **Sync note below.** |
 
+#### 3.11.1 kona cannot derive pre-Arsia blocks — accepted boundary
+
+Mantle submitted batches in a **non-standard joined-blob format before Arsia**. op-batcher gates
+the two encoders on the fork (`op-batcher/batcher/driver.go:1015`):
+
+```go
+if !l.channelMgr.rollupCfg.IsMantleArsia(l.prevCurrentL1.Time) {
+    blobs, err = data.MantleBlobs()   // pre-Arsia: frames RLP-encoded as one array, split across blobs
+} else {
+    blobs, err = data.Blobs()          // post-Arsia: standard, one frame per blob
+}
+```
+
+op-node reads it back with `MantleBlobDataSource` (`op-node/rollup/derive/data_source.go:88`),
+which is **format-probing, not fork-gated**: it tries the Mantle decode first and falls back to
+standard per-blob decoding.
+
+The Rust side has no such decoder — `EthereumDataSource` / `BlobSource` only understand the
+standard format. Therefore:
+
+- **kona derives post-Arsia blocks correctly.**
+- **kona cannot derive any pre-Arsia block from L1.** It hits the first joined-blob batch and
+  fails. This applies to syncing from genesis and to proving a pre-Arsia block.
+
+**This gap is accepted.** kona-node serves the post-Arsia range; syncing Mantle from genesis
+requires op-node or a snapshot. Two consequences to keep in view:
+
+1. Retiring op-node removes the only client that can replay pre-Arsia history from L1. Confirm
+   the snapshot path covers whatever depends on that range before the cutover.
+2. Fault-proof coverage stops at Arsia. A dispute over a pre-Arsia block cannot be proven with
+   the current Rust stack.
+
+Reopening the decision means restoring `mantle_blob.rs` from `0484a132e5` and wiring it behind
+the same `!IsMantleArsia` gate op-batcher uses. The file predates v1.7.0, so it needs adapting to
+the current `BlobProvider` trait and `EthereumDataSource` shape.
+
+> The earlier rationale — "post-Arsia all submissions use the standard blob format, so the
+> fallback is obsolete by design" — is true of *new* blocks only. The pre-Arsia data is on L1
+> permanently.
+
 If a future Mantle hardfork brings non-standard blob submission back, build new code on
 top of develop's `EthereumDataSource` / `BlobSource` instead of resurrecting these files.
 
-**op-reth subtree-sync strategy (Phase 5).**
+**Upstream directories filtered out of the bridge (Strategy B — IN FORCE, jay 2026-09-16).**
 
-**Verified fact:** `op-reth/` is part of the upstream `rust/` subtree — it was present in
-the very first `git subtree add` commit `ba2cc4514` (`git ls-tree ba2cc4514 rust/` lists
-`rust/op-reth`). It comes in via the bridge repo `mantle-xyz/optimism-rust-bridge`, *not*
-as a Mantle-local addition. Therefore a future `git subtree pull` (§4) **will** try to
-re-introduce it. Concretely, the pull is a merge that yields:
+`op-reth/`, `lokahi/` and `op-reth-test-engine/` are **no longer in this tree**. They are
+excluded when the bridge split is assembled, so `git subtree pull` does not carry them and there
+is nothing to re-delete after each sync.
 
-- **modify/delete conflicts** for every op-reth file upstream changed (we deleted it);
-- **silent re-add** of any *new* op-reth files upstream introduces (we have nothing to
-  conflict with);
-- a **conflict on `rust/Cargo.toml`** (we removed the `op-reth/*` members/deps; the
-  bridge's copy still has them) — resolve by keeping our op-reth-free version.
+| directory | why it is gone |
+|---|---|
+| `op-reth/` | 180 files / ~60k lines, never a workspace member, never compiled. Mantle's EL node is the separate `mantle-xyz/reth` repository. |
+| `op-reth-test-engine/` | not a member either — it depends on the `reth-optimism-*` crates that stay out of the workspace with `op-reth`. |
+| `lokahi/` | upstream's OP supernode skeleton; its README says it "currently builds a CLI that prints a greeting and exits". Targets interop, which Mantle does not use. Carried zero Mantle changes. |
+| `kona/sp1/` | 64 files / 26,330 lines — upstream's SP1 zkVM integration. Its own README marks it "**Experimental** ... not yet recommended for production use", and its `super-aggregation` program "commits the public values consumed by `ZKDisputeGame`". Mantle submits validity proofs through `OPSuccinctL2OutputOracle`, ships no DisputeGame and does not use interop super-roots. |
 
-There are two ways to keep op-reth out:
+`op-version/` is deliberately **kept**: `kona/bin/node` depends on it for version metadata.
 
-- **Strategy A — re-delete on every sync (current posture, same as the orphan modules
-  above).** After `git subtree pull`:
-  ```bash
-  # resolve rust/Cargo.toml keeping the op-reth-free (ours) version, then:
-  git rm -r rust/op-reth
-  grep -n "op-reth\|reth-optimism" rust/Cargo.toml   # must be empty
-  git add -A && git commit
-  ```
-- **Strategy B — drop op-reth from the bridge (recommended, permanent).** Exclude
-  `op-reth/` when assembling/splitting `mantle-xyz/optimism-rust-bridge`, so subtree
-  pulls never carry it. One-time change to the bridge tooling; eliminates Strategy A's
-  per-sync toil.
+**Nothing depended on `kona/sp1/`.** In-tree, the only `kona-sp1-*` references were sp1's own
+crates referring to each other plus the five `[workspace.dependencies]` path declarations.
+`mantle-xyz/op-succinct` — where Mantle's SP1 proving actually lives — depends on `kona-mpt`,
+`kona-derive`, `kona-driver`, `kona-preimage`, `kona-executor`, `kona-proof`, `kona-client`,
+`kona-host`, `kona-providers-alloy`, `kona-protocol`, `kona-registry`, `kona-genesis` and the
+op-alloy family, and on **no `kona-sp1-*` crate at all**: it builds its own guest on kona's
+derivation and execution crates. Note `kona/sp1/crates/proposer` (14,255 of the 26,330 lines) was
+already excluded from the workspace for embedding OP's ZKDisputeGame ABI — the rest followed the
+same logic.
 
-Keeping `op-reth/` on disk but `exclude`-d like `op-revm/` was rejected: unlike `op-revm`
-(referenced via `[patch.crates-io]`), nothing in-tree consumes `op-reth` at all.
+Dropping `kona/sp1/` also let `sp1-sdk` go from `[workspace.dependencies]`, which removed **310
+packages** from `Cargo.lock`. Measured consequences:
+
+- `cargo deny check advisories` went from **9 errors to 6** — the three `rkyv` advisories
+  (one use-after-free, two out-of-bounds) arrived through sp1-sdk.
+- Five `deny.toml` ignores whose stated justification was "transitive via the SP1 dependency tree"
+  stopped matching anything and were removed with it.
+- `aws-smithy-json` left the lockfile — the crate behind the duplicate-major breakage recorded
+  in §4.3.
+- It retires the stale SP1 guest lockfile that made `just check-sp1-guest-lock` and
+  `just check-sp1-guest-precompile-patches` fail once the justfile was parseable again.
+
+**The cannon/MIPS64 FPVM prestate family was removed from `rust/justfile` at the same time**
+(`build-kona-client-elfs`, `build-kona-prestates{,-auto}`, `generate-kona-prestates`,
+`stage-kona-client-elfs`, `lint-kona-cannon`, `build-kona-reproducible-prestate`,
+`output-kona-prestate-hash`, `reproducible-kona-prestate`, `clean-kona-prestates`,
+`kona-prestate-variants`, plus the MIPS64 cross-toolchain variables — 369 lines). Mantle does not
+run fault proofs, so nothing consumes the artifacts.
+
+**Two more dead recipe groups went with it**, both verified non-functional rather than merely
+unused:
+
+- `release` — drove `cargo-release` to publish op-alloy, alloy-op-evm and the kona crates to
+  crates.io in two topologically-ordered batches (to stay under the "existing crates" rate limit
+  of 30). That is upstream's publishing workflow; Mantle publishes none of these crates —
+  `mantle-xyz/reth` and `mantle-xyz/op-succinct` depend on this repository by git branch or tag.
+- `docs-dev` / `docs-build` / `docs-preview` — delegate to `rust/docs/justfile`, and `rust/docs/`
+  does not exist in this tree. They failed on invocation.
+
+`rust/justfile` went from 797 lines to 329. What is left is load-bearing and should not be
+trimmed further without care: it is the **only** record of the canonical verification commands,
+because `rust/` has no CI. `check-no-std` in particular encodes *which* 20 packages must stay
+`no_std` (they run inside the zkVM), and `lint-clippy` encodes the exact flag set — dropping
+`--all-targets` silently stops linting test code.
+
+Verified before removing that the family had **no consumers outside `rust/justfile`**: the six
+apparent external references were self-references within it, and the comment listing external
+consumers was stale — `ops/prestate-reproducibility/build-prestates.sh` and
+`.circleci/continue/rust-e2e.yml` do not exist, and `op-e2e/config/init.go` does not reference the
+artifact names. `op-program/scripts/build-prestates.sh` is unaffected: it clones
+`ethereum-optimism/optimism` into a temp directory and runs that tree's recipes, never this one.
+The FPVM *crates* (`kona/crates/proof/std-fpvm`, `kona/bin/client`'s fpvm modules) are untouched —
+only the prestate build tooling went.
+
+**Why this stopped being merely cosmetic.** Carrying 60k unbuilt lines was an active hazard, not
+just dead weight. Upstream's `.config/nextest.toml` filters on `binary(e2e_testsuite)`, defined in
+`op-reth/crates/node`; nextest validates `binary(...)` predicates against the whole workspace
+binary namespace and **hard-errors** when one matches nothing, so `cargo nextest run` exited 96
+with zero tests executed. The directory also drew review effort away from code that matters — both
+reviewers on the v1.7.0 round had to be told explicitly to scope it out.
+
+**How the filtered split is produced.** The bridge commits are plain `git commit-tree` snapshots
+of optimism's `rust/` tree (§1). To filter, drop the unwanted top-level entries before writing the
+tree:
+
+```bash
+NEWTREE=$(git ls-tree <upstream-commit>:rust \
+  | grep -vP '\t(lokahi|op-reth|op-reth-test-engine)$' \
+  | git mktree)
+git commit-tree "$NEWTREE" -p <previous-split> -m "rust: <message>"
+```
+
+Verify before pushing that the diff against the previous split is **only** those deletions:
+
+```bash
+git diff --name-only <prev-split>^{tree} "$NEWTREE" | cut -d/ -f1 | sort -u
+```
+
+For the 2026-09-16 filter this printed exactly `lokahi`, `op-reth`, `op-reth-test-engine` —
+306 deletions, nothing else touched.
+
+**Local follow-ups the filter does not do for you.** Removing the directories leaves references
+behind; the sync is not complete until these are cleaned:
+
+- `rust/Cargo.toml` — `lokahi/` was a workspace *member*, so `cargo metadata` fails until it is
+  removed from `members`.
+- `rust/justfile` — the `build-lokahi` / `build-lokahi-debug` recipes.
+- `rust/.config/nextest.toml` — the three op-reth-only overrides (§4.3).
+
+**Strategies considered and rejected**, kept because the reasoning still applies if anyone wants
+to bring a directory back:
+
+- **Strategy A — re-delete on every sync** (`git rm -r rust/op-reth` after each pull). Keeps the
+  tree clean but repeats the work every sync, and a missed deletion is silent.
+- **Strategy C — keep the directory, exclude it from the workspace** (in force 2026-09-10 to
+  2026-09-16). Cheapest per sync, but it is what produced the nextest breakage above, and it left
+  an `op-reth/crates/rpc/src/error.rs` **without** Mantle's `BvmEth(_) | TxL1CostOutOfRange` arm
+  sitting in the tree as a trap for anyone who added those crates back.
+
+An earlier revision recorded that deleting 183 files owned by another team from inside a
+subtree-sync PR was the wrong place to make that call. That objection is answered by doing it in
+the bridge instead: the EL team's repository is `mantle-xyz/reth`, and nothing they own is
+affected by this tree no longer carrying a stale unbuilt copy.
 
 ## 4. Sync workflow
 
@@ -381,26 +1161,197 @@ git diff --name-only --diff-filter=U | xargs grep -l "\[MANTLE\]"
 
 ### 4.3 Verification
 
+> **The verification entry points were broken and have been repaired.** Before 2026-09-16, none
+> of the `just` recipes below could run at all, and `cargo nextest` executed zero tests. Three
+> separate causes, all introduced by taking upstream files verbatim:
+>
+> | file | problem | fix |
+> |---|---|---|
+> | `rust/justfile` | upstream v1.7.0 uses `[script('bash')]`, which `just` still treats as unstable; `mise.toml` pins just 1.37.0, so **every** recipe aborted during parsing | `set unstable` |
+> | `rust/justfile` | `NIGHTLY` is derived by grepping `mise.toml` for a dated nightly that is not there, so it evaluated to `""` and `cargo +{{NIGHTLY}} fmt` became `cargo + fmt` | `NIGHTLY_TOOLCHAIN` falls back to `nightly`; note two call sites embed it as `export RUSTUP_TOOLCHAIN="…"` rather than `cargo +…`, and an earlier pass missed them |
+> | `rust/.config/nextest.toml` | upstream's `binary(e2e_testsuite)` override refers to a binary in `op-reth/`, which is not a workspace member; nextest validates `binary(...)` against the whole workspace namespace and **hard-errors**, exit 96, zero tests run | the three op-reth-only overrides removed |
+> | `mise.toml` | pinned `rust = "1.94"` while `rust/rust-toolchain.toml` and the workspace `rust-version` require 1.95; mise exports `RUSTUP_TOOLCHAIN`, which **overrides** `rust-toolchain.toml` | bumped to 1.95 |
+>
+> Predicates differ in how they fail: `binary(...)` and `binary_id(...)` hard-error when nothing
+> matches, `test(...)` silently degrades to a no-op. That is why only one of the three overrides
+> was actually fatal.
+>
+> **Repairing them exposed two pre-existing red lights** that had been invisible while the whole
+> file was unparseable: `just check-sp1-guest-lock` and `just check-sp1-guest-precompile-patches`
+> both fail because the SP1 guest `Cargo.lock` is stale, so `just lint-sp1-guest` is red. Fix with
+> `just lock-sp1-guest` and commit `rust/kona/sp1/programs/Cargo.lock`. This is not a regression —
+> it is what was already behind the door.
+>
+> There is still **no CI coverage for `rust/`** (`.github/` and `.circleci/` contain zero `cargo`
+> invocations) and `core.hooksPath` points at a non-existent `.husky`, so every gate below is
+> manual.
+
+Run all of it. Each layer below caught defects the previous one could not see — see the note
+after the block.
+
 ```bash
 TOOLCHAIN=$(grep channel rust/rust-toolchain.toml | cut -d'"' -f2)
+export RUSTUP_TOOLCHAIN=$TOOLCHAIN
 
 # 1. Workspace-wide type check.
-RUSTUP_TOOLCHAIN=$TOOLCHAIN cargo check --workspace \
-  --manifest-path rust/Cargo.toml
+cargo check --workspace --manifest-path rust/Cargo.toml
 
-# 2. Full build (including tests) for the Mantle-touched crates.
-RUSTUP_TOOLCHAIN=$TOOLCHAIN cargo build --tests \
-  --manifest-path rust/Cargo.toml \
-  -p op-alloy -p op-alloy-consensus -p op-alloy-network \
-  -p op-alloy-provider -p op-alloy-rpc-jsonrpsee \
-  -p op-alloy-rpc-types -p op-alloy-rpc-types-engine \
-  -p alloy-op-evm
+# 2. Tests for the Mantle-touched crates. `cargo check` does NOT build test targets,
+#    so this finds errors step 1 cannot.
+cargo test --manifest-path rust/Cargo.toml \
+  -p kona-genesis -p kona-protocol -p kona-derive -p kona-executor \
+  -p alloy-op-evm -p alloy-op-hardforks -p op-alloy-consensus -p kona-hardforks
 
-# 3. Audit the [MANTLE] markers against this file's §3 registry.
-grep -rn "\[MANTLE\]" rust/ --include="*.rs" --include="*.toml" | wc -l
+# 3. Formatting — nightly is mandatory: rustfmt.toml uses unstable options that stable
+#    silently ignores.
+cargo +nightly fmt --manifest-path rust/Cargo.toml --all -- --check
+
+# 4. Lints, exactly as CI runs them.
+cargo clippy --manifest-path rust/Cargo.toml \
+  --workspace --all-features --all-targets -- -D warnings
+
+# 5. no_std / riscv32 — the real fault-proof target.
+cargo build --manifest-path rust/Cargo.toml --target riscv32imac-unknown-none-elf \
+  -p kona-genesis -p kona-protocol -p kona-hardforks -p op-alloy-consensus --no-default-features
+# (the MIPS/cannon half needs Docker: `just lint-cannon` from rust/kona)
+
+# 5b. Rustdoc, exactly as `just lint-docs` runs it. NOT covered by any step above, and it has
+#     its own failure mode: `/// [MANTLE]` in a *doc* comment is parsed as an intra-doc link and
+#     fails under `-D warnings`. Write it as `/// `[MANTLE]`` (backticked); plain `// [MANTLE]`
+#     comments are fine. This gate was failing before the v1.7.0 sync (11 pre-existing sites)
+#     and is green now.
+RUSTDOCFLAGS="-D warnings" cargo doc --manifest-path rust/Cargo.toml \
+  --workspace --no-deps --document-private-items
+
+# 6. Audit the [MANTLE] markers against this file's §3 registry.
+grep -rn "\[MANTLE\]" rust/ --include="*.rs" --include="*.toml" | wc -l   # 208 after v1.7.0 (across 71 files)
 ```
 
-### 4.4 Land the sync
+**Why every layer matters** — the v1.7.0 sync passed each step and the *next* one still found
+something new:
+
+| Step | What only it caught |
+|---|---|
+| `check --workspace` | upstream API moves (`Predeploys` relocated, `from_payload_and_genesis` deleted) |
+| `cargo test` | test-target-only compile errors; every executor fixture being undecodable; `SystemConfigUpdateKind` constants left on upstream's numbering |
+| `clippy --all-features` | `kona-registry`'s `test_utils/` missing Mantle struct fields — it compiles only under the `test-utils` feature, which none of the earlier steps enabled |
+| `RUSTDOCFLAGS="-D warnings" cargo doc` | every `/// [MANTLE]` doc comment — rustdoc reads the marker as an intra-doc link. Nothing else in the pipeline looks at doc comments |
+| the live chain | that `sepolia-qa3` **cannot** validate the Skadi window, the fork alignment, the base-fee constant or the Elysium pin: all of its forks sit at genesis, so those code paths are never taken. Use a chain whose fork times differ (see §3.2c) |
+
+⚠️ **A green `cargo check --workspace` can be luck.** `kona-executor`'s `pub mod test_utils;`
+is not `cfg`-gated and imports optional deps; it built only because another member happened to
+enable `kona-executor/test-utils` through feature unification. A narrower `-p` selection failed.
+
+**Tests parked with `#[ignore]`, and why.** A full `cargo test --workspace` is green only
+because of these. Each is an upstream assertion that Mantle's protocol deliberately breaks —
+none is a Mantle defect, and none should be "fixed" by changing Mantle behaviour:
+
+| Test | Reason |
+|---|---|
+| `hardforks::{ecotone,fjord,isthmus}::test_*_txs_encoded` (3) | The `.hex` vectors are OP's canonical upgrade-tx bytes. Mantle deposits encode one byte longer (an extra `0x80` for `eth_value`), and Mantle never emits the OP bundles anyway. |
+| `alloy-op-evm` `structural_tests` operator-fee cases (4) | Upstream asserts the operator fee starts at Isthmus; Mantle starts it at Arsia. |
+| ~~`kona-registry::l1::tests::test_get_l1_bpo_mainnet`~~ | **Un-ignored.** It was ignored because the L1 blob schedule was nulled in the registry; that pin moved into `L1BlockInfoTx::try_new` when Elysium was implemented, so the registry carries L1's real values again and upstream's assertion holds. See §3.2g. |
+| ~~`hardforks::arsia::test_verify_arsia_*_deployment_code_hash` (3)~~ | **Un-ignored in the v1.7.0 sync.** They sat behind a bare `#[ignore] // TODO: fix this test` from `82fc1b98b`. Two always passed; the third failed only because its *expected* constant was stale. See §3.2f. |
+| `op-alloy-rpc-types-engine` `*_non_canonical_encoding` (2) | Upstream tests new in v1.7.0 that do not hold against alloy-consensus 2.4.2: `Signed::fallback_decode` returns `UnexpectedType(0)` before the canonical re-encode check runs. **Both files are byte-identical to upstream** — no Mantle code on the failing path. Report upstream. |
+
+**Failures that are the machine, not the code.** `cargo test --workspace --all-features` leaves
+12–20 failures on a normal macOS dev box, the count varying run to run. Confirm each against this table before chasing it —
+all were traced during the v1.7.0 sync and none touches Mantle code:
+
+| Count | Tests | Root cause |
+|---|---|---|
+| 6 | `kona-providers-alloy` `beacon_client` / `buffered_l2_chain_provider` (`httpmock`: "No request has been received by the mock server") | reqwest reads the **macOS system proxy** (`scutil --proxy`) and does not honour its `ExceptionsList`, so even `127.0.0.1` mock-server traffic is forwarded. Unsetting `http_proxy` is **not** enough. Reproduce with `curl -x http://127.0.0.1:<proxy> http://127.0.0.1:<mock>/` → 502, vs 200 with `--noproxy '*'`. |
+| 1 | `kona-sp1-host` `metrics::tests::ephemeral_listen_serves_on_the_port_it_reports` | Same proxy; the 502 is the proxy's own response, not the metrics server's. |
+| 2 | `kona-disc` `driver::tests::test_online_discv5_driver_bootstrap_{mainnet,testnet}` | Needs real network. |
+| 3 | `kona-engine` `state::core::test::test_chain_label_metrics::*` | `metrics::set_global_recorder` is process-global and succeeds once; whichever case runs first passes and the rest fail. Which ones fail **varies between runs** — that variance is the tell. Upstream test-isolation defect. |
+| 0–8 | `kona-node-service` `actors::network::*`, `kona-mpt` `list_walker::test_online_*` | Appear only under the full parallel workspace run: the first bind real libp2p ports, the second hit a live RPC. **All pass when run with `-p <crate>`** — that isolation check is how you tell flakiness from a regression, and it is worth doing rather than assuming, since `actors/network/actor.rs` does call into Mantle-modified gossip code. |
+
+⚠️ **`cargo clippy` without `--keep-going` under-reports.** Cargo stops scheduling new units
+after the first failure, so a crate with pre-existing errors hides every lint in the crates
+behind it. This produced two wrong numbers during the v1.7.0 sync (an "op-revm has 51 errors"
+baseline that is really 93, and a "clippy clean outside op-revm" claim that was not). Always
+pass `--keep-going`, and when comparing against a baseline, measure **both sides the same way**.
+
+⚠️ **None of the above tells you whether a Mantle fix was silently overwritten.** For that, run
+the git-history reconciliation in **§4.4** — it does not depend on this file being complete.
+
+⚠️ **`[MANTLE]` counting is necessary but far from sufficient.** The most serious defect in the
+v1.7.0 sync — the DA-footprint truncation order (§5.1) — changed no marker at all and was found
+only because it happened to break the build. Read §5.1 and diff the hot spots by hand.
+
+### 4.4 Mantle-delta reconciliation — "did the merge bury one of our fixes?"
+
+§4.3 answers *does it build and pass*. This answers a different and harder question: **is every
+change Mantle ever made still there?** Run it before landing.
+
+Do **not** rely on the §3 registry or on `grep "[MANTLE]"` for this. Both are incomplete by
+construction, and the v1.7.0 sync proved it twice: the DA-footprint truncation order (§5.1) was
+silently replaced without changing a single marker, and `alloy-op-hardforks/src/lib.rs` carried
+37 Mantle references with **no marker and no registry entry at all**. Go by git history instead.
+
+**The method.** Mantle's work is, by definition, the delta between the upstream tree and ours.
+Compute that delta at the old baseline and at the new one, and diff the two sets:
+
+- `A` = files where **pre-sync** ours ≠ upstream-at-old-split → everything Mantle had touched
+- `B` = files where **post-sync** ours ≠ upstream-at-new-split → what Mantle still touches
+- `A \ B` = files that used to carry a Mantle delta and are now byte-identical to upstream —
+  **each one is either a deliberate adoption of a better upstream version, or a buried fix**
+
+```bash
+#!/usr/bin/env bash
+# Usage: run from the mantle-v2 root, mid-merge or after committing.
+OLD_SPLIT=a6c46d8a…      # bridge split the previous sync came from
+NEW_SPLIT=fa7ef15e…      # bridge split this sync came from
+PRE=dev/mantle-v1.6.3    # the branch this sync started from
+MERGED=$(git rev-parse "$(git write-tree)":rust)   # or <commit>:rust once committed
+
+# `git rev-parse <ref>:<path>` ECHOES THE ARGUMENT BACK when the path is missing, so a bare
+# `$(git rev-parse …)` silently yields a garbage "hash". Always guard with cat-file -e.
+blob() { git cat-file -e "$1:$2" 2>/dev/null && git rev-parse "$1:$2" || echo ABSENT; }
+
+git diff --name-only "$OLD_SPLIT" "$(git rev-parse $PRE:rust)" \
+  | grep -vE '^op-reth/' | while read -r f; do
+    pre=$(blob "$PRE" "rust/$f"); old=$(blob "$OLD_SPLIT" "$f")
+    [ "$pre" = ABSENT ] || [ "$old" = ABSENT ] && continue   # add/delete, not a Mantle edit
+    [ "$pre" = "$old" ] && continue                          # unchanged
+    now=$(blob "$MERGED" "$f"); new=$(blob "$NEW_SPLIT" "$f")
+    if   [ "$now" = ABSENT ]; then echo "DELETED|$f"
+    elif [ "$now" = "$new" ]; then echo "OVERWRITTEN|$f"
+    else                           echo "KEPT|$f"; fi
+  done
+```
+
+**Triaging `OVERWRITTEN`.** Most hits are not Mantle's work at all: a previous round may have
+pulled upstream content from an *intermediate* anchor, and v-next legitimately supersedes it.
+Filter by comparing our pre-sync blob against that intermediate upstream tree (for the v1.7.0
+round: `op-reth/v2.4.2` in a local optimism clone). If `pre == intermediate-upstream`, it was
+never Mantle-authored — moving on to the newer upstream is correct. Whatever survives that
+filter is the real review list, and it should be short enough to read by hand.
+
+**Worked example — the v1.7.0 sync.** 100 files carried a Mantle delta against v1.5.1:
+
+| Bucket | Count | Outcome |
+|---|---|---|
+| `KEPT` | 68 | Mantle delta intact |
+| `OVERWRITTEN` | 31 | **30** were pure `op-reth/v2.4.2` content pulled in by the previous round — correctly superseded. **1** needed reading. |
+| `DELETED` | 1 | `hardforks/src/interop.rs` |
+
+The two that needed judgement, and why each was fine:
+
+- `protocol/src/block.rs` — its only delta against upstream v1.5.1 was a mechanical
+  compatibility shim in `from_payload_and_genesis`, self-labelled `⚠️ UNVERIFIED` and scoped to
+  "only guarantees that it compiles". No Mantle protocol logic. Upstream v1.7.0 deleted the
+  whole function and nothing in the tree calls it, so adopting upstream *removes* an unverified
+  adapter — the "upstream has a better way" case.
+- `hardforks/src/interop.rs` — deleted upstream, replaced by `lagoon.rs`. Its nine BVM_ETH-bearing
+  `TxDeposit` literals were traced: seven moved into the NUT bundle (built by
+  `op-alloy/.../nuts/mod.rs::to_deposit_transactions`, which is **byte-identical to pre-sync** and
+  still fills the BVM_ETH fields) and two became `lagoon.rs` literals, patched by hand.
+
+**Do not skip the trace step.** "The file was deleted upstream" is not by itself an answer —
+follow the content to wherever it moved and confirm the Mantle behaviour came with it.
+
+### 4.5 Land the sync
 
 ```bash
 git push -u origin rust/sync-$(date +%Y%m)
@@ -421,16 +1372,27 @@ git push -u origin rust/sync-$(date +%Y%m)
 | `kona/bin/client/src/fpvm_evm/precompiles/provider.rs` (the `OpSpecId` match arms) | Any new upstream hardfork variant breaks exhaustiveness. | If `cargo check` flags non-exhaustive matches, add the new variant to the appropriate arm. |
 | `kona/crates/protocol/hardforks/src/*.rs` (TxDeposit literals) | Each new hardfork adds new upgrade-tx literals missing BVM_ETH fields. | Run the script in §6 on the newly added files. |
 | `kona/crates/protocol/genesis/src/system/kind.rs` | Upstream may add new `SystemConfigUpdateKind` variants. | Variants must not collide with Mantle's `BaseFee = 4`; new ones go after `DaFootprintGasScalar = 8`. |
+| `alloy-op-evm/src/block/mod.rs` → `jovian_da_footprint_estimation` | **Consensus.** Upstream keeps refactoring this into op-revm helpers. | Mantle computes `(size / 1e6) * scalar`; upstream's `tx_da_footprint` / `encoded_tx_da_footprint` compute `(size * scalar) / 1e6`. These truncate differently (size=1_500_000, scalar=2 → 2 here, 3 upstream) and Mantle has Jovian DA-footprint enforcement on. **The v1.7.0 merge silently adopted upstream's form because this body did not surface as a conflict.** Re-read the function after every sync. |
+| `kona-registry::l1` Ethereum mainnet `osaka_time` / `bpo1..5_time` | Upstream bumps these; a merge may reintroduce the old Mantle `None` pin. | **Consensus.** They must carry L1's real values. The Arsia-era pin lives in `L1BlockInfoTx::try_new`, gated on Elysium (§3.2g); re-nulling them here makes activating Elysium a no-op and silently freezes blob pricing at Prague forever. |
+| A new `[MANTLE]` marker in a **doc** comment (`///` or `//!`) | Rustdoc parses it as an intra-doc link. | Write it backticked — `` /// `[MANTLE]` ``. Plain `//` comments are unaffected. Caught only by `RUSTDOCFLAGS="-D warnings" cargo doc`, which is `just lint-docs` in CI. |
+| Any new `is_canyon_active` / `is_ecotone_active` / `is_isthmus_active` call site | **Consensus + liveness.** On Mantle these are all false until Arsia. | Before adding one, check whether op-node's corresponding gate reads `IsOpFork(ts) \|\| IsMantleSkadi(ts)`. Seven such sites had to be fixed in the v1.7.0 sync (§3.2c). `grep -n 'IsMantleSkadi(' op-node/ --include='*.go'` is the authoritative list. |
+| `op-alloy/.../reth_codec.rs` (`CompactTxDeposit`) | **On-disk format.** Field order and types fix the reth Compact bitfield layout. | Never reorder, never move a field after `input`, never change a type without re-running `mantle_compact_layout_tests`. Getting this wrong makes every existing deposit in a reth DB unreadable (the original op-reth-rpc41 sync failure). The `Bytes` field must stay last — `reth_codecs_derive` rejects any other position. |
+| `kona/crates/protocol/protocol/src/deposits.rs` (`unmarshal_deposit_version1`) | **Consensus.** Must byte-match op-node's `unmarshalDepositVersion1`. | BVM_ETH fields read the full 32-byte word (§3.2b). Any "optimisation" back to a narrow integer reintroduces an attacker-triggerable consensus split. |
+| `kona/crates/protocol/genesis/src/system/config.rs` (test `*_UPDATE_TYPE` consts) | They hard-code discriminants that Mantle shifted. | Mantle's `BaseFee = 4` pushes `Eip1559` to 5 and `OperatorFee` to 6. Upstream's constants (4, 5) address the wrong kinds and fail with `None`/`EIP1559DecodingError`. |
+| `kona/crates/proof/executor/testdata/*.tar.gz` | Upstream ships OP-chain fixtures. | **Upstream fixtures cannot be used here at all**: their deposits carry the 8-field OP wire format, while Mantle's `TxDeposit` requires `eth_value`, so decoding overflows into `input`. Regenerate against a Mantle chain — see §3.6's `create_static_fixture` note. |
+| `kona/crates/protocol/hardforks/src/{ecotone,fjord,isthmus}.rs` (`test_*_txs_encoded`) | The `.hex` vectors are OP's canonical upgrade-tx bytes. | Mantle's deposits encode one byte longer (an extra `0x80` for `eth_value`), so these can never match. They are `#[ignore]`d: Mantle never emits the OP bundles, and regenerating the vectors would only assert the encoder against itself. |
 
 ### 5.2 Time bombs (need active monitoring)
 
 | Risk | Trigger | Mitigation |
 |---|---|---|
-| **revm major-version bump** | Upstream raises revm to v39+. | Coordinate with mantle-xyz/revm to catch up before syncing, or defer the sync. |
-| **op-revm v19 → v20+ drift widens** | mantle-elysium does not track upstream op-revm. | Let `cargo check` surface the differences and adapt site-by-site (potentially extending the `OpTxTr` impl, adjusting signatures, etc.). |
+| **revm major-version bump** | Upstream raises revm past v41. | Coordinate with `mantle-xyz/revm` to catch up before syncing, or defer the sync. The v1.7.0 sync was only safe because the anchors matched exactly (revm 41 / op-revm 20 / revm-inspectors 0.41 / alloy-evm 0.37 / alloy-op-evm 0.32) — **check this before starting, and stop if it does not hold.** |
+| ~~**op-revm v19 → v20+ drift**~~ | — | **Resolved.** `op-revm` is now the in-tree path crate at v20; there is no external op-revm to drift from. |
+| **Upstream deletes a feature Mantle code hides behind** | e.g. v1.7.0 removed kona-genesis's `revm` feature, which silently `#[cfg]`-ed out `spec_id` / `revm_spec_id` / `mantle_spec_id`. | The only signal was a `unexpected cfg condition value` **warning**. After a sync, grep for that warning and for `#[cfg(feature = ...)]` blocks whose feature no longer exists. |
 | **New OpSpecId variant** | Upstream introduces a new hardfork. | `cargo check` will flag the non-exhaustive match; extend the relevant arm. |
-| **mantle-xyz/revm becomes unreachable** | Network, credentials, or repo permission issues. | Temporarily vendor a copy of mantle-elysium under `mantle-v2/` and switch the patch entries from `git = ...` to `path = ...`. |
-| **Mantle reverts to non-standard blob** | A future Mantle hardfork ships a custom blob format. | Build on top of the upstream `BlobSource`; do not resurrect `MantleBlobSource` (see §3.11 rationale). |
+| **Mantle's EIP-7825 exemption is dropped** | A sync rewrites a `CfgEnv<OpSpecId>` construction site, or upstream adds a new one. | revm is byte-identical to upstream and caps per-transaction gas at 16,777,216 from `SpecId::OSAKA` on, which Mantle's Limb and Arsia both map to. The exemption is `OpSpecId::tx_gas_limit_cap_override`, applied in `alloy-op-evm/src/env.rs::evm_env_for_op`. Every other construction site must reach it through that function — the proof executor does, via `evm_env_for_op_next_block`. A site that builds its own `CfgEnv` and omits the override rejects real Mantle transactions. |
+| **mantle-xyz/revm becomes unreachable** | Network, credentials, or repo permission issues. | Temporarily vendor a copy of the patched branch under `mantle-v2/` and switch the patch entries from `git = ...` to `path = ...`. |
+| **Mantle reverts to non-standard blob** | A future Mantle hardfork ships a custom blob format. | Build on top of the upstream `BlobSource`; do not resurrect `MantleBlobSource` as-is. Note kona already cannot derive the pre-Arsia range for this reason — that boundary is accepted and documented in §3.11.1, and a new custom format would extend it. |
 
 ## 6. Helper script — batch-patch new TxDeposit literals
 
@@ -442,7 +1404,9 @@ to every struct literal while leaving `impl ... for TxDeposit { ... }` blocks al
 ```python
 #!/usr/bin/env python3
 """Inject eth_value/eth_tx_value into TxDeposit { ... } struct literals.
-Skips `impl SomeTrait for TxDeposit { ... }` impl blocks (preceded by `for `).
+Skips positions that are not struct literals:
+  - `impl SomeTrait for TxDeposit { ... }`  (preceded by `for`)
+  - `fn f() -> TxDeposit { ... }`           (preceded by `->`; the `{` opens the fn body)
 Usage: python3 this.py file1.rs file2.rs ...
 """
 import sys
@@ -456,11 +1420,14 @@ for path in sys.argv[1:]:
         if idx == -1:
             out.append(content[i:])
             break
-        # Skip impl blocks: look back over whitespace for the keyword `for`.
+        # Look back over whitespace at what precedes the type name.
         k = idx - 1
         while k >= 0 and content[k] in ' \t\n':
             k -= 1
-        if k >= 2 and content[k-2:k+1] == 'for' and (k - 3 < 0 or content[k-3] in ' \t\n'):
+        is_impl = k >= 2 and content[k-2:k+1] == 'for' and (k - 3 < 0 or content[k-3] in ' \t\n')
+        # `-> TxDeposit {` is a return type; the brace opens the fn body, not a literal.
+        is_ret = k >= 1 and content[k-1:k+1] == '->'
+        if is_impl or is_ret:
             out.append(content[i:idx + len('TxDeposit {')])
             i = idx + len('TxDeposit {')
             continue
@@ -495,9 +1462,20 @@ Example:
 python3 /tmp/fix.py rust/kona/crates/protocol/hardforks/src/new_fork.rs
 ```
 
-**Caveat**: the script defaults the fields to `0` / `None`, which is correct for OP
-upgrade transactions (no BVM_ETH semantics). If a new hardfork introduces literals that
-*do* carry BVM_ETH values, patch them manually instead.
+**Caveats**
+
+- The script defaults the fields to `0` / `None`, which is correct for OP upgrade transactions
+  (no BVM_ETH semantics). If a new hardfork introduces literals that *do* carry BVM_ETH values,
+  patch them manually instead.
+- **The `->` skip above was added in the v1.7.0 sync after the script corrupted `lagoon.rs`.**
+  The earlier version only skipped `for TxDeposit {`, so on a file containing
+  `fn set_feature_tx() -> TxDeposit {` it brace-tracked to the *function's* closing brace and
+  inserted the fields **outside** the struct literal — a syntax error. `lagoon.rs` has two such
+  functions. Always eyeball the diff, and confirm the file still parses.
+- `grep -c 'TxDeposit {'` over-counts: it also matches return types and impl headers. To count
+  real literals use `grep -E 'TxDeposit \{' f.rs | grep -vE '(->|for)\s*TxDeposit \{'`.
+- A literal that ends in `..Default::default()` needs no patch; a naive
+  "literal count vs `eth_value` count" check will report those as missing.
 
 ## 7. Maintaining this file
 

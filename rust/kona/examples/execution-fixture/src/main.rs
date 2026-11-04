@@ -144,22 +144,23 @@ async fn main() -> Result<()> {
             .join("crates/proof/executor/testdata")
     };
 
-    let rollup_config = match cli.rollup_config_path.as_deref() {
-        Some(path) => {
-            info!(path = %path.display(), "Loading rollup config from --rollup-config-path");
-            Some(load_rollup_config_from_file(path).with_context(|| {
-                format!("Failed to load rollup config from {}", path.display())
-            })?)
-        }
-        None => {
-            warn!(
-                "No --rollup-config-path / ROLLUP_CONFIG_PATH supplied — falling back to the \
+    let rollup_config =
+        match cli.rollup_config_path.as_deref() {
+            Some(path) => {
+                info!(path = %path.display(), "Loading rollup config from --rollup-config-path");
+                Some(load_rollup_config_from_file(path).with_context(|| {
+                    format!("Failed to load rollup config from {}", path.display())
+                })?)
+            }
+            None => {
+                warn!(
+                    "No --rollup-config-path / ROLLUP_CONFIG_PATH supplied — falling back to the \
                 hardcoded mock_rollup_config (testnet chain 1115511107). Real runs should pass \
                 a real config."
-            );
-            None
-        }
-    };
+                );
+                None
+            }
+        };
 
     let mut stats = BlockExecutionStats::new();
 

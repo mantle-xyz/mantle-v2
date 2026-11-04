@@ -1,0 +1,370 @@
+[
+  {
+    "name": "debug_traceCall_jsTracer_bigInt_radixCtor",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      },
+      "latest",
+      {
+        "tracer": "{step:function(log,db){},fault:function(log,db){},result:function(ctx,db){return [bigInt('ff',16).toString(),bigInt('2386f26fc10000',16).toString(),bigInt('0',16).toString(),bigInt('de0b6b3a7640000',16).toString(16),bigInt('-ff',16).toString(),bigInt('101',2).toString(),bigInt('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',16).toString(16),bigInt('ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',16).add(1).toString(16)].join(',');}}"
+      }
+    ],
+    "description": "bigInt(str, radix) parses hex, binary and 256-bit values like geth's BigInteger.js; reth used to expose a native BigInt without these methods"
+  },
+  {
+    "name": "debug_traceCall_jsTracer_bigInt_addSubtract",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      },
+      "latest",
+      {
+        "tracer": "{step:function(log,db){},fault:function(log,db){},result:function(ctx,db){var s=bigInt(0);for(var i=1;i<=10;i++){s=s.add(i);}var t=bigInt(100);return [s.toString(),t.add(5).toString(),t.subtract(5).toString(),t.toString(),t.add(bigInt(23)).subtract(bigInt(3)).toString(),bigInt('1000000000000000000').add('2000000000000000000').toString(),bigInt(5).subtract(8).toString()].join(',');}}"
+      }
+    ],
+    "description": "bigInt add/subtract accept numbers, strings and bigInts, including negative results; reth used to expose a native BigInt without these methods"
+  },
+  {
+    "name": "debug_traceCall_jsTracer_bigInt_extendedApi",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      },
+      "latest",
+      {
+        "tracer": "{step:function(log,db){},fault:function(log,db){},result:function(ctx,db){return [bigInt(6).multiply(7).toString(),bigInt(100).divide(7).toString(),bigInt(100).mod(7).toString(),bigInt(2).pow(64).toString(),bigInt(5).compare(7),bigInt(5).compare(5),bigInt(5).compare(3),bigInt(0).isZero(),bigInt(1).isZero(),bigInt(-5).abs().toString(),bigInt(5).negate().toString(),bigInt(1).greater(0),bigInt(1).lesser(0),bigInt(1).notEquals(2),bigInt(10).shiftLeft(8).toString(16),bigInt(4096).shiftRight(4).toString(16),bigInt(255).toString(2),bigInt(42).toJSNumber(),bigInt('123456789012345678901234567890').add('1').toString(),JSON.stringify({a:bigInt(5)})].join(',');}}"
+      }
+    ],
+    "description": "BigInteger.js arithmetic, comparison and predicate methods used by geth-era tracers; reth used to expose a native BigInt without these methods"
+  },
+  {
+    "name": "debug_traceCall_jsTracer_bigInt_prestateLegacyShape",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      },
+      "latest",
+      {
+        "tracer": "{step:function(log,db){},fault:function(log,db){},result:function(ctx,db){var prestate={'0xaaa':{balance:'0x2386f26fc10000'},'0xbbb':{balance:'0xde0b6b3a7640000'}};var fromBal=bigInt(prestate['0xaaa'].balance.slice(2),16);var toBal=bigInt(prestate['0xbbb'].balance.slice(2),16);var value=bigInt('16345785d8a0000',16);return ['0x'+toBal.subtract(value).toString(16),'0x'+fromBal.add(value).add(21000*1000000000).toString(16)].join(',');}}"
+      }
+    ],
+    "description": "Balance arithmetic in the shape of geth's legacy prestate tracer, on constants; reth used to expose a native BigInt without these methods"
+  },
+  {
+    "name": "debug_traceCall_jsTracer_bigInt_stackPeekChain",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "data": "0x600260030150"
+      },
+      "latest",
+      {
+        "tracer": "{res:null,step:function(log,db){if(log.op.toString()=='ADD'){this.res=[log.stack.peek(0).toString(),log.stack.peek(1).toString(),log.stack.peek(0).add(log.stack.peek(1)).toString(),log.stack.peek(0).subtract(log.stack.peek(1)).toString(),log.stack.peek(0).multiply(log.stack.peek(1)).toString()].join(',');}},fault:function(log,db){},result:function(ctx,db){return this.res;}}"
+      }
+    ],
+    "description": "stack.peek() values support add/subtract/multiply"
+  },
+  {
+    "name": "debug_traceCall_jsTracer_bigInt_stackPeekU256Max",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "data": "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff50"
+      },
+      "latest",
+      {
+        "tracer": "{res:null,step:function(log,db){if(log.op.toString()=='POP'){var v=log.stack.peek(0);this.res=[v.toString(16),v.add(1).toString(16),v.isZero(),v.compare(0),v.divide(bigInt('ff',16)).toString(16)].join(',');}},fault:function(log,db){},result:function(ctx,db){return this.res;}}"
+      }
+    ],
+    "description": "stack.peek() of 2^256-1 supports add, isZero, compare and divide"
+  },
+  {
+    "name": "debug_traceCall_jsTracer_bigInt_ctxValueChain",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "data": "0x600260030150",
+        "value": "0x0"
+      },
+      "latest",
+      {
+        "tracer": "{v:null,step:function(log,db){if(this.v===null){this.v=log.contract.getValue().add(1).toString();}},fault:function(log,db){},result:function(ctx,db){return [ctx.value.toString(),ctx.value.add(1).toString(),ctx.value.equals(0),this.v,db.getBalance(toAddress('00000000000000000000000000000000deadbeef')).add(7).toString()].join(',');}}"
+      }
+    ],
+    "description": "ctx.value, contract.getValue() and db.getBalance() return bigInts with BigInteger.js methods"
+  },
+  {
+    "name": "debug_traceCall_jsTracer_getCost_currentOpcode",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "data": "0x600160015500"
+      },
+      "latest",
+      {
+        "tracer": "{costs:[],step:function(log){this.costs.push(log.op.toString()+':'+log.getCost())},fault:function(){},result:function(){return this.costs}}"
+      }
+    ],
+    "description": "log.getCost() reports the cost of the opcode being stepped, not the previous one"
+  },
+  {
+    "name": "debug_traceCall_jsTracer_fault_invalidJump",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "data": "0x60ff56"
+      },
+      "latest",
+      {
+        "tracer": "{n:0,e:null,step:function(){},fault:function(log){this.n++;this.e=log.getError()},result:function(){return {faults:this.n,err:this.e}}}"
+      }
+    ],
+    "description": "The fault hook runs once with geth's error phrase for this execution error"
+  },
+  {
+    "name": "debug_traceCall_jsTracer_fault_returnDataOutOfBounds",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "data": "0x6020600060003e"
+      },
+      "latest",
+      {
+        "tracer": "{n:0,e:null,step:function(){},fault:function(log){this.n++;this.e=log.getError()},result:function(){return {faults:this.n,err:this.e}}}"
+      }
+    ],
+    "description": "The fault hook runs once with geth's error phrase for this execution error"
+  },
+  {
+    "name": "debug_traceCall_jsTracer_fault_revert",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "data": "0x60006000fd"
+      },
+      "latest",
+      {
+        "tracer": "{n:0,e:null,step:function(){},fault:function(log){this.n++;this.e=log.getError()},result:function(){return {faults:this.n,err:this.e}}}"
+      }
+    ],
+    "description": "The fault hook runs once with geth's error phrase for this execution error"
+  },
+  {
+    "name": "debug_traceCall_jsTracer_memorySlice_zeroPad",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "data": "0x600160015500"
+      },
+      "latest",
+      {
+        "tracer": "{r:null,step:function(log){if(this.r!==null)return;try{this.r='len='+log.memory.slice(0,32).length}catch(e){this.r='threw: '+e}},fault:function(){},result:function(){return this.r}}"
+      }
+    ],
+    "description": "memory.slice() past the end of memory returns zero-padded bytes instead of throwing"
+  },
+  {
+    "name": "debug_traceCall_jsTracer_enter_selfdestructFrame",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "to": "0x00000000000000000000000000000000000000aa",
+        "gas": "0x186a0"
+      },
+      "latest",
+      {
+        "tracer": "{f:[],step:function(){},fault:function(){},enter:function(fr){this.f.push(fr.getType()+' from='+toHex(fr.getFrom())+' to='+toHex(fr.getTo()))},exit:function(){},result:function(){return this.f}}",
+        "stateOverrides": {
+          "0x00000000000000000000000000000000000000aa": {
+            "code": "0x7300000000000000000000000000000000000000ccff",
+            "balance": "0x1"
+          }
+        }
+      }
+    ],
+    "description": "SELFDESTRUCT enters a frame from the destroyed contract to the beneficiary"
+  },
+  {
+    "name": "debug_traceCall_jsTracer_ctxTo_failedCreate",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "data": "0x60006000fd",
+        "gas": "0x186a0"
+      },
+      "latest",
+      {
+        "tracer": "{step:function(){},fault:function(){},result:function(ctx){return {to:toHex(ctx.to),err:ctx.error,type:ctx.type}}}"
+      }
+    ],
+    "description": "ctx.to of a reverted contract creation is the would-be contract address"
+  },
+  {
+    "name": "debug_traceCall_jsTracer_getRefund_transactionWide",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "to": "0x00000000000000000000000000000000000000aa",
+        "gas": "0x186a0"
+      },
+      "latest",
+      {
+        "tracer": "{r:[],step:function(log){this.r.push(log.getDepth()+':'+log.op.toString()+':'+log.getRefund())},fault:function(){},result:function(){return this.r}}",
+        "stateOverrides": {
+          "0x00000000000000000000000000000000000000aa": {
+            "code": "0x6000600055600060006000600060007300000000000000000000000000000000000000bb61fffff100",
+            "stateDiff": {
+              "0x0000000000000000000000000000000000000000000000000000000000000000": "0x0000000000000000000000000000000000000000000000000000000000000001"
+            }
+          },
+          "0x00000000000000000000000000000000000000bb": {
+            "code": "0x600060005500",
+            "stateDiff": {
+              "0x0000000000000000000000000000000000000000000000000000000000000000": "0x0000000000000000000000000000000000000000000000000000000000000001"
+            }
+          }
+        }
+      }
+    ],
+    "description": "log.getRefund() reports the transaction-wide refund counter, including refunds from outer frames"
+  },
+  {
+    "name": "debug_traceCall_muxTracer_callTracer_rootFrame",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "to": "0x0000000000000000000000000000000000000001",
+        "gas": "0x61a8"
+      },
+      "latest",
+      {
+        "tracer": "muxTracer",
+        "tracerConfig": {
+          "callTracer": {}
+        }
+      }
+    ],
+    "description": "A callTracer wrapped in muxTracer reports the transaction gas limit as the root gas, as it does standalone"
+  },
+  {
+    "name": "debug_traceCall_muxTracer_4byteTracer_emptyConfig",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "to": "0x0000000000000000000000000000000000000001"
+      },
+      "latest",
+      {
+        "tracer": "muxTracer",
+        "tracerConfig": {
+          "4byteTracer": {}
+        }
+      }
+    ],
+    "description": "muxTracer accepts an empty config for 4byteTracer, which takes no config"
+  },
+  {
+    "name": "debug_traceCall_muxTracer_callTracer_nullConfig",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "to": "0x0000000000000000000000000000000000000001",
+        "gas": "0x30d40"
+      },
+      "latest",
+      {
+        "tracer": "muxTracer",
+        "tracerConfig": {
+          "callTracer": null
+        }
+      }
+    ],
+    "description": "muxTracer treats a null sub-tracer config as the default config"
+  },
+  {
+    "name": "debug_traceTransaction_muxTracer_callTracer_4byte",
+    "method": "debug_traceTransaction",
+    "params": [
+      "{{latest_tx_hash}}",
+      {
+        "tracer": "muxTracer",
+        "tracerConfig": {
+          "callTracer": {
+            "onlyTopCall": true
+          },
+          "4byteTracer": {}
+        }
+      }
+    ],
+    "description": "muxTracer combining callTracer and 4byteTracer; latest_tx_hash is the latest block's first transaction, the L1-info deposit on OP Stack"
+  },
+  {
+    "name": "debug_traceCall_jsTracer_ctxError_outOfGas",
+    "method": "debug_traceCall",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "to": "0x4200000000000000000000000000000000000015",
+        "data": "0x5cf24969",
+        "gas": "0x52d0"
+      },
+      "latest",
+      {
+        "tracer": "{step:function(){},fault:function(){},result:function(ctx){return ctx.error}}"
+      }
+    ],
+    "description": "ctx.error of a halted call is geth's phrase, not a Rust type name"
+  },
+  {
+    "name": "debug_traceTransaction_flatCallTracer_latest",
+    "method": "debug_traceTransaction",
+    "params": [
+      "{{latest_tx_hash}}",
+      {
+        "tracer": "flatCallTracer"
+      }
+    ],
+    "description": "flatCallTracer reports the transaction's gas used as the root gasUsed, matching callTracer; traced on the latest block's first transaction, the L1-info deposit on OP Stack"
+  },
+  {
+    "name": "debug_traceTransaction_muxTracer_flatCallTracer_latest",
+    "method": "debug_traceTransaction",
+    "params": [
+      "{{latest_tx_hash}}",
+      {
+        "tracer": "muxTracer",
+        "tracerConfig": {
+          "flatCallTracer": {}
+        }
+      }
+    ],
+    "description": "flatCallTracer inside muxTracer reports the same transaction-level root as standalone; traced on the latest block's L1-info deposit"
+  }
+]

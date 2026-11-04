@@ -1,0 +1,194 @@
+[
+  {
+    "name": "eth_chainId",
+    "method": "eth_chainId",
+    "params": [],
+    "description": "Get the chain ID"
+  },
+  {
+    "name": "eth_blockNumber",
+    "method": "eth_blockNumber",
+    "params": [],
+    "description": "Get the latest block number"
+  },
+  {
+    "name": "eth_gasPrice",
+    "method": "eth_gasPrice",
+    "params": [],
+    "description": "Get the current gas price"
+  },
+  {
+    "name": "eth_protocolVersion",
+    "method": "eth_protocolVersion",
+    "params": [],
+    "description": "Get the protocol version"
+  },
+  {
+    "name": "eth_coinbase",
+    "method": "eth_coinbase",
+    "params": [],
+    "description": "Get the coinbase address"
+  },
+  {
+    "name": "eth_mining",
+    "method": "eth_mining",
+    "params": [],
+    "description": "Check whether mining is active"
+  },
+  {
+    "name": "eth_hashrate",
+    "method": "eth_hashrate",
+    "params": [],
+    "description": "Get the mining hashrate"
+  },
+  {
+    "name": "eth_accounts",
+    "method": "eth_accounts",
+    "params": [],
+    "description": "Get the account list"
+  },
+  {
+    "name": "eth_maxPriorityFeePerGas",
+    "method": "eth_maxPriorityFeePerGas",
+    "params": [],
+    "description": "Get the suggested maxPriorityFeePerGas"
+  },
+  {
+    "name": "eth_blobBaseFee",
+    "method": "eth_blobBaseFee",
+    "params": [],
+    "description": "Get the blob base fee (EIP-4844)"
+  },
+  {
+    "name": "net_version",
+    "method": "net_version",
+    "params": [],
+    "description": "Get the network version"
+  },
+  {
+    "name": "net_listening",
+    "method": "net_listening",
+    "params": [],
+    "description": "Check whether the node is listening"
+  },
+  {
+    "name": "net_peerCount",
+    "method": "net_peerCount",
+    "params": [],
+    "description": "Get the peer count"
+  },
+  {
+    "name": "web3_clientVersion",
+    "method": "web3_clientVersion",
+    "params": [],
+    "description": "Get the client version"
+  },
+  {
+    "name": "web3_sha3",
+    "method": "web3_sha3",
+    "params": ["0x68656c6c6f20776f726c64"],
+    "description": "Compute a Keccak-256 hash"
+  },
+  {
+    "name": "web3_sha3_hello",
+    "method": "web3_sha3",
+    "params": ["0x68656c6c6f"],
+    "description": "Compute Keccak-256 of 'hello'"
+  },
+  {
+    "name": "web3_sha3_empty",
+    "method": "web3_sha3",
+    "params": ["0x"],
+    "description": "Compute Keccak-256 of the empty string"
+  },
+  {
+    "name": "rpc_modules",
+    "method": "rpc_modules",
+    "params": [],
+    "description": "Get the available RPC modules"
+  },
+  {
+    "name": "eth_syncing",
+    "method": "eth_syncing",
+    "params": [],
+    "description": "Get the synchronization status"
+  },
+  {
+    "name": "eth_fillTransaction_minimal",
+    "method": "eth_fillTransaction",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000001",
+        "value": "0x0"
+      }
+    ],
+    "description": "Fill transaction parameters (requires a from address)"
+  },
+  {
+    "name": "eth_fillTransaction_with_from",
+    "method": "eth_fillTransaction",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000001",
+        "value": "0x0"
+      }
+    ],
+    "description": "Fill transaction parameters with a from address"
+  },
+  {
+    "name": "eth_sign_invalid_account",
+    "method": "eth_sign",
+    "params": [
+      "0x0000000000000000000000000000000000000000",
+      "0x68656c6c6f"
+    ],
+    "description": "Sign a message (may fail if the account is locked)"
+  },
+  {
+    "name": "eth_signTransaction_invalid",
+    "method": "eth_signTransaction",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "to": "0x0000000000000000000000000000000000000001",
+        "value": "0x0"
+      }
+    ],
+    "description": "Sign a transaction (may fail if the account is locked)"
+  },
+  {
+    "name": "eth_simulateV1_simple",
+    "method": "eth_simulateV1",
+    "params": [
+      {
+        "transactions": [
+          {
+            "to": "0x0000000000000000000000000000000000000000",
+            "data": "0x"
+          }
+        ]
+      },
+      "latest"
+    ],
+    "description": "Simulate a simple transaction execution with object parameters"
+  },
+  {
+    "name": "eth_simulateV1_with_value",
+    "method": "eth_simulateV1",
+    "params": [
+      {
+        "transactions": [
+          {
+            "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+            "to": "0x0000000000000000000000000000000000000001",
+            "value": "0x1"
+          }
+        ]
+      },
+      "latest"
+    ],
+    "description": "Simulate transaction execution with value and object parameters"
+  }
+]

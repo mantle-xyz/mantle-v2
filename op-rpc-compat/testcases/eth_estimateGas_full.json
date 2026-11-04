@@ -1,0 +1,583 @@
+[
+  {
+    "name": "eth_estimateGas_minimal",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      }
+    ],
+    "description": "Minimal parameters: only the to address"
+  },
+  {
+    "name": "eth_estimateGas_with_from",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000"
+      }
+    ],
+    "description": "Specify the from address"
+  },
+  {
+    "name": "eth_estimateGas_with_value_zero",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "value": "0x0"
+      }
+    ],
+    "description": "Value is zero"
+  },
+  {
+    "name": "eth_estimateGas_with_value_nonzero",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "value": "0xde0b6b3a7640000"
+      }
+    ],
+    "description": "Value is 1 ETH (requires sufficient from balance)"
+  },
+  {
+    "name": "eth_estimateGas_with_data_empty",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      }
+    ],
+    "description": "Empty data"
+  },
+  {
+    "name": "eth_estimateGas_with_data_short",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x12345678"
+      }
+    ],
+    "description": "Short data (4 bytes)"
+  },
+  {
+    "name": "eth_estimateGas_with_data_long",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+      }
+    ],
+    "description": "Long data (32 bytes)"
+  },
+  {
+    "name": "eth_estimateGas_with_gas",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x5208"
+      }
+    ],
+    "description": "Specify gas limit"
+  },
+  {
+    "name": "eth_estimateGas_with_gasPrice",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gasPrice": "0x2540be400"
+      }
+    ],
+    "description": "Specify gasPrice (10 gwei, legacy)"
+  },
+  {
+    "name": "eth_estimateGas_with_maxFeePerGas",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "maxFeePerGas": "0x2540be400"
+      }
+    ],
+    "description": "Specify maxFeePerGas (10 gwei, EIP-1559)"
+  },
+  {
+    "name": "eth_estimateGas_with_maxPriorityFeePerGas",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "maxFeePerGas": "0x2540be400",
+        "maxPriorityFeePerGas": "0x3b9aca00"
+      }
+    ],
+    "description": "Specify maxFeePerGas and maxPriorityFeePerGas"
+  },
+  {
+    "name": "eth_estimateGas_all_legacy_params",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x5208",
+        "gasPrice": "0x3b9aca00",
+        "value": "0x0",
+        "data": "0x"
+      }
+    ],
+    "description": "All parameters (legacy)"
+  },
+  {
+    "name": "eth_estimateGas_all_eip1559_params",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x5208",
+        "maxFeePerGas": "0x77359400",
+        "maxPriorityFeePerGas": "0x3b9aca00",
+        "value": "0x0",
+        "data": "0x"
+      }
+    ],
+    "description": "All parameters (EIP-1559)"
+  },
+  {
+    "name": "eth_estimateGas_with_block_latest",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "latest"
+    ],
+    "description": "Specify block: latest"
+  },
+  {
+    "name": "eth_estimateGas_with_block_pending",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "pending"
+    ],
+    "description": "Specify block: pending"
+  },
+  {
+    "name": "eth_estimateGas_with_block_earliest",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "earliest"
+    ],
+    "description": "Specify block: earliest"
+  },
+  {
+    "name": "eth_estimateGas_with_block_safe",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "safe"
+    ],
+    "description": "Specify block: safe"
+  },
+  {
+    "name": "eth_estimateGas_with_block_finalized",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "finalized"
+    ],
+    "description": "Specify block: finalized"
+  },
+  {
+    "name": "eth_estimateGas_with_block_number",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000"
+      },
+      "0x1"
+    ],
+    "description": "Specify block number: 0x1"
+  },
+  {
+    "name": "eth_estimateGas_simple_transfer",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "value": "0x1"
+      }
+    ],
+    "description": "Simple ETH transfer (should use 21000 gas)"
+  },
+  {
+    "name": "eth_estimateGas_precompile_ecrecover",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000001",
+        "data": "0x"
+      }
+    ],
+    "description": "Precompiled contract: ecrecover"
+  },
+  {
+    "name": "eth_estimateGas_precompile_sha256",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000002",
+        "data": "0x68656c6c6f"
+      }
+    ],
+    "description": "Precompiled contract: sha256"
+  },
+  {
+    "name": "eth_estimateGas_precompile_identity",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000004",
+        "data": "0x68656c6c6f"
+      }
+    ],
+    "description": "Precompiled contract: identity"
+  },
+  {
+    "name": "eth_estimateGas_contract_creation",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "data": "0x6080604052348015600f57600080fd5b50603f80601d6000396000f3fe6080604052600080fdfea264697066735822122000000000000000000000000000000000000000000000000000000000000000000064736f6c63430008130033"
+      }
+    ],
+    "description": "Contract creation (null to)"
+  },
+  {
+    "name": "eth_estimateGas_with_accessList_empty",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "accessList": []
+      }
+    ],
+    "description": "EIP-2930: empty accessList"
+  },
+  {
+    "name": "eth_estimateGas_with_accessList_single",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "accessList": [
+          {
+            "address": "0x0000000000000000000000000000000000000001",
+            "storageKeys": []
+          }
+        ]
+      }
+    ],
+    "description": "EIP-2930: accessList with one address"
+  },
+  {
+    "name": "eth_estimateGas_with_accessList_with_storage",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "accessList": [
+          {
+            "address": "0x0000000000000000000000000000000000000001",
+            "storageKeys": [
+              "0x0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          }
+        ]
+      }
+    ],
+    "description": "EIP-2930: accessList with storageKeys"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gas_zero",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x0"
+      }
+    ],
+    "description": "Boundary: gas is zero"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gas_3000",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0xbb8"
+      }
+    ],
+    "description": "Boundary: gas is 3000 (below intrinsic gas)"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gas_20000",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x4e20"
+      }
+    ],
+    "description": "Boundary: gas is 20000 (just below 21000)"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gas_21000",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x5208"
+      }
+    ],
+    "description": "Boundary: gas is 21000 (exactly intrinsic gas)"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gas_100000",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x186a0"
+      }
+    ],
+    "description": "Boundary: gas is 100000 (moderate value)"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gas_1000000",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0xf4240"
+      }
+    ],
+    "description": "Boundary: gas is 1000000"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gas_max",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x1c9c380"
+      }
+    ],
+    "description": "Boundary: gas is 30000000 (block gas limit)"
+  },
+  {
+    "name": "error_eth_estimateGas_value_overflow",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "value": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }
+    ],
+    "description": "Error case: value is max uint256 (insufficient balance)"
+  },
+  {
+    "name": "eth_estimateGas_boundary_gasPrice_zero",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gasPrice": "0x0"
+      }
+    ],
+    "description": "Boundary: gasPrice is zero"
+  },
+  {
+    "name": "error_eth_estimateGas_insufficient_balance",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000001",
+        "to": "0x0000000000000000000000000000000000000002",
+        "value": "0xde0b6b3a7640000"
+      }
+    ],
+    "description": "Error case: insufficient balance"
+  },
+  {
+    "name": "eth_estimateGas_with_stateOverride",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+      },
+      "latest",
+      {
+        "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266": {
+          "balance": "0xde0b6b3a7640000"
+        }
+      }
+    ],
+    "description": "State override: change balance"
+  },
+  {
+    "name": "eth_estimateGas_balance_gate_maxfee_with_data",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x1111111111111111111111111111111111111111",
+        "to": "0x2222222222222222222222222222222222222222",
+        "data": "0xa9059cbb0000000000000000000000003333333333333333333333333333333333333333000000000000000000000000000000000000000000000000000000000000000a",
+        "maxFeePerGas": "0xe8d4a51000",
+        "maxPriorityFeePerGas": "0x3b9aca00"
+      },
+      "latest",
+      {
+        "0x1111111111111111111111111111111111111111": {
+          "balance": "0x5af3107a4000"
+        }
+      }
+    ],
+    "description": "Balance gate (contract call with data): override balance is 0.0001 ETH and maxFeePerGas is 1000 gwei, so allowance=balance/maxFee=100<intrinsic gas. Both geth and reth should report gas required exceeds allowance (100). Geth divides by maxFeePerGas; upstream reth divides by effective fee (min(maxFee, baseFee+tip)), overestimating the allowance. This is the target of the fix."
+  },
+  {
+    "name": "eth_estimateGas_balance_gate_maxfee_basic_transfer",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x1111111111111111111111111111111111111111",
+        "to": "0x4444444444444444444444444444444444444444",
+        "maxFeePerGas": "0xe8d4a51000",
+        "maxPriorityFeePerGas": "0x3b9aca00"
+      },
+      "latest",
+      {
+        "0x1111111111111111111111111111111111111111": {
+          "balance": "0x5af3107a4000"
+        }
+      }
+    ],
+    "description": "Balance gate (basic ETH transfer): override balance is 0.0001 ETH and maxFeePerGas is 1000 gwei, so allowance=100<21000. Both geth and reth should report gas required exceeds allowance (100). Upstream reth instead returns 21000 via its basic-transfer fast path, which skips the balance check when fee charging is disabled. The fix makes the fast path respect the balance gate."
+  },
+  {
+    "name": "eth_estimateGas_stateoverride_arsia_funds_honors_override",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x1111111111111111111111111111111111111111",
+        "to": "0x2222222222222222222222222222222222222222",
+        "value": "0x0",
+        "maxFeePerGas": "0x3b9aca00"
+      },
+      "latest",
+      {
+        "0x1111111111111111111111111111111111111111": {
+          "balance": "0x3635c9adc5dea00000"
+        }
+      }
+    ],
+    "description": "State override provides sufficient balance (1000 ETH) for a fee-bearing estimate. Geth applies the override and returns 0x5208. Reth's Mantle Arsia post-estimation funds check reads on-chain state via state_by_block_id and ignores the override, incorrectly returning -32602 insufficient funds for gas + L1 data fee + operator fee. Reth's core estimate_gas_with reads the overridden balance through db.basic and estimates 21000, while the later check reads the actual zero balance. This is a reth bug in the Arsia funds check."
+  },
+  {
+    "name": "eth_estimateGas_stateoverride_value_precheck_honors_override",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x1111111111111111111111111111111111111111",
+        "to": "0x2222222222222222222222222222222222222222",
+        "value": "0x1",
+        "maxFeePerGas": "0x3b9aca00"
+      },
+      "latest",
+      {
+        "0x1111111111111111111111111111111111111111": {
+          "balance": "0x3635c9adc5dea00000"
+        }
+      }
+    ],
+    "description": "State override provides sufficient balance (1000 ETH) with value=1 and fees. Geth applies the override, accepts value(1)<balance, and returns 0x5208. Reth's Mantle value precheck reads the on-chain zero balance from the provider, ignores the override, and incorrectly returns -32602 'failed with N gas: insufficient funds for transfer'. This is a reth bug in the value precheck."
+  },
+  {
+    "name": "eth_estimateGas_subintrinsic_gas_contract_call",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x01020304",
+        "gas": "0xbb8"
+      }
+    ],
+    "description": "Non-basic call with data and user-supplied gas=3000 (<intrinsic gas). Geth ignores the too-low gas value, estimates with the block limit as the upper bound, and returns the actual estimate. Reth before #83 executes with gas=3000 and reports 'gas required exceeds allowance (3000)'. After the #83 sub-intrinsic gas floor fix, reth should match geth by ignoring the too-low gas. No fees are specified, so the Arsia and value prechecks are not triggered."
+  },
+  {
+    "name": "eth_estimateGas_blob_exposure_exceeds_allowance",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x1111111111111111111111111111111111111111",
+        "to": "0x2222222222222222222222222222222222222222",
+        "value": "0x0",
+        "maxFeePerGas": "0xe8d4a51000",
+        "maxFeePerBlobGas": "0x3b9aca00",
+        "blobVersionedHashes": [
+          "0x0100000000000000000000000000000000000000000000000000000000000001"
+        ]
+      },
+      "latest",
+      {
+        "0x1111111111111111111111111111111111111111": {
+          "balance": "0xd228a47a4000"
+        }
+      }
+    ],
+    "description": "P3 blob exposure: override balance = 100*maxFee + blobFee (131072*maxFeePerBlobGas). Geth and fixed reth subtract blob exposure before calculating allowance, yielding allowance=100 and 'gas required exceeds allowance (100)' / -32000 on both sides. Without the blob deduction, pre-fix reth calculates 231; this case verifies the deduction."
+  },
+  {
+    "name": "eth_estimateGas_fee_max_exceeds_allowance",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x1111111111111111111111111111111111111111",
+        "to": "0x2222222222222222222222222222222222222222",
+        "value": "0x0",
+        "maxFeePerGas": "0x7fffffffffffffffffffffffffffffff"
+      },
+      "latest",
+      {
+        "0x1111111111111111111111111111111111111111": {
+          "balance": "0xde0b6b3a7640000"
+        }
+      }
+    ],
+    "description": "FEE_MAX: very large maxFeePerGas (~1.7e38) and override balance of 1 ETH give balance/maxFee=0. Both sides should return 'gas required exceeds allowance (0)' / -32000. The maxFee allowance gate from #81 catches this earlier than the Arsia post-check, avoiding -32602 and matching geth exactly."
+  }
+]
