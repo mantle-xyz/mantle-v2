@@ -27,8 +27,8 @@ pub use ecotone::Ecotone;
 mod isthmus;
 pub use isthmus::Isthmus;
 
-mod interop;
-pub use interop::Interop;
+mod lagoon;
+pub use lagoon::Lagoon;
 
 mod jovian;
 pub use jovian::Jovian;
@@ -39,6 +39,10 @@ pub use karst::Karst;
 // [MANTLE] Arsia hardfork (Mantle protocol) + MantleHardforks registry.
 mod arsia;
 pub use arsia::Arsia;
+
+// [MANTLE] Skadi deploys EIP-4788 + EIP-2935 with Mantle-specific source hashes.
+mod skadi;
+pub use skadi::Skadi;
 
 mod mantle_forks;
 pub use mantle_forks::MantleHardforks;

@@ -1,0 +1,86 @@
+[
+  {
+    "name": "invalid_method",
+    "method": "eth_invalidMethod",
+    "params": [],
+    "description": "Call a nonexistent method"
+  },
+  {
+    "name": "invalid_block_tag",
+    "method": "eth_getBlockByNumber",
+    "params": ["invalid", false],
+    "description": "Invalid block tag"
+  },
+  {
+    "name": "invalid_hex_number",
+    "method": "eth_getBlockByNumber",
+    "params": ["0xGGG", false],
+    "description": "Invalid hexadecimal number"
+  },
+  {
+    "name": "missing_required_param",
+    "method": "eth_getBalance",
+    "params": [],
+    "description": "Missing required parameter"
+  },
+  {
+    "name": "wrong_param_count",
+    "method": "eth_getBlockByNumber",
+    "params": ["0x1"],
+    "description": "Too few parameters"
+  },
+  {
+    "name": "invalid_address_format",
+    "method": "eth_getBalance",
+    "params": ["not_an_address", "latest"],
+    "description": "Invalid address format"
+  },
+  {
+    "name": "invalid_address_length",
+    "method": "eth_getBalance",
+    "params": ["0x123", "latest"],
+    "description": "Incorrect address length"
+  },
+  {
+    "name": "future_block",
+    "method": "eth_getBlockByNumber",
+    "params": ["0xffffffff", false],
+    "description": "Request a future block"
+  },
+  {
+    "name": "eth_call_revert",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0xffffffff"
+      },
+      "latest"
+    ],
+    "description": "Call that may revert"
+  },
+  {
+    "name": "eth_estimateGas_oog",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "gas": "0x1",
+        "data": "0x"
+      }
+    ],
+    "description": "Estimate gas with insufficient gas"
+  },
+  {
+    "name": "null_to_address",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": null,
+        "data": "0x"
+      },
+      "latest"
+    ],
+    "description": "Null destination address (contract creation)"
+  }
+]

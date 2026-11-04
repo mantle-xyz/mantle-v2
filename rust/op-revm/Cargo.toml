@@ -18,31 +18,43 @@ workspace = true
 
 [dependencies]
 # revm
-revm.workspace = true
+revm = { workspace = true, features = ["serde"] }
 auto_impl.workspace = true
+alloy-sol-types.workspace = true
 
 # Optional
 serde = { workspace = true, features = ["derive", "rc"], optional = true }
 
 [dev-dependencies]
+# op-alloy
+# `[MANTLE]` test-only: the `#[cfg(test)]` `catch_error_tests` matrix needs `OpTxType` (for the
+# SDM `PostExec` arm). Neither upstream op-revm 20.0.0 nor Mantle's shipped
+# `v107-mantle-arsia.1` declares this crate at all, so keeping it out of `[dependencies]`
+# matches both. Same treatment as sha2 / serde_json / alloy-primitives below, which are
+# likewise dev-only yet referenced from the `std` feature list.
+op-alloy-consensus = { workspace = true }
 rstest.workspace = true
 alloy-sol-types.workspace = true
+anyhow.workspace = true
 sha2.workspace = true
 serde_json = { workspace = true, features = ["alloc", "preserve_order"] }
 serde = { workspace = true, features = ["derive"] }
 alloy-primitives.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "process"] }
+tempfile = "3.10"
 
 [features]
 default = ["std", "c-kzg", "secp256k1", "portable", "blst"]
 std = [
 	"serde?/std",
 	"revm/std",
+	"op-alloy-consensus/std",
 	"alloy-sol-types/std",
 	"sha2/std",
 	"serde_json/std",
 	"alloy-primitives/std",
 ]
-serde = ["dep:serde", "revm/serde", "alloy-primitives/serde"]
+serde = ["dep:serde", "revm/serde", "alloy-primitives/serde", "op-alloy-consensus/serde"]
 portable = ["revm/portable"]
 
 dev = [

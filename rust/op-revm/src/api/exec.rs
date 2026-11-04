@@ -1,7 +1,11 @@
 //! Implementation of the [`ExecuteEvm`] trait for the [`OpEvm`].
+//!
+//! Every upstream API impl below must also be checked for newly defaulted trait methods.
 use crate::{
-    L1BlockInfo, OpHaltReason, OpSpecId, OpTransactionError, evm::OpEvm, handler::OpHandler,
-    transaction::OpTxTr,
+    L1BlockInfo, OpHaltReason, OpSpecId, OpTransactionError,
+    evm::OpEvm,
+    handler::OpHandler,
+    transaction::{OpTxTr, bvm_eth::JournalColdExt},
 };
 use revm::{
     DatabaseCommit, ExecuteCommitEvm, ExecuteEvm,
@@ -25,7 +29,7 @@ use revm::{
 /// Type alias for Optimism context
 pub trait OpContextTr:
     ContextTr<
-        Journal: JournalTr<State = EvmState>,
+        Journal: JournalTr<State = EvmState> + JournalColdExt,
         Tx: OpTxTr,
         Cfg: Cfg<Spec = OpSpecId>,
         Chain = L1BlockInfo,
@@ -35,7 +39,7 @@ pub trait OpContextTr:
 
 impl<T> OpContextTr for T where
     T: ContextTr<
-            Journal: JournalTr<State = EvmState>,
+            Journal: JournalTr<State = EvmState> + JournalColdExt,
             Tx: OpTxTr,
             Cfg: Cfg<Spec = OpSpecId>,
             Chain = L1BlockInfo,
@@ -46,6 +50,10 @@ impl<T> OpContextTr for T where
 /// Type alias for the error type of the `OpEvm`.
 pub type OpError<CTX> = EVMError<<<CTX as ContextTr>::Db as Database>::Error, OpTransactionError>;
 
+/// UPSTREAM-MIRROR(copy): revm-handler@41.0.0 `revm_handler::api::ExecuteEvm`
+///
+/// Copies upstream's `ExecuteEvm` implementation with `OpHandler` substituted for
+/// `MainnetHandler`. Re-diff the bodies when the upstream implementation changes.
 impl<CTX, INSP, PRECOMPILE> ExecuteEvm
     for OpEvm<CTX, INSP, EthInstructions<EthInterpreter, CTX>, PRECOMPILE>
 where
@@ -83,6 +91,9 @@ where
     }
 }
 
+/// UPSTREAM-MIRROR(copy): revm-handler@41.0.0 `revm_handler::api::ExecuteCommitEvm`
+///
+/// Copies the upstream commit implementation for the OP EVM.
 impl<CTX, INSP, PRECOMPILE> ExecuteCommitEvm
     for OpEvm<CTX, INSP, EthInstructions<EthInterpreter, CTX>, PRECOMPILE>
 where
@@ -94,6 +105,9 @@ where
     }
 }
 
+/// UPSTREAM-MIRROR(copy): revm-inspector@41.0.0 `revm_inspector::mainnet_inspect::InspectEvm`
+///
+/// Copies the upstream inspector implementation with `OpHandler`.
 impl<CTX, INSP, PRECOMPILE> InspectEvm
     for OpEvm<CTX, INSP, EthInstructions<EthInterpreter, CTX>, PRECOMPILE>
 where
@@ -114,6 +128,9 @@ where
     }
 }
 
+/// UPSTREAM-MIRROR(copy): revm-inspector@41.0.0 `revm_inspector::mainnet_inspect::InspectCommitEvm`
+///
+/// Mirrors the upstream marker implementation for inspector commits.
 impl<CTX, INSP, PRECOMPILE> InspectCommitEvm
     for OpEvm<CTX, INSP, EthInstructions<EthInterpreter, CTX>, PRECOMPILE>
 where
@@ -123,6 +140,9 @@ where
 {
 }
 
+/// UPSTREAM-MIRROR(copy): revm-handler@41.0.0 `revm_handler::system_call::SystemCallEvm`
+///
+/// Copies upstream system-call setup with `OpHandler`.
 impl<CTX, INSP, PRECOMPILE> SystemCallEvm
     for OpEvm<CTX, INSP, EthInstructions<EthInterpreter, CTX>, PRECOMPILE>
 where
@@ -145,6 +165,10 @@ where
     }
 }
 
+/// UPSTREAM-MIRROR(copy): revm-inspector@41.0.0
+/// `revm_inspector::mainnet_inspect::InspectSystemCallEvm`
+///
+/// Copies upstream inspected system-call setup with `OpHandler`.
 impl<CTX, INSP, PRECOMPILE> InspectSystemCallEvm
     for OpEvm<CTX, INSP, EthInstructions<EthInterpreter, CTX>, PRECOMPILE>
 where
