@@ -42,6 +42,9 @@ func runTests() error {
 	if txStandardOnly && !txTest {
 		return fmt.Errorf("--tx-standard-only requires --tx")
 	}
+	if txScenario != "" && !txTest {
+		return fmt.Errorf("--tx-scenario requires --tx")
+	}
 	if diffPolicy != "accepted" && diffPolicy != "strict" {
 		return fmt.Errorf("unknown diff policy %q", diffPolicy)
 	}
@@ -289,6 +292,26 @@ func runTransactionTests(clients *rpc.ClientPair, baselineMeta, targetMeta repor
 	}
 
 	var results []*tx.TxTestResult
+
+	if txScenario != "" {
+		if txScenario != "type0-prefix" {
+			return fmt.Errorf("unknown --tx-scenario %q (supported: type0-prefix)", txScenario)
+		}
+		result := testType0PrefixedLegacyRejection(ctx, tester)
+		printTxTestResult(result)
+		failed := recordTransactionResults(reporter, []*tx.TxTestResult{result})
+		reporter.PrintSummary()
+		if outputFile != "" {
+			if err := reporter.SaveJSON(outputFile); err != nil {
+				return fmt.Errorf("save report: %w", err)
+			}
+			fmt.Printf("\nReport saved to: %s\n", outputFile)
+		}
+		if failed > 0 || reporter.HasFailures() {
+			os.Exit(1)
+		}
+		return nil
+	}
 
 	txTypes := []tx.TxType{tx.TxTypeLegacy, tx.TxTypeEIP1559}
 
@@ -1168,6 +1191,8 @@ func runRejectionTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResul
 	)
 	results = append(results, result)
 
+	results = append(results, testType0PrefixedLegacyRejection(ctx, tester))
+
 	result = tester.TestTxpoolAcceptance(
 		ctx,
 		"txpool_accepts_eip155_legacy_tx",
@@ -1207,4 +1232,36 @@ func runRejectionTests(ctx context.Context, tester *tx.Tester) []*tx.TxTestResul
 	results = append(results, result)
 
 	return results
+}
+
+// testType0PrefixedLegacyRejection covers alloy#4197: a legacy transaction
+// carrying an explicit 0x00 type prefix is not a valid typed envelope. op-geth
+// rejects it; a decoder that accepts it admits a transaction the baseline
+// refuses. The empty substring accepts any rejection text, so only the
+// accept/reject decision is compared. The gas price is far above any devnet
+// base fee, so the rejection cannot be an underpriced-transaction error.
+func testType0PrefixedLegacyRejection(ctx context.Context, tester *tx.Tester) *tx.TxTestResult {
+	return tester.TestRawTxpoolRejection(
+		ctx,
+		"txpool_rejects_type0_prefixed_legacy_tx",
+		func(nonce uint64) ([]byte, error) {
+			recipient := common.HexToAddress("0x0000000000000000000000000000000000000001")
+			signed, err := tester.Builder().BuildAndSign(tx.TxTypeLegacy, &tx.TxParams{
+				Nonce:    nonce,
+				GasPrice: big.NewInt(1e13),
+				Gas:      21000,
+				To:       &recipient,
+				Value:    big.NewInt(1),
+			})
+			if err != nil {
+				return nil, err
+			}
+			legacyRLP, err := signed.MarshalBinary() // a legacy tx encodes as plain RLP
+			if err != nil {
+				return nil, err
+			}
+			return append([]byte{0x00}, legacyRLP...), nil
+		},
+		"",
+	)
 }

@@ -36,6 +36,7 @@ var (
 	txRecipient        string // standard transaction recipient
 	txRecipientPreconf string // allowlisted preconfirmation recipient
 	txAmount           string // transfer amount in wei
+	txScenario         string // run only this transaction scenario
 )
 
 var rootCmd = &cobra.Command{
@@ -132,5 +133,6 @@ func init() {
 	rootCmd.Flags().StringVar(&txRecipient, "tx-recipient", "0x70997970c51812dc3a010c7d01b50e0d17dc79c8", "Recipient for standard transactions")
 	// The preconfirmation recipient must be in txpool.topreconfs.
 	rootCmd.Flags().StringVar(&txRecipientPreconf, "tx-recipient-preconf", "0x71920E3cb420fbD8Ba9a495E6f801c50375ea127", "Allowlisted recipient for preconfirmation transactions")
+	rootCmd.Flags().StringVar(&txScenario, "tx-scenario", "", "Run only one transaction scenario (requires --tx; supported: type0-prefix)")
 	rootCmd.Flags().StringVar(&txAmount, "tx-amount", "1000000000000000", "Transfer amount in wei (default 0.001 ETH)")
 }

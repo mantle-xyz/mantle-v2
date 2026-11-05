@@ -960,6 +960,23 @@ func (t *Tester) TestTxpoolRejection(
 	buildTx func(nonce uint64) (*types.Transaction, error),
 	expectedErrSubstring string,
 ) *TxTestResult {
+	return t.TestRawTxpoolRejection(ctx, testName, func(nonce uint64) ([]byte, error) {
+		signedTx, err := buildTx(nonce)
+		if err != nil {
+			return nil, err
+		}
+		return signedTx.MarshalBinary()
+	}, expectedErrSubstring)
+}
+
+// TestRawTxpoolRejection is TestTxpoolRejection for callers that need to
+// control the exact wire bytes, for example a malformed type prefix.
+func (t *Tester) TestRawTxpoolRejection(
+	ctx context.Context,
+	testName string,
+	buildRaw func(nonce uint64) ([]byte, error),
+	expectedErrSubstring string,
+) *TxTestResult {
 	result := &TxTestResult{
 		TestName: testName,
 		TxType:   "rejection",
@@ -972,15 +989,9 @@ func (t *Tester) TestTxpoolRejection(
 		return result
 	}
 
-	signedTx, err := buildTx(nonce)
+	rawTx, err := buildRaw(nonce)
 	if err != nil {
 		result.Error = fmt.Sprintf("build transaction: %v", err)
-		return result
-	}
-
-	rawTx, err := signedTx.MarshalBinary()
-	if err != nil {
-		result.Error = fmt.Sprintf("encode transaction: %v", err)
 		return result
 	}
 

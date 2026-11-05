@@ -1,0 +1,5 @@
+[
+  {"name":"t10_estimateTotalFee_arsia_boundary_before","method":"eth_estimateTotalFee","params":[{"from":"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266","to":"0x70997970C51812dc3A010C7d01b50e0d17dc79C8","value":"0x1"},"0x12b"],"description":"NOT a token-ratio test: eth_estimateTotalFee at block 299 around the Arsia activation block 300"},
+  {"name":"t10_estimateTotalFee_arsia_boundary_arsia_block","method":"eth_estimateTotalFee","params":[{"from":"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266","to":"0x70997970C51812dc3A010C7d01b50e0d17dc79C8","value":"0x1"},"0x12c"],"description":"NOT a token-ratio test: eth_estimateTotalFee at block 300 around the Arsia activation block 300"},
+  {"name":"t10_estimateTotalFee_arsia_boundary_after","method":"eth_estimateTotalFee","params":[{"from":"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266","to":"0x70997970C51812dc3A010C7d01b50e0d17dc79C8","value":"0x1"},"0x12d"],"description":"NOT a token-ratio test: eth_estimateTotalFee at block 301 around the Arsia activation block 300"}
+]
