@@ -13,6 +13,91 @@ import { Encoding } from "src/libraries/Encoding.sol";
 import { Types } from "src/libraries/Types.sol";
 import { Predeploys } from "src/libraries/Predeploys.sol";
 
+contract L2CrossDomainMessenger_WithdrawalLimits_Test is Messenger_Initializer {
+    address internal constant RECIPIENT = address(0xabbaacdc);
+
+    function _maxMinGas(bytes memory _message) internal view returns (uint32) {
+        uint256 dataLength = 260 + ((_message.length + 31) / 32) * 32;
+        uint256 available = 15_000_000 - 16 * dataLength - L2Messenger.baseGas(_message, 0);
+        // Largest m for which floor(64 * m / 63) <= available.
+        return uint32(((available + 1) * 63 - 1) / 64);
+    }
+
+    function _send(bytes memory _message, uint32 _minGas, bool _withEthArgument) internal {
+        vm.prank(alice);
+        if (_withEthArgument) {
+            L2Messenger.sendMessage(0, RECIPIENT, _message, _minGas);
+        } else {
+            L2Messenger.sendMessage(RECIPIENT, _message, _minGas);
+        }
+    }
+
+    function test_sendMessage_withdrawalLimits_boundary() external {
+        assertEq(L2Messenger.MAX_WITHDRAWAL_GAS_LIMIT(), 15_000_000);
+        assertEq(L2Messenger.MAX_WITHDRAWAL_DATA_LENGTH(), 90_000);
+        uint256 messengerNonce = L2Messenger.messageNonce();
+        uint256 passerNonce = messagePasser.messageNonce();
+        uint256[2] memory sizes = [uint256(0), 89_728];
+        for (uint256 i; i < sizes.length; ++i) {
+            bytes memory message = new bytes(sizes[i]);
+            uint32 minGas = _maxMinGas(message);
+            for (uint256 j; j < 2; ++j) {
+                _send(message, minGas, j == 1);
+                vm.expectRevert("L2CrossDomainMessenger: gas limit too high");
+                _send(message, minGas + 1, j == 1);
+            }
+        }
+        assertEq(L2Messenger.messageNonce(), messengerNonce + 4);
+        assertEq(messagePasser.messageNonce(), passerNonce + 4);
+    }
+
+    function test_sendMessage_gasLimitTooHigh_reverts() external {
+        uint32[2] memory limits = [uint32(15_300_000), type(uint32).max];
+        for (uint256 i; i < limits.length; ++i) {
+            vm.expectRevert("L2CrossDomainMessenger: gas limit too high");
+            _send(hex"", limits[i], false);
+            vm.expectRevert("L2CrossDomainMessenger: gas limit too high");
+            _send(hex"", limits[i], true);
+        }
+    }
+
+    function test_sendMessage_messageTooLarge_reverts() external {
+        uint256[2] memory sizes = [uint256(89_729), 300_000];
+        for (uint256 i; i < sizes.length; ++i) {
+            bytes memory message = new bytes(sizes[i]);
+            vm.expectRevert("L2CrossDomainMessenger: message too large");
+            _send(message, 0, false);
+            vm.expectRevert("L2CrossDomainMessenger: message too large");
+            _send(message, 0, true);
+        }
+    }
+
+    function test_sendMessage_rejectedWithdrawal_rollsBackAssets() external {
+        deal(address(l2ETH), alice, 100, true);
+        vm.prank(alice);
+        l2ETH.approve(address(L2Messenger), 100);
+        uint256 supply = l2ETH.totalSupply();
+        uint256 balance = alice.balance;
+        uint256 messengerNonce = L2Messenger.messageNonce();
+        uint256 passerNonce = messagePasser.messageNonce();
+        for (uint256 i; i < 2; ++i) {
+            bytes memory message = new bytes(i == 0 ? 0 : 89_729);
+            bytes memory reason = bytes(
+                i == 0 ? "L2CrossDomainMessenger: gas limit too high" : "L2CrossDomainMessenger: message too large"
+            );
+            vm.expectRevert(reason);
+            vm.prank(alice);
+            L2Messenger.sendMessage{ value: 100 }(100, RECIPIENT, message, 15_300_000);
+            assertEq(l2ETH.balanceOf(alice), 100);
+            assertEq(l2ETH.allowance(alice, address(L2Messenger)), 100);
+            assertEq(l2ETH.totalSupply(), supply);
+            assertEq(alice.balance, balance);
+        }
+        assertEq(L2Messenger.messageNonce(), messengerNonce);
+        assertEq(messagePasser.messageNonce(), passerNonce);
+    }
+}
+
 contract L2CrossDomainMessenger_Test is Messenger_Initializer {
     // Receiver address for testing
     address recipient = address(0xabbaacdc);

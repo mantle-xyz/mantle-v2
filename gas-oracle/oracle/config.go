@@ -6,12 +6,13 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/ethereum-optimism/optimism/gas-oracle/flags"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
-
 	"github.com/urfave/cli/v2"
+
+	"github.com/ethereum-optimism/optimism/gas-oracle/flags"
+	"github.com/ethereum-optimism/optimism/op-service/hsm"
 )
 
 // Config represents the configuration options for the gas oracle
@@ -35,6 +36,13 @@ type Config struct {
 	HsmAPIName string
 	HsmCreden  string
 	HsmAddress string
+	// HsmProvider selects the managed key backend ("gcp" when empty, or "aws-kms").
+	HsmProvider string
+	// AWSKMSKeyID is the full AWS KMS key ARN used with the aws-kms provider.
+	AWSKMSKeyID string
+	// privateKeySet records whether a private key was configured, so that
+	// conflicting signer settings can be rejected even when hsm is enabled.
+	privateKeySet bool
 	// Metrics config
 	MetricsEnabled bool
 	MetricsHTTP    string
@@ -58,10 +66,22 @@ func NewConfig(ctx *cli.Context) *Config {
 	cfg.HsmAddress = ctx.String(flags.HsmAddressFlag.Name)
 	cfg.HsmAPIName = ctx.String(flags.HsmAPINameFlag.Name)
 	cfg.HsmCreden = ctx.String(flags.HsmCredenFlag.Name)
+	cfg.HsmProvider = ctx.String(flags.HsmProviderFlag.Name)
+	cfg.AWSKMSKeyID = ctx.String(flags.AWSKMSKeyIDFlag.Name)
+	// Use the value, not ctx.IsSet: IsSet is true whenever the env var exists, even when
+	// it is explicitly set to an empty string to disable the private key.
+	cfg.privateKeySet = strings.TrimSpace(ctx.String(flags.PrivateKeyFlag.Name)) != ""
+
+	// Validate the signer selection before the private key handling below, so that an
+	// incomplete AWS KMS configuration (e.g. ENABLE_HSM missing) is reported with the
+	// AWS KMS error instead of the generic "No private key configured".
+	if err := cfg.CheckSigner(); err != nil {
+		log.Crit("Invalid signer config", "err", err)
+	}
 
 	if cfg.EnableHsm {
 		log.Info("gasoracle", "enableHsm", cfg.EnableHsm,
-			"hsmAddress", cfg.HsmAddress)
+			"hsmAddress", cfg.HsmAddress, "hsmProvider", cfg.HsmProvider)
 	} else {
 		if ctx.IsSet(flags.PrivateKeyFlag.Name) {
 			hex := ctx.String(flags.PrivateKeyFlag.Name)
@@ -99,4 +119,26 @@ func NewConfig(ctx *cli.Context) *Config {
 	cfg.MetricsPort = ctx.Int(flags.MetricsPortFlag.Name)
 
 	return &cfg
+}
+
+func (c *Config) hsmSelection() hsm.SelectionConfig {
+	return hsm.SelectionConfig{
+		EnableHsm:             c.EnableHsm,
+		Provider:              c.HsmProvider,
+		AWSKMSKeyID:           c.AWSKMSKeyID,
+		HsmAddress:            c.HsmAddress,
+		HsmAPIName:            c.HsmAPIName,
+		HsmCreden:             c.HsmCreden,
+		OtherSignerConfigured: c.privateKeySet || c.PrivateKey != nil,
+	}
+}
+
+// useAWSKMS reports whether the AWS KMS signer is selected.
+func (c *Config) useAWSKMS() bool {
+	return c.hsmSelection().UseAWSKMS()
+}
+
+// CheckSigner validates the signer selection, rejecting conflicting settings.
+func (c *Config) CheckSigner() error {
+	return c.hsmSelection().Check()
 }
