@@ -137,6 +137,9 @@ impl L1Config {
             // holds, i.e. from Arsia until Elysium, and only when the L1 is Ethereum mainnet.
             // Do not re-null these — that would make the Elysium activation a no-op.
             osaka_time: alloy_hardforks::EthereumHardfork::Osaka.mainnet_activation_timestamp(),
+            // [MANTLE] REVM41-PIN: `bogota_time` sits before `amsterdam_time` in all four configs;
+            // upstream v1.8.0 adds the same field after it. Keep exactly one per config — the
+            // v1.8.0 auto-merge produced a duplicate field without a conflict marker.
             bogota_time: None,
             amsterdam_time: None,
             bpo1_time: alloy_hardforks::EthereumHardfork::Bpo1.mainnet_activation_timestamp(),

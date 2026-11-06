@@ -36,12 +36,7 @@ pub struct TxDeposit {
     /// Field indicating if this transaction is exempt from the L2 gas limit.
     #[cfg_attr(
         feature = "serde",
-        serde(
-            default,
-            with = "alloy_serde::quantity",
-            rename = "isSystemTx",
-            skip_serializing_if = "core::ops::Not::not"
-        )
+        serde(default, rename = "isSystemTx", skip_serializing_if = "core::ops::Not::not")
     )]
     pub is_system_transaction: bool,
     /// `[MANTLE]` `BVM_ETH`: ETH value to mint on L2 (0 = no mint). Added by the

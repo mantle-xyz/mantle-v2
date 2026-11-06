@@ -46,5 +46,11 @@
     "method": "eth_call",
     "params": [{"to": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"}, "latest", {"0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266": {"stateDiff": {"0x0000000000000000000000000000000000000000000000000000000000000000": "0x0000000000000000000000000000000000000000000000000000000000000001"}}}],
     "description": "stateOverride: modify storage incrementally (stateDiff)"
-      }
+      },
+  {
+    "name": "eth_call_between_50m_and_60m_gas",
+    "method": "eth_call",
+    "params": [{"from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "to": "0x000000000000000000000000000000000000dEaD", "gas": "0x3473bc0"}, "latest", {"0x000000000000000000000000000000000000dEaD": {"code": "0x621e84805b600190038060045700"}}],
+    "description": "A state override puts a 2,000,000-iteration loop (about 52M gas) at the target, and the call sends 55M gas. Mantle's block gas limit is 60M, so the RPC gas cap must not stop the call short of it: both sides should finish and return 0x."
+  }
 ]

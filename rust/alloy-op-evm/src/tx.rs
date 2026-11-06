@@ -80,6 +80,14 @@ impl OpTxEnv for OpTx {
     }
 }
 
+/// UPSTREAM-MIRROR(delegate): revm-context-interface@41.0.0 `revm_context_interface::Transaction`
+///
+/// Forwards the required getters and `effective_gas_price` to the inner `OpTransaction<TxEnv>`,
+/// which overrides `tx_type` and `effective_gas_price` for deposits. The remaining defaulted
+/// methods (`max_fee_per_gas`, `total_blob_gas`, `calc_max_data_fee` and the balance-spending
+/// helpers) are inherited from the trait and derive from the forwarded getters. On each bump
+/// check for a new defaulted method that `OpTransaction<T>` overrides and forward it too;
+/// `kona/bin/client/src/fpvm_evm/tx.rs` duplicates this impl and needs the same edit.
 impl revm::context::Transaction for OpTx {
     type AccessListItem<'a>
         = <OpTransaction<TxEnv> as revm::context::Transaction>::AccessListItem<'a>
@@ -134,6 +142,9 @@ impl revm::context::Transaction for OpTx {
     }
     fn max_priority_fee_per_gas(&self) -> Option<u128> {
         self.0.max_priority_fee_per_gas()
+    }
+    fn effective_gas_price(&self, base_fee: u128) -> u128 {
+        self.0.effective_gas_price(base_fee)
     }
 }
 
@@ -300,7 +311,7 @@ impl TransactionEnvMut for OpTx {
     }
 
     fn set_access_list(&mut self, access_list: alloy_eips::eip2930::AccessList) {
-        self.0.base.access_list = access_list;
+        self.0.base.set_access_list(access_list);
     }
 }
 
@@ -308,10 +319,31 @@ impl TransactionEnvMut for OpTx {
 mod tests {
     use super::*;
     use alloc::vec;
+    use alloy_consensus::TxType;
+    use alloy_eips::eip2930::{AccessList, AccessListItem};
     use op_alloy::consensus::{
-        POST_EXEC_TX_TYPE_ID,
+        DEPOSIT_TX_TYPE_ID, POST_EXEC_TX_TYPE_ID,
         post_exec::{SDMGasEntry, build_post_exec_tx},
     };
+
+    #[test_case::test_case(TxType::Legacy as u8, TxType::Eip2930 as u8; "legacy")]
+    #[test_case::test_case(TxType::Eip2930 as u8, TxType::Eip2930 as u8; "eip2930")]
+    #[test_case::test_case(TxType::Eip1559 as u8, TxType::Eip1559 as u8; "eip1559")]
+    #[test_case::test_case(DEPOSIT_TX_TYPE_ID, DEPOSIT_TX_TYPE_ID; "deposit")]
+    #[test_case::test_case(POST_EXEC_TX_TYPE_ID, POST_EXEC_TX_TYPE_ID; "post_exec")]
+    fn set_access_list_updates_transaction_type(tx_type: u8, expected_type: u8) {
+        let mut tx = OpTx::default();
+        tx.0.base.tx_type = tx_type;
+        let access_list = AccessList(vec![AccessListItem {
+            address: Address::from([0x11; 20]),
+            storage_keys: vec![B256::ZERO],
+        }]);
+
+        tx.set_access_list(access_list.clone());
+
+        assert_eq!(tx.0.base.access_list, access_list);
+        assert_eq!(tx.0.base.tx_type, expected_type);
+    }
 
     #[test]
     fn post_exec_tx_env_reflects_transaction_fields() {

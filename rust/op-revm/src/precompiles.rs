@@ -52,6 +52,10 @@ impl OpPrecompiles {
     }
 }
 
+/// UPSTREAM-MIRROR(set): revm-precompile@41.0.0 `revm_precompile::Precompiles`
+///
+/// Fjord extends the upstream Cancun set with P256 verification. Re-check the
+/// inherited address set and gas parameters on each bump.
 /// Returns precompiles for Fjord spec.
 pub fn fjord() -> &'static Precompiles {
     static INSTANCE: OnceLock<Precompiles> = OnceLock::new();
@@ -63,6 +67,9 @@ pub fn fjord() -> &'static Precompiles {
     })
 }
 
+/// UPSTREAM-MIRROR(set): revm-precompile@41.0.0 `revm_precompile::Precompiles`
+///
+/// Granite replaces the inherited pairing implementation.
 /// Returns precompiles for Granite spec.
 pub fn granite() -> &'static Precompiles {
     static INSTANCE: OnceLock<Precompiles> = OnceLock::new();
@@ -74,6 +81,9 @@ pub fn granite() -> &'static Precompiles {
     })
 }
 
+/// UPSTREAM-MIRROR(set): revm-precompile@41.0.0 `revm_precompile::Precompiles`
+///
+/// Isthmus extends the inherited set with Prague BLS precompiles and OP pricing.
 /// Returns precompiles for isthmus spec.
 ///
 /// `[mantle]` Mantle maps its entire pre-Limb era (Skadi and genesis) to
@@ -97,6 +107,9 @@ pub fn isthmus() -> &'static Precompiles {
     })
 }
 
+/// UPSTREAM-MIRROR(set): revm-precompile@41.0.0 `revm_precompile::Precompiles`
+///
+/// Karst replaces the inherited Osaka-sensitive precompiles.
 /// Returns precompiles for karst spec.
 pub fn karst() -> &'static Precompiles {
     static INSTANCE: OnceLock<Precompiles> = OnceLock::new();
@@ -114,6 +127,9 @@ pub fn karst() -> &'static Precompiles {
     })
 }
 
+/// UPSTREAM-MIRROR(set): revm-precompile@41.0.0 `revm_precompile::Precompiles`
+///
+/// Jovian replaces variable-input precompiles in the inherited set.
 /// Returns precompiles for jovian spec.
 pub fn jovian() -> &'static Precompiles {
     static INSTANCE: OnceLock<Precompiles> = OnceLock::new();
