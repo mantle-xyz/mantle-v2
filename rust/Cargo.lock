@@ -355,6 +355,8 @@ dependencies = [
  "alloy-op-hardforks",
  "alloy-primitives",
  "auto_impl",
+ "metrics",
+ "metrics-util",
  "op-alloy",
  "op-revm",
  "revm",
@@ -4541,6 +4543,7 @@ dependencies = [
  "op-alloy-rpc-types-engine",
  "spin 0.10.0",
  "thiserror 2.0.18",
+ "tokio",
  "tracing",
 ]
 
@@ -6392,6 +6395,7 @@ dependencies = [
  "reth-codecs",
  "reth-codecs-derive",
  "reth-zstd-compressors",
+ "rstest",
  "serde",
  "serde_json",
  "serde_with",
@@ -7660,7 +7664,7 @@ dependencies = [
 [[package]]
 name = "revm"
 version = "41.0.0"
-source = "git+https://github.com/mantle-xyz/revm?branch=dev%2Fmantle-v1.6.3#1903a86a50dde8c8148d8596f0123eadd48af7b7"
+source = "git+https://github.com/mantle-xyz/revm?rev=c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12#c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12"
 dependencies = [
  "revm-bytecode",
  "revm-context",
@@ -7678,7 +7682,7 @@ dependencies = [
 [[package]]
 name = "revm-bytecode"
 version = "41.0.0"
-source = "git+https://github.com/mantle-xyz/revm?branch=dev%2Fmantle-v1.6.3#1903a86a50dde8c8148d8596f0123eadd48af7b7"
+source = "git+https://github.com/mantle-xyz/revm?rev=c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12#c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12"
 dependencies = [
  "bitvec",
  "phf",
@@ -7689,7 +7693,7 @@ dependencies = [
 [[package]]
 name = "revm-context"
 version = "41.0.0"
-source = "git+https://github.com/mantle-xyz/revm?branch=dev%2Fmantle-v1.6.3#1903a86a50dde8c8148d8596f0123eadd48af7b7"
+source = "git+https://github.com/mantle-xyz/revm?rev=c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12#c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12"
 dependencies = [
  "bitvec",
  "cfg-if",
@@ -7705,7 +7709,7 @@ dependencies = [
 [[package]]
 name = "revm-context-interface"
 version = "41.0.0"
-source = "git+https://github.com/mantle-xyz/revm?branch=dev%2Fmantle-v1.6.3#1903a86a50dde8c8148d8596f0123eadd48af7b7"
+source = "git+https://github.com/mantle-xyz/revm?rev=c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12#c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12"
 dependencies = [
  "alloy-eip2930",
  "alloy-eip7702",
@@ -7720,7 +7724,7 @@ dependencies = [
 [[package]]
 name = "revm-database"
 version = "41.0.0"
-source = "git+https://github.com/mantle-xyz/revm?branch=dev%2Fmantle-v1.6.3#1903a86a50dde8c8148d8596f0123eadd48af7b7"
+source = "git+https://github.com/mantle-xyz/revm?rev=c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12#c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12"
 dependencies = [
  "alloy-eips",
  "alloy-provider",
@@ -7738,7 +7742,7 @@ dependencies = [
 [[package]]
 name = "revm-database-interface"
 version = "41.0.0"
-source = "git+https://github.com/mantle-xyz/revm?branch=dev%2Fmantle-v1.6.3#1903a86a50dde8c8148d8596f0123eadd48af7b7"
+source = "git+https://github.com/mantle-xyz/revm?rev=c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12#c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12"
 dependencies = [
  "auto_impl",
  "either",
@@ -7762,7 +7766,7 @@ dependencies = [
 [[package]]
 name = "revm-handler"
 version = "41.0.0"
-source = "git+https://github.com/mantle-xyz/revm?branch=dev%2Fmantle-v1.6.3#1903a86a50dde8c8148d8596f0123eadd48af7b7"
+source = "git+https://github.com/mantle-xyz/revm?rev=c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12#c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12"
 dependencies = [
  "auto_impl",
  "derive-where",
@@ -7780,7 +7784,7 @@ dependencies = [
 [[package]]
 name = "revm-inspector"
 version = "41.0.0"
-source = "git+https://github.com/mantle-xyz/revm?branch=dev%2Fmantle-v1.6.3#1903a86a50dde8c8148d8596f0123eadd48af7b7"
+source = "git+https://github.com/mantle-xyz/revm?rev=c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12#c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12"
 dependencies = [
  "auto_impl",
  "either",
@@ -7815,7 +7819,7 @@ dependencies = [
 [[package]]
 name = "revm-interpreter"
 version = "41.0.0"
-source = "git+https://github.com/mantle-xyz/revm?branch=dev%2Fmantle-v1.6.3#1903a86a50dde8c8148d8596f0123eadd48af7b7"
+source = "git+https://github.com/mantle-xyz/revm?rev=c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12#c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12"
 dependencies = [
  "revm-bytecode",
  "revm-context-interface",
@@ -7827,7 +7831,7 @@ dependencies = [
 [[package]]
 name = "revm-precompile"
 version = "41.0.0"
-source = "git+https://github.com/mantle-xyz/revm?branch=dev%2Fmantle-v1.6.3#1903a86a50dde8c8148d8596f0123eadd48af7b7"
+source = "git+https://github.com/mantle-xyz/revm?rev=c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12#c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12"
 dependencies = [
  "ark-bls12-381",
  "ark-bn254",
@@ -7853,7 +7857,7 @@ dependencies = [
 [[package]]
 name = "revm-primitives"
 version = "41.0.0"
-source = "git+https://github.com/mantle-xyz/revm?branch=dev%2Fmantle-v1.6.3#1903a86a50dde8c8148d8596f0123eadd48af7b7"
+source = "git+https://github.com/mantle-xyz/revm?rev=c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12#c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12"
 dependencies = [
  "alloy-primitives",
  "once_cell",
@@ -7863,7 +7867,7 @@ dependencies = [
 [[package]]
 name = "revm-state"
 version = "41.0.0"
-source = "git+https://github.com/mantle-xyz/revm?branch=dev%2Fmantle-v1.6.3#1903a86a50dde8c8148d8596f0123eadd48af7b7"
+source = "git+https://github.com/mantle-xyz/revm?rev=c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12#c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12"
 dependencies = [
  "alloy-eip7928",
  "bitflags 2.11.1",

@@ -26,14 +26,22 @@ contract L2CrossDomainMessenger is CrossDomainMessenger, Semver {
     /// @notice Address of the Mantle Token on L1.
     address public immutable L1_MNT_ADDRESS;
 
-    /// @custom:semver 1.6.0
+    /// @notice Maximum withdrawal gas budget, including the per-byte L1 calldata cost.
+    /// @dev Leaves room for Portal finalization below L1's 2^24 transaction gas cap.
+    uint64 public constant MAX_WITHDRAWAL_GAS_LIMIT = 15_000_000;
+
+    /// @notice Maximum encoded relay data length for 128 KiB L1 prove/finalize transactions.
+    /// @dev Leaves room for the storage proof, ABI parameters and a direct type-2 transaction envelope.
+    uint256 public constant MAX_WITHDRAWAL_DATA_LENGTH = 90_000;
+
+    /// @custom:semver 1.7.0
     ///
     /// @param _l1CrossDomainMessenger Address of the L1CrossDomainMessenger contract.
     constructor(
         address _l1CrossDomainMessenger,
         address l1mnt
     )
-        Semver(1, 6, 0)
+        Semver(1, 7, 0)
         CrossDomainMessenger(_l1CrossDomainMessenger)
     {
         L1_MNT_ADDRESS = l1mnt;
@@ -55,6 +63,11 @@ contract L2CrossDomainMessenger is CrossDomainMessenger, Semver {
 
     /// @inheritdoc CrossDomainMessenger
     function _sendMessage(uint256 _ethValue, address _to, uint64 _gasLimit, bytes memory _data) internal override {
+        require(_data.length <= MAX_WITHDRAWAL_DATA_LENGTH, "L2CrossDomainMessenger: message too large");
+        require(
+            uint256(_gasLimit) + _data.length * MIN_GAS_CALLDATA_OVERHEAD <= MAX_WITHDRAWAL_GAS_LIMIT,
+            "L2CrossDomainMessenger: gas limit too high"
+        );
         L2ToL1MessagePasser(payable(Predeploys.L2_TO_L1_MESSAGE_PASSER)).initiateWithdrawal{ value: msg.value }(
             _ethValue, _to, _gasLimit, _data
         );

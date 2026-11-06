@@ -579,5 +579,57 @@
       }
     ],
     "description": "FEE_MAX: very large maxFeePerGas (~1.7e38) and override balance of 1 ETH give balance/maxFee=0. Both sides should return 'gas required exceeds allowance (0)' / -32000. The maxFee allowance gate from #81 catches this earlier than the Arsia post-check, avoiding -32602 and matching geth exactly."
+  },
+  {
+    "name": "eth_estimateGas_block_override_lower_gas_limit",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x4200000000000000000000000000000000000015",
+        "data": "0x8381f58a"
+      },
+      "latest",
+      null,
+      {
+        "gasLimit": "0x186a0"
+      }
+    ],
+    "description": "Block override lowers the block gasLimit to 100000, which still covers the call (L1Block.number()). Both sides should return the same estimate as without the override. A reth that applies block overrides after deriving the search ceiling fails here with 'intrinsic gas too high'."
+  },
+  {
+    "name": "eth_estimateGas_block_override_gas_limit_too_low",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x4200000000000000000000000000000000000015",
+        "data": "0x8381f58a"
+      },
+      "latest",
+      null,
+      {
+        "gasLimit": "0x5dc0"
+      }
+    ],
+    "description": "Block override lowers the block gasLimit to 24000: above the call's intrinsic gas, below what L1Block.number() needs to execute. Both sides should return 'gas required exceeds allowance (24000)' / -32000."
+  },
+  {
+    "name": "eth_estimateGas_out_of_gas_at_the_cap",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+        "to": "0x000000000000000000000000000000000000dEaD",
+        "data": "0x01"
+      },
+      "latest",
+      {
+        "0x000000000000000000000000000000000000dEaD": {
+          "code": "0x5b600056"
+        }
+      }
+    ],
+    "description": "A state override puts an endless loop (JUMPDEST PUSH1 0 JUMP) at the target, so the call runs out of gas at any limit. Both sides should return 'gas required exceeds allowance (<cap>)' / -32000, the cap being the block gas limit."
   }
 ]

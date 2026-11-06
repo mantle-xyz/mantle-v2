@@ -4,6 +4,9 @@
 //! - Transaction codecs: `crates/storage/codecs/src/alloy/transaction/optimism.rs`
 //! - Receipt codecs: `crates/storage/codecs/src/alloy/optimism.rs`
 //!
+//! UPSTREAM-MIRROR(port): reth@v1.11.3 `reth_codecs::alloy::transaction::optimism`
+//! UPSTREAM-MIRROR(port): reth@v1.11.3 `reth_codecs::alloy::optimism`
+//!
 //! Differences from upstream:
 //! - `CompactOpReceipt` uses `Vec<Log>` instead of `Cow<'a, Vec<Log>>` because the crates.io
 //!   `reth-codecs-derive` macro doesn't support lifetime parameters. The wire format is identical;
@@ -255,7 +258,7 @@ mod mantle_txdeposit_compact_tests {
 #[cfg(test)]
 mod mantle_compact_layout_tests {
     use super::*;
-    use alloc::{vec, vec::Vec};
+    use alloc::vec::Vec;
 
     /// Frozen pre-widening mirror. Field order and types must never change.
     #[derive(reth_codecs_derive::Compact)]

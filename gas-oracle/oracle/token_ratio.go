@@ -3,6 +3,7 @@ package oracle
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -19,14 +20,37 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/hsm"
 )
 
-func wrapUpdateTokenRatio(l1Backend bind.ContractTransactor, l2Backend DeployContractBackend, tokenRatio *tokenratio.Client, cfg *Config) (func() error, error) {
+func wrapUpdateTokenRatio(l1Backend bind.ContractTransactor, l2Backend DeployContractBackend, tokenRatio *tokenratio.Client, cfg *Config, awsSigner *hsm.AWSKMSSigner) (func() error, error) {
+	if cfg.L2ChainID == nil {
+		return nil, errNoChainID
+	}
+
+	opts, err := newTransactOpts(cfg, awsSigner)
+	if err != nil {
+		return nil, err
+	}
+	return wrapUpdateTokenRatioWithOpts(l2Backend, tokenRatio, cfg, opts)
+}
+
+// newTransactOpts builds the signing options for the configured backend.
+func newTransactOpts(cfg *Config, awsSigner *hsm.AWSKMSSigner) (*bind.TransactOpts, error) {
 	if cfg.L2ChainID == nil {
 		return nil, errNoChainID
 	}
 
 	var opts *bind.TransactOpts
 	var err error
-	if !cfg.EnableHsm {
+	if cfg.useAWSKMS() {
+		// Never fall through to the GCP branch below when aws-kms is selected.
+		if awsSigner == nil {
+			return nil, errors.New("aws kms signer is not initialized")
+		}
+		opts = &bind.TransactOpts{
+			From:    awsSigner.Address(),
+			Signer:  awsSigner.BindSignerFn(cfg.L2ChainID, hsm.DefaultAWSKMSTimeout),
+			Context: context.Background(),
+		}
+	} else if !cfg.EnableHsm {
 		if cfg.PrivateKey == nil {
 			return nil, errNoPrivateKey
 		}
@@ -69,7 +93,10 @@ func wrapUpdateTokenRatio(l1Backend bind.ContractTransactor, l2Backend DeployCon
 	// Don't send the transaction using the `contract` so that we can inspect
 	// it beforehand
 	opts.NoSend = true
+	return opts, nil
+}
 
+func wrapUpdateTokenRatioWithOpts(l2Backend DeployContractBackend, tokenRatio *tokenratio.Client, cfg *Config, opts *bind.TransactOpts) (func() error, error) {
 	// Create a new contract bindings in scope of the updateL2GasPriceFn
 	// that is returned from this function
 	contract, err := bindings.NewGasPriceOracle(cfg.GasPriceOracleAddress, l2Backend)
