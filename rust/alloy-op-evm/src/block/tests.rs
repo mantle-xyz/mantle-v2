@@ -526,3 +526,147 @@ mod sdm {
         );
     }
 }
+
+/// [MANTLE] The `HoodiBvmUpgrade` write runs in `apply_pre_execution_changes`, keyed on the EVM's
+/// chain id, so every consumer of this executor (reth, kona) applies it.
+mod hoodi_bvm_upgrade_executor {
+    use super::*;
+    use crate::block::hoodi_bvm_upgrade::{
+        BVM_ETH_ADDR, BVM_ETH_CODEHASH, LEGACY_ERC20_MNT_ADDR, LEGACY_ERC20_MNT_CODEHASH,
+    };
+    use alloy_hardforks::{EthereumHardfork, EthereumHardforks};
+    use alloy_op_hardforks::MANTLE_HOODI_CHAIN_ID;
+    use alloy_primitives::Bytes;
+
+    #[derive(Clone, Copy)]
+    struct UpgradeAt(u64);
+
+    impl EthereumHardforks for UpgradeAt {
+        fn ethereum_fork_activation(&self, _: EthereumHardfork) -> ForkCondition {
+            ForkCondition::Never
+        }
+    }
+
+    impl OpHardforks for UpgradeAt {
+        fn op_fork_activation(&self, _: OpHardfork) -> ForkCondition {
+            ForkCondition::Never
+        }
+
+        fn is_mantle_hoodi_bvm_upgrade_active_at_timestamp(&self, timestamp: u64) -> bool {
+            timestamp >= self.0
+        }
+    }
+
+    fn run_pre_execution(chain_id: u64, timestamp: u64) -> State<InMemoryDB> {
+        run_block(chain_id, timestamp, &[]).0
+    }
+
+    /// Runs the pre-execution changes of a block, then a legacy call to each `(to, calldata)`.
+    /// Returns the state and, per call, whether it succeeded and its output.
+    fn run_block(
+        chain_id: u64,
+        timestamp: u64,
+        calls: &[(Address, &[u8])],
+    ) -> (State<InMemoryDB>, Vec<(bool, Bytes)>) {
+        let mut db = State::builder().with_database(InMemoryDB::default()).build();
+        let mut results = Vec::new();
+        {
+            let ctx = Context::mainnet()
+                .with_tx(crate::OpTx(OpTransaction::builder().build_fill()))
+                .with_cfg(CfgEnv::new_with_spec(OpSpecId::BEDROCK))
+                .with_chain(L1BlockInfo::default())
+                .with_db(&mut db)
+                .with_block(BlockEnv { timestamp: U256::from(timestamp), ..Default::default() })
+                .modify_cfg_chained(|cfg| cfg.chain_id = chain_id);
+            let evm: OpEvm<
+                &mut State<InMemoryDB>,
+                NoOpInspector,
+                op_revm::precompiles::OpPrecompiles,
+                crate::OpTx,
+            > = OpEvm::new(ctx.build_op_with_inspector(NoOpInspector {}), false);
+            let receipt_builder = OpAlloyReceiptBuilder::default();
+            let mut executor = OpBlockExecutor::new(
+                evm,
+                OpBlockExecutionCtx::default(),
+                UpgradeAt(100),
+                &receipt_builder,
+            );
+            executor.apply_pre_execution_changes().unwrap();
+            for (nonce, (to, input)) in calls.iter().enumerate() {
+                let tx = recovered_legacy(TxLegacy {
+                    nonce: nonce as u64,
+                    gas_limit: 100_000,
+                    to: alloy_primitives::TxKind::Call(*to),
+                    input: Bytes::copy_from_slice(input),
+                    ..Default::default()
+                });
+                executor
+                    .execute_transaction_with_result_closure(&tx, |res| {
+                        let result = &res.inner.result.result;
+                        results.push((
+                            result.is_success(),
+                            result.output().cloned().unwrap_or_default(),
+                        ));
+                    })
+                    .unwrap();
+            }
+        }
+        (db, results)
+    }
+
+    /// Decodes an ABI-encoded `string` return value.
+    fn abi_string(out: &Bytes) -> String {
+        let len = U256::from_be_slice(&out[32..64]).to::<usize>();
+        String::from_utf8(out[64..64 + len].to_vec()).unwrap()
+    }
+
+    fn code_hash(db: &mut State<InMemoryDB>, addr: Address) -> Option<B256> {
+        db.basic(addr).unwrap().map(|acc| acc.code_hash)
+    }
+
+    #[test]
+    fn writes_code_on_hoodi_at_activation() {
+        let mut db = run_pre_execution(MANTLE_HOODI_CHAIN_ID, 100);
+        assert_eq!(code_hash(&mut db, BVM_ETH_ADDR), Some(BVM_ETH_CODEHASH));
+        assert_eq!(code_hash(&mut db, LEGACY_ERC20_MNT_ADDR), Some(LEGACY_ERC20_MNT_CODEHASH));
+    }
+
+    const SYMBOL: [u8; 4] = [0x95, 0xd8, 0x9b, 0x41];
+    /// `mint(address,uint256)` with zero arguments.
+    const MINT: [u8; 68] = {
+        let mut data = [0u8; 68];
+        data[0] = 0x40;
+        data[1] = 0xc1;
+        data[2] = 0x0f;
+        data[3] = 0x19;
+        data
+    };
+
+    /// Transactions of the activation block already run against the upgraded code.
+    #[test]
+    fn activation_block_transactions_see_upgraded_code() {
+        let calls: [(Address, &[u8]); 3] = [
+            (BVM_ETH_ADDR, &SYMBOL),
+            (LEGACY_ERC20_MNT_ADDR, &SYMBOL),
+            (LEGACY_ERC20_MNT_ADDR, &MINT),
+        ];
+        let (_, results) = run_block(MANTLE_HOODI_CHAIN_ID, 100, &calls);
+        assert!(results[0].0 && results[1].0);
+        assert_eq!(abi_string(&results[0].1), "WETH");
+        assert_eq!(abi_string(&results[1].1), "MNT");
+        assert!(!results[2].0, "BVM_MNT mint must revert after the upgrade");
+
+        // The block before the activation block calls the code-less accounts, which succeeds
+        // with empty output.
+        let (_, results) = run_block(MANTLE_HOODI_CHAIN_ID, 99, &calls);
+        assert!(results.iter().all(|(success, out)| *success && out.is_empty()));
+    }
+
+    #[test]
+    fn no_write_before_activation_or_on_other_chains() {
+        let mut db = run_pre_execution(MANTLE_HOODI_CHAIN_ID, 99);
+        assert_eq!(code_hash(&mut db, LEGACY_ERC20_MNT_ADDR), None);
+        let mut db = run_pre_execution(5003, 100);
+        assert_eq!(code_hash(&mut db, LEGACY_ERC20_MNT_ADDR), None);
+    }
+}
