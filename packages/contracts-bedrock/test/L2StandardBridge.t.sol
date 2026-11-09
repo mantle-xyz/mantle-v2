@@ -373,6 +373,25 @@ contract PreBridgeERC20To is Bridge_Initializer {
 }
 
 contract L2StandardBridge_BridgeERC20To_Test is PreBridgeERC20To {
+    function test_bridgeERC20To_gasLimitTooHigh_reverts() external {
+        vm.prank(address(L2Bridge));
+        L2Token.mint(alice, 100);
+        uint256 supply = L2Token.totalSupply();
+        uint256 messengerNonce = L2Messenger.messageNonce();
+        uint256 passerNonce = messagePasser.messageNonce();
+
+        // The bridge burns before calling Messenger. Rejection must undo the burn.
+        vm.expectCall(address(L2Token), abi.encodeCall(OptimismMintableERC20.burn, (alice, 100)));
+        vm.expectRevert("L2CrossDomainMessenger: gas limit too high");
+        vm.prank(alice, alice);
+        L2Bridge.bridgeERC20To(address(L2Token), address(L1Token), bob, 100, 15_300_000, hex"");
+
+        assertEq(L2Token.balanceOf(alice), 100);
+        assertEq(L2Token.totalSupply(), supply);
+        assertEq(L2Messenger.messageNonce(), messengerNonce);
+        assertEq(messagePasser.messageNonce(), passerNonce);
+    }
+
     // withdrawTo
     // - token is burned
     // - emits WithdrawalInitiated w/ correct recipient

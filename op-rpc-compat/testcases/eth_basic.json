@@ -190,5 +190,29 @@
       "latest"
     ],
     "description": "Simulate transaction execution with value and object parameters"
+  },
+  {
+    "name": "eth_simulateV1_default_block_time",
+    "method": "eth_simulateV1",
+    "params": [
+      {
+        "blockStateCalls": [
+          {
+            "calls": [
+              {
+                "from": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+                "to": "0x4200000000000000000000000000000000000015",
+                "data": "0x8381f58a"
+              }
+            ]
+          },
+          {
+            "calls": []
+          }
+        ]
+      },
+      "latest"
+    ],
+    "description": "Two simulated blocks without a time override, so both sides fill in default timestamps. op-geth steps each simulated block 12 seconds past its parent; the timestamps and everything derived from them should match."
   }
 ]

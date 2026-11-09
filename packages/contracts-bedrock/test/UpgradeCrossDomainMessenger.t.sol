@@ -179,6 +179,30 @@ contract UpgradeCrossDomainMessenger_Test is Test {
         l2Script.verify(block.chainid, address(admin), L2_PROXY, candidate);
     }
 
+    function test_prepareUpgrade_l2MissingWithdrawalFix_reverts() external {
+        address old = admin.getProxyImplementation(L2_PROXY);
+        address candidate = address(new L2CrossDomainMessenger(l1Proxy, token));
+        vm.mockCall(candidate, abi.encodeWithSignature("version()"), abi.encode("1.6.0"));
+        vm.expectRevert("MessengerUpgrade: wrong version");
+        l2Script.prepareUpgrade(block.chainid, address(admin), L2_PROXY, candidate);
+        vm.clearMockedCalls();
+
+        vm.mockCall(candidate, abi.encodeWithSignature("MAX_WITHDRAWAL_DATA_LENGTH()"), abi.encode(uint256(100_000)));
+        vm.expectRevert("MessengerUpgrade: wrong withdrawal data length");
+        l2Script.prepareUpgrade(block.chainid, address(admin), L2_PROXY, candidate);
+        vm.clearMockedCalls();
+
+        // Also reject builds with the expected version but without either new getter.
+        string[2] memory getters = ["MAX_WITHDRAWAL_GAS_LIMIT()", "MAX_WITHDRAWAL_DATA_LENGTH()"];
+        for (uint256 i; i < getters.length; ++i) {
+            vm.mockCallRevert(candidate, abi.encodeWithSignature(getters[i]), hex"");
+            vm.expectRevert();
+            l2Script.prepareUpgrade(block.chainid, address(admin), L2_PROXY, candidate);
+            vm.clearMockedCalls();
+        }
+        assertEq(admin.getProxyImplementation(L2_PROXY), old);
+    }
+
     function test_upgrade_alreadyUpgraded_reverts() external {
         address candidate = l2Script.run(block.chainid, address(admin), L2_PROXY);
         vm.expectRevert("MessengerUpgrade: already upgraded");

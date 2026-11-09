@@ -376,7 +376,11 @@ reth-trie = { git = "https://github.com/op-rs/reth", rev = "aef8d3ef92117f91455e
 reth-trie-common = { git = "https://github.com/op-rs/reth", rev = "aef8d3ef92117f91455e16969f0adf5bf7c6e9e1", default-features = false }
 reth-trie-db = { git = "https://github.com/op-rs/reth", rev = "aef8d3ef92117f91455e16969f0adf5bf7c6e9e1" }
 
-# ==================== REVM (redirected to mantle-xyz/revm @ branch dev/mantle-v1.6.3 via [patch.crates-io]; declared versions track upstream to satisfy transitive constraints) ====================
+# [MANTLE] REVM41-PIN: revm / alloy-evm / revm-inspectors / alloy-dyn-abi / alloy-sol-* / alloy-*
+# stay below kona-client/v1.8.0's pins (revm 42.0.1, alloy-evm 0.38, revm-inspectors 0.42, alloy 2.3),
+# because mantle-xyz/reth consumes this tree's op-revm / alloy-op-evm / op-alloy and is anchored at
+# op-reth v2.4.2 (revm 41). See MANTLE_CHANGES.md §2.5 for the way back to upstream versions.
+# ==================== REVM (redirected to mantle-xyz/revm @ rev c6df4c5ef via [patch.crates-io]; declared versions track upstream to satisfy transitive constraints) ====================
 revm = { version = "41.0.0", default-features = false }
 revm-bytecode = { version = "41.0.0", default-features = false }
 revm-database = { version = "41.0.0", default-features = false }
@@ -490,7 +494,15 @@ kzg-rs = { version = "0.2.6", features = ["rkyv", "serde"] }
 sha2 = { version = "0.10.9", default-features = false }
 secp256k1 = { version = "0.31.1", default-features = false }
 ark-ff = { version = "0.5.0", default-features = false }
-ark-bls12-381 = { version = "0.5.0", default-features = false }
+# `scalar_field` gates `Fr`, which kona-proof uses for blob point evaluation. Declare it
+# explicitly: it used to arrive via feature unification with revm-precompile, which has since
+# moved to ark-bls12-381 0.6.
+# [MANTLE] Not yet true here: Mantle's revm 41 revm-precompile still depends on ark-bls12-381
+# 0.5.0, so the feature would arrive anyway. Declaring it is harmless and keeps us aligned with
+# upstream for the revm 42 move; it is not a requirement of the revm 41 pin.
+ark-bls12-381 = { version = "0.5.0", default-features = false, features = [
+  "scalar_field",
+] }
 
 # ==================== SERIALIZATION ====================
 bincode = { version = "2.0.1", features = ["serde"] }
@@ -667,21 +679,26 @@ snmalloc-rs = { version = "0.3.8", features = ["build_cc"] }
 # K/V database
 rocksdb = { version = "0.24.0", default-features = false }
 
-# ==================== PATCH: redirect every revm-* crate (including those pulled transitively) to mantle-xyz/revm @ branch dev/mantle-v1.6.3
+# ==================== PATCH: redirect every revm-* crate (including those pulled transitively) to mantle-xyz/revm @ rev c6df4c5ef (branch dev/mantle-v1.6.3)
+# [MANTLE] Pinned by `rev`, not by `branch`: mantle-xyz/reth must run the same revm as kona (one
+# revm, one op-revm — MANTLE_CHANGES.md §2.5). With `branch`, only Cargo.lock held the pin and any
+# `cargo update` would silently move kona to whatever the branch had become. This is the commit
+# mantle-xyz/reth's dev/mantle-v1.6.3 lockfile resolves to; its tree is identical to 1903a86a,
+# the previous lock entry. Bump this together with reth, never alone.
 # op-revm is NOT patched: since bluealloy removed crates/op-revm after v107 it lives in this workspace as the local path crate op-revm/ ====================
 [patch.crates-io]
-revm = { git = "https://github.com/mantle-xyz/revm", branch = "dev/mantle-v1.6.3" }
-revm-bytecode = { git = "https://github.com/mantle-xyz/revm", branch = "dev/mantle-v1.6.3" }
-revm-context = { git = "https://github.com/mantle-xyz/revm", branch = "dev/mantle-v1.6.3" }
-revm-context-interface = { git = "https://github.com/mantle-xyz/revm", branch = "dev/mantle-v1.6.3" }
-revm-database = { git = "https://github.com/mantle-xyz/revm", branch = "dev/mantle-v1.6.3" }
-revm-database-interface = { git = "https://github.com/mantle-xyz/revm", branch = "dev/mantle-v1.6.3" }
-revm-handler = { git = "https://github.com/mantle-xyz/revm", branch = "dev/mantle-v1.6.3" }
-revm-inspector = { git = "https://github.com/mantle-xyz/revm", branch = "dev/mantle-v1.6.3" }
-revm-interpreter = { git = "https://github.com/mantle-xyz/revm", branch = "dev/mantle-v1.6.3" }
-revm-precompile = { git = "https://github.com/mantle-xyz/revm", branch = "dev/mantle-v1.6.3" }
-revm-primitives = { git = "https://github.com/mantle-xyz/revm", branch = "dev/mantle-v1.6.3" }
-revm-state = { git = "https://github.com/mantle-xyz/revm", branch = "dev/mantle-v1.6.3" }
+revm = { git = "https://github.com/mantle-xyz/revm", rev = "c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12" }
+revm-bytecode = { git = "https://github.com/mantle-xyz/revm", rev = "c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12" }
+revm-context = { git = "https://github.com/mantle-xyz/revm", rev = "c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12" }
+revm-context-interface = { git = "https://github.com/mantle-xyz/revm", rev = "c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12" }
+revm-database = { git = "https://github.com/mantle-xyz/revm", rev = "c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12" }
+revm-database-interface = { git = "https://github.com/mantle-xyz/revm", rev = "c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12" }
+revm-handler = { git = "https://github.com/mantle-xyz/revm", rev = "c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12" }
+revm-inspector = { git = "https://github.com/mantle-xyz/revm", rev = "c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12" }
+revm-interpreter = { git = "https://github.com/mantle-xyz/revm", rev = "c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12" }
+revm-precompile = { git = "https://github.com/mantle-xyz/revm", rev = "c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12" }
+revm-primitives = { git = "https://github.com/mantle-xyz/revm", rev = "c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12" }
+revm-state = { git = "https://github.com/mantle-xyz/revm", rev = "c6df4c5ef5334e7757a2b538bd0f39d77cb8cf12" }
 
 # [MANTLE] alloy-evm is intentionally NOT patched: it resolves from crates.io, which is
 # upstream alloy-rs/evm (v0.37.0 as of the kona-client/v1.7.0 sync; see the declaration
