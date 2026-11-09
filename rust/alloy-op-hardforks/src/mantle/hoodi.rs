@@ -10,4 +10,4 @@ pub const MANTLE_HOODI_CHAIN_ID: u64 = 50002;
 ///
 /// Bundled into op-reth's built-in `mantle-hoodi` chain spec. Must equal op-geth's
 /// `MantleHoodiUpgradeConfig.MantleHoodiBvmUpgradeTime`, which op-node also reads.
-pub const MANTLE_HOODI_BVM_UPGRADE_TIMESTAMP: Option<u64> = Some(1_794_380_400);
+pub const MANTLE_HOODI_BVM_UPGRADE_TIMESTAMP: Option<u64> = Some(1_794_279_600);
