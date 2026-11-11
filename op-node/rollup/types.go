@@ -161,6 +161,12 @@ type Config struct {
 	// Active if MantleElysiumTime != nil && L2 block timestamp >= *MantleElysiumTime, inactive otherwise.
 	MantleElysiumTime *uint64 `json:"mantle_elysium_time,omitempty"`
 
+	// MantleHoodiBVMUpgradeTime sets the activation time of the Mantle Hoodi BVM upgrade, an
+	// irregular state transition applied by the execution engine (op-geth, op-reth) and by kona when
+	// re-executing blocks. op-node does not act on it; it only carries the value so that the rollup
+	// config served over RPC matches the execution engines'. Only scheduled on Mantle Hoodi.
+	MantleHoodiBVMUpgradeTime *uint64 `json:"mantle_hoodi_bvm_upgrade_time,omitempty"`
+
 	// Note: below addresses are part of the block-derivation process,
 	// and required to be the same network-wide to stay in consensus.
 
@@ -899,6 +905,7 @@ func (c *Config) forEachFork(callback func(name string, logName string, time *ui
 	callback("MantleLimb", "mantle_limb_time", c.MantleLimbTime)
 	callback("MantleArsia", "mantle_arsia_time", c.MantleArsiaTime)
 	callback("MantleElysium", "mantle_elysium_time", c.MantleElysiumTime)
+	callback("MantleHoodiBVMUpgrade", "mantle_hoodi_bvm_upgrade_time", c.MantleHoodiBVMUpgradeTime)
 }
 
 func (c *Config) ParseRollupConfig(in io.Reader) error {
