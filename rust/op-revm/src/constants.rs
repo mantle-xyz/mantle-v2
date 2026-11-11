@@ -36,6 +36,8 @@ pub const L1_BASE_FEE_SLOT: U256 = U256::from_limbs([1u64, 0, 0, 0]);
 pub const L1_OVERHEAD_SLOT: U256 = U256::from_limbs([5u64, 0, 0, 0]);
 /// The L1 scalar slot.
 pub const L1_SCALAR_SLOT: U256 = U256::from_limbs([6u64, 0, 0, 0]);
+/// The token ratio slot.
+pub const TOKEN_RATIO_SLOT: U256 = U256::from_limbs([0u64, 0, 0, 0]);
 
 /// [`ECOTONE_L1_BLOB_BASE_FEE_SLOT`] was added in the Ecotone upgrade and stores the L1 blobBaseFee
 /// attribute.
@@ -68,3 +70,10 @@ pub const BASE_FEE_RECIPIENT: Address = address!("0x4200000000000000000000000000
 
 /// The address of the `L1Block` contract.
 pub const L1_BLOCK_CONTRACT: Address = address!("0x4200000000000000000000000000000000000015");
+
+/// The address of the gas oracle contract.
+pub const GAS_ORACLE_CONTRACT: Address = address!("420000000000000000000000000000000000000F");
+
+/// The address of the sequencer fee wallet, which is block coinbase.
+pub const SEQUENCER_FEE_VAULT_ADDRESS: Address =
+    address!("4200000000000000000000000000000000000011");

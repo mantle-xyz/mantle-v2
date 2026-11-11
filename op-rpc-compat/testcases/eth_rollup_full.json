@@ -1,0 +1,38 @@
+[
+  {
+    "name": "rollup_getInfo",
+    "method": "rollup_getInfo",
+    "params": [],
+    "description": "Get rollup information"
+  },
+  {
+    "name": "rollup_gasPrices",
+    "method": "rollup_gasPrices",
+    "params": [],
+    "description": "Get rollup gas prices"
+  },
+  {
+    "name": "eth_getTxStatusByHash_not_found",
+    "method": "eth_getTxStatusByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "Transaction status does not exist"
+  },
+  {
+    "name": "eth_getTxStatusByHash_latest_template",
+    "method": "eth_getTxStatusByHash",
+    "params": ["{{latest_tx_hash}}"],
+    "description": "Get the latest transaction status using the latest_tx_hash template variable"
+  },
+  {
+    "name": "eth_getTxStatusDetailByHash_not_found",
+    "method": "eth_getTxStatusDetailByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "Detailed transaction status does not exist"
+  },
+  {
+    "name": "eth_getTxStatusDetailByHash_latest_template",
+    "method": "eth_getTxStatusDetailByHash",
+    "params": ["{{latest_tx_hash}}"],
+    "description": "Get detailed status for the latest transaction using the latest_tx_hash template variable"
+  }
+]

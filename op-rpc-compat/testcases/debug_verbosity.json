@@ -1,0 +1,80 @@
+[
+  {
+    "name": "debug_verbosity_min_0",
+    "method": "debug_verbosity",
+    "params": [0],
+    "description": "Minimum boundary: level 0 is OFF; both geth and reth return result:null."
+  },
+  {
+    "name": "debug_verbosity_max_5",
+    "method": "debug_verbosity",
+    "params": [5],
+    "description": "Highest standard level: level 5 is TRACE; both geth and reth return result:null."
+  },
+  {
+    "name": "debug_verbosity_above_max_10",
+    "method": "debug_verbosity",
+    "params": [10],
+    "description": "Out-of-range boundary: both accept level 10 (geth does not enforce an upper limit; reth treats levels above 5 as TRACE) and return result:null."
+  },
+  {
+    "name": "debug_verbosity_wrong_type",
+    "method": "debug_verbosity",
+    "params": ["3"],
+    "description": "Negative case: a string instead of an integer; both return -32602 Invalid params with different wording recorded in known_diffs."
+  },
+  {
+    "name": "debug_verbosity_missing_param",
+    "method": "debug_verbosity",
+    "params": [],
+    "description": "Negative case: a required parameter is missing; both return -32602 with wording differences recorded in known_diffs."
+  },
+  {
+    "name": "debug_verbosity_negative",
+    "method": "debug_verbosity",
+    "params": [-1],
+    "description": "Negative boundary: geth accepts a negative level and returns null, while reth rejects it as an unsigned integer with -32602; the semantic difference is recorded in known_diffs."
+  },
+  {
+    "name": "debug_verbosity_extra_params",
+    "method": "debug_verbosity",
+    "params": [3, 4],
+    "description": "Negative case: geth reports -32602 for an extra argument, while reth ignores it and returns null; the semantic difference is recorded in known_diffs."
+  },
+  {
+    "name": "debug_vmodule_empty",
+    "method": "debug_vmodule",
+    "params": [""],
+    "description": "Positive case: an empty pattern resets the filter; both return result:null. The empty string is the only pattern accepted by both syntaxes."
+  },
+  {
+    "name": "debug_vmodule_module_level",
+    "method": "debug_vmodule",
+    "params": ["eth=3"],
+    "description": "Positive case: a single-module pattern with a numeric level is accepted by geth (module=N) and reth (EnvFilter); both return result:null."
+  },
+  {
+    "name": "debug_vmodule_glob",
+    "method": "debug_vmodule",
+    "params": ["eth/*=5"],
+    "description": "Boundary case: both accept a glob pattern with a numeric level and return result:null."
+  },
+  {
+    "name": "debug_vmodule_wrong_type",
+    "method": "debug_vmodule",
+    "params": [3],
+    "description": "Negative case: an integer instead of a string; both return -32602 with wording differences recorded in known_diffs."
+  },
+  {
+    "name": "debug_vmodule_geth_incompatible_syntax",
+    "method": "debug_vmodule",
+    "params": ["reth::rpc=debug"],
+    "description": "Negative case: reth EnvFilter accepts a named level and returns null, while geth requires filename=N and returns -32000; the pattern syntax difference is recorded in known_diffs."
+  },
+  {
+    "name": "debug_verbosity_restore_info",
+    "method": "debug_verbosity",
+    "params": [3],
+    "description": "Positive default case, placed last to restore INFO logging: level 3 is INFO and both geth and reth return result:null."
+  }
+]

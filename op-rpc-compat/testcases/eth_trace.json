@@ -1,0 +1,44 @@
+[
+  {
+    "name": "trace_block_latest",
+    "method": "trace_block",
+    "params": ["latest"],
+    "description": "Trace the latest block"
+  },
+  {
+    "name": "trace_block_0x1",
+    "method": "trace_block",
+    "params": ["0x1"],
+    "description": "Trace block 1"
+  },
+  {
+    "name": "trace_block_0x0",
+    "method": "trace_block",
+    "params": ["0x0"],
+    "description": "Trace the genesis block"
+  },
+  {
+    "name": "trace_filter_empty",
+    "method": "trace_filter",
+    "params": [{"fromBlock": "0x1", "toBlock": "0x1"}],
+    "description": "Filter traces (empty result)"
+  },
+  {
+    "name": "trace_call_simple",
+    "method": "trace_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, ["trace"], "latest"],
+    "description": "Trace a simple call"
+  },
+  {
+    "name": "trace_call_vmTrace",
+    "method": "trace_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, ["vmTrace"], "latest"],
+    "description": "Trace a call including vmTrace"
+  },
+  {
+    "name": "trace_call_stateDiff",
+    "method": "trace_call",
+    "params": [{"to": "0x0000000000000000000000000000000000000000"}, ["stateDiff"], "latest"],
+    "description": "Trace a call including stateDiff"
+  }
+]

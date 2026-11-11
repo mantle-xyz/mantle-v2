@@ -4,6 +4,7 @@ use revm::context_interface::{
     result::{EVMError, InvalidTransaction},
     transaction::TransactionError,
 };
+use std::string::{String, ToString};
 
 /// Optimism transaction validation error.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -44,11 +45,15 @@ pub enum OpTransactionError {
     /// errors are cause for non-inclusion, so a special [`OpHaltReason`][crate::OpHaltReason]
     /// variant was introduced to handle this case for failed deposit transactions.
     HaltedDepositPostRegolith,
+    /// BVM ETH operation errors
+    BvmEth(BvmEthError),
     /// Missing enveloped transaction bytes for non-deposit transaction.
     ///
     /// Non-deposit transactions on Optimism must have `enveloped_tx` field set
     /// to properly calculate L1 costs.
     MissingEnvelopedTx,
+    /// Computed L1 cost cannot be represented in runtime gas arithmetic.
+    TxL1CostOutOfRange,
 }
 
 impl TransactionError for OpTransactionError {}
@@ -66,8 +71,12 @@ impl Display for OpTransactionError {
                     "deposit transaction halted post-regolith; error will be bubbled up to main return handler"
                 )
             }
+            Self::BvmEth(error) => error.fmt(f),
             Self::MissingEnvelopedTx => {
                 write!(f, "missing enveloped transaction bytes for non-deposit transaction")
+            }
+            Self::TxL1CostOutOfRange => {
+                write!(f, "tx l1 cost is out of range for u64 gas arithmetic")
             }
         }
     }
@@ -85,6 +94,51 @@ impl<DBError> From<OpTransactionError> for EVMError<DBError, OpTransactionError>
     fn from(value: OpTransactionError) -> Self {
         Self::Transaction(value)
     }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+/// BVM ETH operation errors
+pub enum BvmEthError {
+    /// EthTxValueTooLarge means that the eth tx value is too large.
+    EthTxValueTooLarge,
+    /// NonceOverflow means that the nonce overflow.
+    NonceOverflow,
+    /// DBError means that the database error.
+    DBError(String),
+    /// InsufficientFunds means that the insufficient BVM ETH funds.
+    InsufficientFunds,
+}
+
+impl TransactionError for BvmEthError {}
+
+impl Display for BvmEthError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::EthTxValueTooLarge => write!(f, "eth tx value is too large"),
+            Self::NonceOverflow => write!(f, "nonce overflow"),
+            Self::DBError(error) => write!(f, "database error: {}", error),
+            Self::InsufficientFunds => write!(f, "insufficient BVM ETH funds"),
+        }
+    }
+}
+
+impl core::error::Error for BvmEthError {}
+
+impl From<BvmEthError> for OpTransactionError {
+    fn from(value: BvmEthError) -> Self {
+        Self::BvmEth(value)
+    }
+}
+
+impl<DBError> From<BvmEthError> for EVMError<DBError, OpTransactionError> {
+    fn from(value: BvmEthError) -> Self {
+        Self::Transaction(OpTransactionError::BvmEth(value))
+    }
+}
+
+/// Convert a database error to a BVM ETH operation error
+pub fn db_error<E: Display>(error: E) -> OpTransactionError {
+    OpTransactionError::BvmEth(BvmEthError::DBError(error.to_string()))
 }
 
 #[cfg(test)]
@@ -110,6 +164,10 @@ mod test {
         assert_eq!(
             OpTransactionError::MissingEnvelopedTx.to_string(),
             "missing enveloped transaction bytes for non-deposit transaction"
+        );
+        assert_eq!(
+            OpTransactionError::TxL1CostOutOfRange.to_string(),
+            "tx l1 cost is out of range for u64 gas arithmetic"
         );
     }
 

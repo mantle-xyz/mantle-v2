@@ -16,6 +16,8 @@ workspace = true
 
 [dependencies]
 # workspace
+op-version.workspace = true
+
 kona-rpc.workspace = true
 kona-peers.workspace = true
 kona-genesis = { workspace = true, features = ["tabled"] }
@@ -31,6 +33,7 @@ kona-registry = { workspace = true, features = ["tabled"] }
 kona-sources = { workspace = true }
 kona-node-service = { workspace = true, features = ["metrics"] }
 kona-providers-alloy = { workspace = true, features = ["metrics"] }
+kona-providers-local = { workspace = true, features = ["metrics"] }
 
 # alloy
 alloy-chains.workspace = true
@@ -74,10 +77,6 @@ tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 [dev-dependencies]
 rstest.workspace = true
 tempfile.workspace = true
-
-[build-dependencies]
-vergen = { workspace = true, features = ["build", "cargo", "emit_and_set"] }
-vergen-git2.workspace = true
 
 [features]
 default = [ "asm-keccak" ]
