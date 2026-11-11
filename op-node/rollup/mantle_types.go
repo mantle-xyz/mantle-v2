@@ -42,6 +42,12 @@ func (c *Config) IsMantleElysium(timestamp uint64) bool {
 	return c.IsMantleForkActive(forks.MantleElysium, timestamp)
 }
 
+// IsMantleHoodiBVMUpgrade returns true if the Mantle Hoodi BVM upgrade is active at or past the
+// given timestamp. It is not part of the ordered Mantle fork sequence.
+func (c *Config) IsMantleHoodiBVMUpgrade(timestamp uint64) bool {
+	return c.MantleHoodiBVMUpgradeTime != nil && timestamp >= *c.MantleHoodiBVMUpgradeTime
+}
+
 // IsMantleBaseFeeActivationBlock returns whether the specified block is the first block subject to the
 // MantleBaseFee upgrade.
 func (c *Config) IsMantleBaseFeeActivationBlock(l2BlockTime uint64) bool {

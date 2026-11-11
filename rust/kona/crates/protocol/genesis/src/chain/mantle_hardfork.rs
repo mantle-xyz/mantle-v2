@@ -75,6 +75,13 @@ pub struct MantleHardForkConfig {
     /// `L1BlockInfoTx::try_new`.
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub mantle_elysium_time: Option<u64>,
+    /// `mantle_hoodi_bvm_upgrade_time` sets the activation time for the Mantle Hoodi BVM upgrade,
+    /// an irregular state transition that writes the BVM_ETH and LegacyERC20MNT predeploy
+    /// code. Only scheduled on Mantle Hoodi.
+    /// Active if `mantle_hoodi_bvm_upgrade_time` != None && L2 block timestamp >=
+    /// `Some(mantle_hoodi_bvm_upgrade_time)`, inactive otherwise.
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+    pub mantle_hoodi_bvm_upgrade_time: Option<u64>,
 }
 
 impl MantleHardForkConfig {
@@ -91,11 +98,17 @@ impl MantleHardForkConfig {
         mantle_limb_time: None,
         mantle_arsia_time: None,
         mantle_elysium_time: None,
+        mantle_hoodi_bvm_upgrade_time: None,
     };
 
     /// Returns an iterator of Mantle hardfork names -> their activation times (if scheduled.)
     pub fn iter(&self) -> impl Iterator<Item = (&'static str, Option<u64>)> {
-        self.ordered().into_iter()
+        // [MANTLE] The Hoodi BVM upgrade is Hoodi-only and sits outside the sequential fork
+        // order (op-node's `CheckMantleForks` does not chain it), so it follows `ordered()`
+        // instead of being part of it.
+        self.ordered()
+            .into_iter()
+            .chain([("Mantle Hoodi BVM Upgrade", self.mantle_hoodi_bvm_upgrade_time)])
     }
 
     /// `[MANTLE]` The JSON keys this build understands, in activation order.
@@ -112,8 +125,9 @@ impl MantleHardForkConfig {
     /// [`Self::looks_like_time_key`] / [`Self::is_known_time_key`] and reject the unknown ones.
     /// The host does this in `read_rollup_config` / `read_rollup_configs`.
     ///
-    /// Keep in sync with the private `ordered()` list when adding a hardfork.
-    pub const TIME_KEYS: [&'static str; 7] = [
+    /// Keep in sync with `iter()` when adding a hardfork: the `ordered()` list followed by the
+    /// Hoodi BVM upgrade.
+    pub const TIME_KEYS: [&'static str; 8] = [
         "mantle_base_fee_time",
         "mantle_everest_time",
         "mantle_euboea_time",
@@ -121,6 +135,7 @@ impl MantleHardForkConfig {
         "mantle_limb_time",
         "mantle_arsia_time",
         "mantle_elysium_time",
+        "mantle_hoodi_bvm_upgrade_time",
     ];
 
     /// Whether `key` names a Mantle hardfork activation time this build implements.
@@ -202,7 +217,8 @@ impl MantleHardForkConfig {
             self.mantle_skadi_time.is_some() ||
             self.mantle_limb_time.is_some() ||
             self.mantle_arsia_time.is_some() ||
-            self.mantle_elysium_time.is_some()
+            self.mantle_elysium_time.is_some() ||
+            self.mantle_hoodi_bvm_upgrade_time.is_some()
     }
 }
 
@@ -216,7 +232,8 @@ mod tests {
         let raw: &str = r#"
         {
             "mantle_base_fee_time": 1000,
-            "mantle_arsia_time": 2000
+            "mantle_arsia_time": 2000,
+            "mantle_hoodi_bvm_upgrade_time": 3000
         }
         "#;
 
@@ -228,6 +245,7 @@ mod tests {
             mantle_limb_time: None,
             mantle_arsia_time: Some(2000),
             mantle_elysium_time: None,
+            mantle_hoodi_bvm_upgrade_time: Some(3000),
         };
 
         let deserialized: MantleHardForkConfig = serde_json::from_str(raw).unwrap();
@@ -244,6 +262,7 @@ mod tests {
             mantle_limb_time: Some(16),
             mantle_arsia_time: Some(17),
             mantle_elysium_time: Some(18),
+            mantle_hoodi_bvm_upgrade_time: Some(19),
         };
 
         let mut iter = hardforks.iter();
@@ -254,6 +273,7 @@ mod tests {
         assert_eq!(iter.next(), Some(("Mantle Limb", Some(16))));
         assert_eq!(iter.next(), Some(("Mantle Arsia", Some(17))));
         assert_eq!(iter.next(), Some(("Mantle Elysium", Some(18))));
+        assert_eq!(iter.next(), Some(("Mantle Hoodi BVM Upgrade", Some(19))));
         assert_eq!(iter.next(), None);
     }
 
@@ -268,6 +288,7 @@ mod tests {
             mantle_limb_time: Some(16),
             mantle_arsia_time: Some(17),
             mantle_elysium_time: Some(18),
+            mantle_hoodi_bvm_upgrade_time: None,
         };
         assert!(all_hardforks.has_any_hardfork());
 
@@ -289,6 +310,7 @@ mod tests {
         let all_none = MantleHardForkConfig {
             mantle_base_fee_time: None,
             mantle_everest_time: None,
+            mantle_hoodi_bvm_upgrade_time: None,
             mantle_euboea_time: None,
             mantle_skadi_time: None,
             mantle_limb_time: None,
@@ -370,6 +392,7 @@ mod tests {
             mantle_limb_time: Some(5),
             mantle_arsia_time: Some(6),
             mantle_elysium_time: Some(7),
+            mantle_hoodi_bvm_upgrade_time: Some(8),
         };
         assert_eq!(MantleHardForkConfig::TIME_KEYS.len(), all.iter().count());
 
@@ -395,8 +418,19 @@ mod tests {
             mantle_limb_time: Some(5),
             mantle_arsia_time: Some(6),
             mantle_elysium_time: Some(7),
+            mantle_hoodi_bvm_upgrade_time: None,
         };
         assert!(full.check_fork_order().is_ok());
+
+        // The Hoodi BVM upgrade is not chained: on its own, or earlier than every other fork, it
+        // never fails the order check, as in op-node.
+        let hoodi_only = MantleHardForkConfig {
+            mantle_hoodi_bvm_upgrade_time: Some(1),
+            ..MantleHardForkConfig::NONE
+        };
+        assert!(hoodi_only.check_fork_order().is_ok());
+        let hoodi_first = MantleHardForkConfig { mantle_hoodi_bvm_upgrade_time: Some(0), ..full };
+        assert!(hoodi_first.check_fork_order().is_ok());
 
         // Equal timestamps are allowed — op-node only rejects `*a > *b`.
         let simultaneous = MantleHardForkConfig { mantle_elysium_time: Some(6), ..full };
@@ -439,7 +473,8 @@ mod tests {
     }
 
     /// `iter()` and `check_fork_order()` must walk the same list, or a newly added fork gets
-    /// validated but not reported (or the reverse).
+    /// validated but not reported (or the reverse). The one deliberate exception is the Hoodi BVM
+    /// upgrade: `iter()` reports it, `check_fork_order()` does not chain it, as in op-node.
     #[test]
     fn every_configured_fork_is_covered_by_the_order_check() {
         let all = MantleHardForkConfig {
@@ -450,10 +485,12 @@ mod tests {
             mantle_limb_time: Some(5),
             mantle_arsia_time: Some(6),
             mantle_elysium_time: Some(7),
+            mantle_hoodi_bvm_upgrade_time: Some(8),
         };
         // Every field is Some, so every entry the check walks must be Some too. If a field is
-        // added to the struct but not to `ordered()`, this count stops matching.
-        assert_eq!(all.iter().filter(|(_, t)| t.is_some()).count(), 7);
+        // added to the struct but not to `ordered()` or `iter()`, these counts stop matching.
+        assert_eq!(all.ordered().iter().filter(|(_, t)| t.is_some()).count(), 7);
+        assert_eq!(all.iter().filter(|(_, t)| t.is_some()).count(), 8);
         assert!(all.has_any_hardfork());
     }
 }

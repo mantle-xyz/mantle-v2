@@ -130,6 +130,16 @@ var (
 		Usage:   "the creden of hsm key",
 		EnvVars: []string{"GAS_PRICE_ORACLE_HSM_CREDEN"},
 	}
+	HsmProviderFlag = &cli.StringFlag{
+		Name:    "hsm-provider",
+		Usage:   "Managed key provider used when hsm is enabled: \"gcp\" or \"aws-kms\". Defaults to gcp when empty",
+		EnvVars: []string{"GAS_PRICE_ORACLE_HSM_PROVIDER"},
+	}
+	AWSKMSKeyIDFlag = &cli.StringFlag{
+		Name:    "aws-kms-key-id",
+		Usage:   "Full AWS KMS key ARN (aliases are not accepted). Only used with --hsm-provider=aws-kms; the AWS region is taken from the ARN",
+		EnvVars: []string{"GAS_PRICE_ORACLE_AWS_KMS_KEY_ID"},
+	}
 )
 
 var Flags = []cli.Flag{
@@ -152,6 +162,8 @@ var Flags = []cli.Flag{
 	HsmAddressFlag,
 	HsmAPINameFlag,
 	HsmCredenFlag,
+	HsmProviderFlag,
+	AWSKMSKeyIDFlag,
 	MetricsEnabledFlag,
 	MetricsHTTPFlag,
 	MetricsPortFlag,

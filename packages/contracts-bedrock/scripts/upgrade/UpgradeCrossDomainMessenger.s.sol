@@ -154,8 +154,8 @@ abstract contract UpgradeCrossDomainMessenger is Script {
     }
 
     function _validateGas(address _messenger) internal view {
+        _validateRelease(_messenger);
         IUpgradeMessenger messenger = IUpgradeMessenger(_messenger);
-        require(keccak256(bytes(messenger.version())) == keccak256("1.6.0"), "MessengerUpgrade: wrong version");
         require(messenger.RELAY_RESERVED_GAS() == 150_000, "MessengerUpgrade: wrong reserved gas");
         require(messenger.RELAY_GAS_CHECK_BUFFER() == 150_000, "MessengerUpgrade: wrong check buffer");
         require(messenger.RELAY_NEW_ACCOUNT_OVERHEAD() == 185_000, "MessengerUpgrade: wrong account overhead");
@@ -163,12 +163,20 @@ abstract contract UpgradeCrossDomainMessenger is Script {
     }
 
     function _configuration(address _messenger) internal view virtual returns (bytes32);
+    function _validateRelease(address _messenger) internal view virtual;
     function _validateLayer(address _proxy) internal view virtual;
     function _deploy(address _proxy) internal virtual returns (address);
 }
 
 /// @notice Forge entry point for the L1 Messenger. Constructor arguments come from its existing proxy.
 contract UpgradeL1CrossDomainMessenger is UpgradeCrossDomainMessenger {
+    function _validateRelease(address _messenger) internal view override {
+        require(
+            keccak256(bytes(IUpgradeMessenger(_messenger).version())) == keccak256("1.6.0"),
+            "MessengerUpgrade: wrong version"
+        );
+    }
+
     function _configuration(address _messenger) internal view override returns (bytes32) {
         L1CrossDomainMessenger messenger = L1CrossDomainMessenger(_messenger);
         return keccak256(abi.encode(messenger.PORTAL(), messenger.L1_MNT_ADDRESS(), messenger.OTHER_MESSENGER()));
@@ -192,6 +200,13 @@ contract UpgradeL1CrossDomainMessenger is UpgradeCrossDomainMessenger {
 
 /// @notice Forge entry point for the L2 predeploy. L1 addresses are not required to have L2 code.
 contract UpgradeL2CrossDomainMessenger is UpgradeCrossDomainMessenger {
+    function _validateRelease(address _messenger) internal view override {
+        L2CrossDomainMessenger messenger = L2CrossDomainMessenger(_messenger);
+        require(keccak256(bytes(messenger.version())) == keccak256("1.7.0"), "MessengerUpgrade: wrong version");
+        require(messenger.MAX_WITHDRAWAL_GAS_LIMIT() == 15_000_000, "MessengerUpgrade: wrong withdrawal gas limit");
+        require(messenger.MAX_WITHDRAWAL_DATA_LENGTH() == 90_000, "MessengerUpgrade: wrong withdrawal data length");
+    }
+
     function _configuration(address _messenger) internal view override returns (bytes32) {
         L2CrossDomainMessenger messenger = L2CrossDomainMessenger(_messenger);
         return keccak256(abi.encode(messenger.OTHER_MESSENGER(), messenger.L1_MNT_ADDRESS()));
