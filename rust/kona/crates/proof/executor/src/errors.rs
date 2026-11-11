@@ -5,7 +5,8 @@
 //! database operation errors.
 
 use alloc::string::String;
-use alloy_evm::block::BlockExecutionError;
+use alloy_evm::block::{BlockExecutionError, BlockValidationError, InternalBlockExecutionError};
+use alloy_op_evm::block::OpBlockExecutionError;
 use kona_mpt::TrieNodeError;
 use op_alloy_consensus::EIP1559ParamError;
 use revm::context::DBErrorMarker;
@@ -13,21 +14,14 @@ use thiserror::Error;
 
 /// Errors that can occur when validating EIP-1559 parameters from block header extra data.
 ///
-/// This error type is used for validation errors during decoding of EIP-1559 parameters,
-/// providing more specific error variants than the upstream [`EIP1559ParamError`] which
-/// is primarily designed for encoding errors.
+/// This error type is used for validation errors during decoding of EIP-1559 parameters.
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum Eip1559ValidationError {
-    /// The EIP-1559 denominator cannot be zero as it would cause division by zero.
-    ///
-    /// This error occurs when the decoded denominator value from the block header's
-    /// extra data field is zero, which violates protocol specifications.
-    #[error("EIP-1559 denominator cannot be zero")]
-    ZeroDenominator,
     /// Error from EIP-1559 parameter decoding.
     ///
-    /// This variant wraps errors from the underlying EIP-1559 parameter decoding,
-    /// such as invalid version bytes, incorrect data lengths, or missing parameters.
+    /// This variant wraps errors from the underlying EIP-1559 parameter decoding, such as invalid
+    /// version bytes, incorrect data lengths, missing parameters, or a zero denominator/elasticity
+    /// encoded in the block header extra data.
     #[error(transparent)]
     Decode(#[from] EIP1559ParamError),
 }
@@ -203,6 +197,147 @@ pub enum ExecutorError {
     /// - Incorrect executor lifecycle management
     #[error("Missing the executor")]
     MissingExecutor,
+}
+
+impl ExecutorError {
+    /// Returns whether the error establishes that the derived payload is invalid.
+    ///
+    /// Only these errors may trigger the Holocene deposit-only replacement. Errors caused by
+    /// missing witnesses, database access, or executor state must propagate instead.
+    pub fn is_invalid_payload(&self) -> bool {
+        match self {
+            Self::BlockGasLimitExceeded |
+            Self::InvalidPostExecPayload(_) |
+            Self::Recovery(_) |
+            Self::UnsupportedTransactionType(_) |
+            Self::RLPError(_) => true,
+            Self::ExecutionError(error) => match error {
+                BlockExecutionError::Validation(validation) => match validation {
+                    BlockValidationError::InvalidTx { .. } |
+                    BlockValidationError::TransactionGasLimitMoreThanAvailableBlockGas {
+                        ..
+                    } |
+                    BlockValidationError::BlockGasExceeded => true,
+                    BlockValidationError::Other(error) => {
+                        // `OpBlockExecutionError` is the only type boxed into `Other` on the proof
+                        // path. Any other type is unclassified and propagates.
+                        error.downcast_ref::<OpBlockExecutionError>().is_some_and(|error| {
+                            match error {
+                                OpBlockExecutionError::TransactionDaFootprintAboveGasLimit { .. } |
+                                OpBlockExecutionError::UnexpectedNonDepositTxInForkActivationBlock |
+                                OpBlockExecutionError::InvalidPostExecPayload(_) |
+                                OpBlockExecutionError::PostExecSettlementUnderflow { .. } => true,
+                                OpBlockExecutionError::LoadCacheAccount |
+                                OpBlockExecutionError::GetJovianDaFootprintScalar(_) => false,
+                            }
+                        })
+                    }
+                    BlockValidationError::EVM { .. } |
+                    BlockValidationError::IncrementBalanceFailed |
+                    BlockValidationError::MissingParentBeaconBlockRoot |
+                    BlockValidationError::CancunGenesisParentBeaconBlockRootNotZero { .. } |
+                    BlockValidationError::BeaconRootContractCall { .. } |
+                    BlockValidationError::BlockHashContractCall { .. } |
+                    BlockValidationError::WithdrawalRequestsContractCall { .. } |
+                    BlockValidationError::ConsolidationRequestsContractCall { .. } |
+                    // [MANTLE] REVM41-PIN: upstream also lists `BuilderDepositRequestsContractCall` and
+                    // `BuilderExitRequestsContractCall` here. Those variants only exist in
+                    // alloy-evm 0.38; Mantle stays on 0.37 (revm 41, see MANTLE_CHANGES.md), whose
+                    // `BlockValidationError` has neither, so the match is still exhaustive.
+                    BlockValidationError::DepositRequestDecode(_) => false,
+                },
+                BlockExecutionError::Internal(
+                    InternalBlockExecutionError::EVM { .. } | InternalBlockExecutionError::Other(_),
+                ) => false,
+            },
+            Self::MissingGasLimit |
+            Self::MissingTransactions |
+            Self::MissingEIP1559Params |
+            Self::MissingParentBeaconBlockRoot |
+            Self::InvalidExtraData(_) |
+            Self::TrieDBError(_) |
+            Self::MissingExecutor => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod classification_tests {
+    use super::*;
+    use alloc::boxed::Box;
+
+    #[test]
+    fn only_invalid_payload_errors_allow_deposit_only_replacement() {
+        let cases = [
+            ("block gas", ExecutorError::BlockGasLimitExceeded, true),
+            ("unsupported transaction type", ExecutorError::UnsupportedTransactionType(0xff), true),
+            (
+                "malformed transaction RLP",
+                ExecutorError::RLPError(alloy_rlp::Error::InputTooShort.into()),
+                true,
+            ),
+            (
+                "transaction gas",
+                ExecutorError::ExecutionError(BlockExecutionError::Validation(
+                    BlockValidationError::TransactionGasLimitMoreThanAvailableBlockGas {
+                        transaction_gas_limit: 2,
+                        block_available_gas: 1,
+                    },
+                )),
+                true,
+            ),
+            (
+                "post-exec payload",
+                ExecutorError::ExecutionError(BlockExecutionError::Validation(
+                    BlockValidationError::Other(Box::new(
+                        OpBlockExecutionError::InvalidPostExecPayload("invalid".into()),
+                    )),
+                )),
+                true,
+            ),
+            (
+                "provider",
+                ExecutorError::TrieDBError(TrieDBError::Provider("missing witness".into())),
+                false,
+            ),
+            (
+                "database validation",
+                ExecutorError::ExecutionError(BlockExecutionError::Validation(
+                    BlockValidationError::IncrementBalanceFailed,
+                )),
+                false,
+            ),
+            (
+                "internal execution",
+                ExecutorError::ExecutionError(BlockExecutionError::msg("database failure")),
+                false,
+            ),
+            (
+                "internal EVM",
+                ExecutorError::ExecutionError(BlockExecutionError::Internal(
+                    InternalBlockExecutionError::EVM {
+                        hash: Default::default(),
+                        error: "internal EVM failure".into(),
+                    },
+                )),
+                false,
+            ),
+            // [MANTLE] REVM41-PIN: upstream's "builder deposit requests" / "builder exit requests"
+            // cases are dropped: those `BlockValidationError` variants do not exist in
+            // alloy-evm 0.37.
+            (
+                "unclassified validation",
+                ExecutorError::ExecutionError(BlockExecutionError::Validation(
+                    BlockValidationError::msg("unclassified failure"),
+                )),
+                false,
+            ),
+        ];
+
+        for (name, error, expected) in cases {
+            assert_eq!(error.is_invalid_payload(), expected, "{name}");
+        }
+    }
 }
 
 /// Result type alias for operations that may fail with [`ExecutorError`].

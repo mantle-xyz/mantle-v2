@@ -32,6 +32,23 @@ pub trait OpTxTr: Transaction {
     fn is_deposit(&self) -> bool {
         self.tx_type() == DEPOSIT_TRANSACTION_TYPE
     }
+
+    /// `[MANTLE]` `BVM_ETH` values are `U256`, not `u128`.
+    ///
+    /// `_ethValue` / `_ethTxValue` reach the chain through `OptimismPortal.depositTransaction`,
+    /// which takes them as unbounded `uint256`, and op-node decodes the full 32-byte word into a
+    /// `big.Int` (op-node/rollup/derive/deposit_log.go). Narrowing to `u128` silently produced a
+    /// different value — and therefore a different deposit hash and post-state — from op-node for
+    /// anything at or above 2^128, which any EOA could trigger with one L1 transaction.
+    ///
+    /// Widening is wire-compatible: RLP encodes integers as minimal big-endian, so `u128` and
+    /// `U256` are byte-identical below 2^128. The `BVM_ETH` arithmetic in `bvm_eth.rs` was
+    /// already
+    /// `U256` throughout — only this boundary was narrow.
+    fn eth_value(&self) -> Option<U256>;
+
+    /// Returns the eth tx value of the deposit transaction
+    fn eth_tx_value(&self) -> Option<U256>;
 }
 
 /// Optimism transaction.
@@ -95,6 +112,15 @@ impl<TX: Transaction + SystemCallTx> SystemCallTx for OpTransaction<TX> {
     }
 }
 
+/// UPSTREAM-MIRROR(delegate): revm-context-interface@41.0.0 `revm_context_interface::Transaction`
+///
+/// Forwards the primitive getters to `self.base` and overrides `tx_type` and
+/// `effective_gas_price` for deposits. Everything not listed here inherits the upstream
+/// default — currently `total_blob_gas`, `calc_max_data_fee`, `max_balance_spending`,
+/// `ensure_enough_balance`, `effective_balance_spending` and `gas_balance_spending`, all of
+/// which are built from the getters above and so stay consistent. On each bump check for
+/// newly defaulted methods. If the inner `T` overrides one, this wrapper must forward it;
+/// inheriting the generic default can silently diverge from `self.base`.
 impl<T: Transaction> Transaction for OpTransaction<T> {
     type AccessListItem<'a>
         = T::AccessListItem<'a>
@@ -201,6 +227,14 @@ impl<T: Transaction> OpTxTr for OpTransaction<T> {
 
     fn is_system_transaction(&self) -> bool {
         self.deposit.is_system_transaction
+    }
+
+    fn eth_value(&self) -> Option<U256> {
+        self.deposit.eth_value.filter(|v| !v.is_zero())
+    }
+
+    fn eth_tx_value(&self) -> Option<U256> {
+        self.deposit.eth_tx_value.filter(|v| !v.is_zero())
     }
 }
 
@@ -358,18 +392,25 @@ mod tests {
 
     #[test]
     fn test_deposit_transaction_fields() {
-        let base_tx = TxEnv::builder().gas_limit(10).gas_price(100).gas_priority_fee(Some(5));
-
-        let op_tx = OpTransaction::builder()
-            .base(base_tx)
-            .enveloped_tx(None)
-            .not_system_transaction()
-            .mint(0u128)
-            .source_hash(B256::from([1u8; 32]))
-            .build()
-            .unwrap();
-        // Verify transaction type (deposit transactions should have tx_type based on OpSpecId)
-        // The tx_type is derived from the transaction structure, not set manually
+        let op_tx = OpTransaction {
+            base: TxEnv {
+                tx_type: DEPOSIT_TRANSACTION_TYPE,
+                gas_limit: 10,
+                gas_price: 100,
+                gas_priority_fee: Some(5),
+                ..Default::default()
+            },
+            enveloped_tx: None,
+            deposit: DepositTransactionParts {
+                is_system_transaction: false,
+                mint: Some(0u128),
+                source_hash: B256::default(),
+                eth_value: Some(U256::from(100u128)),
+                eth_tx_value: Some(U256::from(100u128)),
+            },
+        };
+        // Verify transaction type
+        assert_eq!(op_tx.tx_type(), DEPOSIT_TRANSACTION_TYPE);
         // Verify common fields access
         assert_eq!(op_tx.gas_limit(), 10);
         assert_eq!(op_tx.kind(), revm::primitives::TxKind::Call(Address::ZERO));
@@ -377,5 +418,22 @@ mod tests {
         // price
         assert_eq!(op_tx.effective_gas_price(90), 100);
         assert_eq!(op_tx.max_fee_per_gas(), 100);
+    }
+
+    #[test]
+    fn test_eth_value_filtering() {
+        let op_tx = OpTransaction {
+            base: TxEnv::default(),
+            enveloped_tx: None,
+            deposit: DepositTransactionParts {
+                source_hash: B256::ZERO,
+                mint: None,
+                is_system_transaction: false,
+                eth_tx_value: Some(U256::from(0u128)),
+                eth_value: Some(U256::from(0u128)),
+            },
+        };
+        assert_eq!(op_tx.eth_value(), None);
+        assert_eq!(op_tx.eth_tx_value(), None);
     }
 }
