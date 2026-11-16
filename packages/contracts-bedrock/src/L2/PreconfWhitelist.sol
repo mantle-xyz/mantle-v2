@@ -14,6 +14,9 @@ uint256 constant PRECONF_MAX_BATCH = 256;
 ///         SIZE: keep the total rule count (`rulesLength()`, all three sets) below about 10,000.
 ///         Past that, an update may not take effect in the block it lands in, because op-reth
 ///         re-reads every set after `WhitelistUpdated` and a larger allowlist takes longer to read.
+///         UPGRADEABLE: deployed behind a `Proxy` and set up with `initialize`, so a fix keeps the
+///         address op-reth is configured with and the rules already stored. Seed it in the same
+///         call as the upgrade (`upgradeToAndCall`); a separate `initialize` can be taken by anyone.
 contract PreconfWhitelist {
     /// @notice One allowlist rule as governance submits it. Both halves non-zero is an exact pair;
     ///         exactly one zero half is a wildcard on the other side. The zero address is a
@@ -54,17 +57,22 @@ contract PreconfWhitelist {
     address public authorizedL1;
 
     /// @notice Commitment to every batch applied so far: `keccak256(abi.encode(previous, add,
-    ///         remove))`, seeded by the constructor's rules against `bytes32(0)`. Slot 8. op-reth
+    ///         remove))`, seeded by `initialize`'s rules against `bytes32(0)`. Slot 8. op-reth
     ///         compares it with its in-memory copy's to tell whether that copy is current. Changes
     ///         on every update, including one that leaves the lists as they were.
     bytes32 public listsHash;
 
+    /// @notice Whether `initialize` has run. Slot 9. op-reth does not read it, so it sits after
+    ///         every slot that does and needs no [`LAYOUT_VERSION`] bump. Not OpenZeppelin's
+    ///         `Initializable`: inherited storage comes first, and its flag would take slot 0.
+    bool public initialized;
+
     /// @notice Maximum rules one `updatePreconfs` may touch, summed across both arguments. Sized on
-    ///         a pair add (68,344 gas): 256 need 17,496,087 of the 19,714,744 a deposit can buy
+    ///         a pair add (68,359 gas): 256 need 17,500,158 of the 19,714,744 a deposit can buy
     ///         (20,000,000 less 285,256 intrinsic). Ceiling is 288; re-measure before raising.
     uint256 public constant MAX_BATCH = PRECONF_MAX_BATCH;
 
-    /// @notice The layout this contract declares, written to [`layoutVersion`] at construction. Bump
+    /// @notice The layout this contract declares, written to [`layoutVersion`] by `initialize`. Bump
     ///         when a slot op-reth reads moves or a new one is read; a rename is not one. op-reth pins
     ///         the same number as `EXPECTED_LAYOUT_VERSION` and refuses anything else. 3 adds
     ///         `listsHash`.
@@ -84,13 +92,20 @@ contract PreconfWhitelist {
     /// @param newAuthorizedL1      The address permitted to govern from now on.
     event AuthorizedL1Updated(address indexed previousAuthorizedL1, address indexed newAuthorizedL1);
 
-    /// @notice Seeds the allowlist so the contract is usable the moment it is deployed. Not subject
-    ///         to `MAX_BATCH` — deployment gas is bounded by the deployer, not by a relayed message.
+    /// @notice Locks the implementation, so only a proxy's storage can ever be initialized.
+    constructor() {
+        initialized = true;
+    }
+
+    /// @notice Seeds the allowlist so the proxy is usable the moment it is set up. Not subject to
+    ///         `MAX_BATCH` — its gas is bounded by the L2 block, not by a relayed message.
     /// @param _authorizedL1 L1 governance address permitted to update the allowlist.
     /// @param _initRules    Initial rules, in the three forms `updatePreconfs` accepts. A
     ///                      `getAllRules()` result is valid here verbatim, which is how a clone works.
-    constructor(address _authorizedL1, Rule[] memory _initRules) {
+    function initialize(address _authorizedL1, Rule[] calldata _initRules) external {
+        require(!initialized, "PreconfWhitelist: already initialized");
         require(_authorizedL1 != address(0), "PreconfWhitelist: authorized L1 sender is the zero address");
+        initialized = true;
         authorizedL1 = _authorizedL1;
         layoutVersion = LAYOUT_VERSION;
         for (uint256 i = 0; i < _initRules.length; i++) {
@@ -263,7 +278,7 @@ contract PreconfWhitelist {
     // ===== internals =====
 
     /// @notice Routes one rule to its set and adds or removes it — the single place the three forms
-    ///         are interpreted, so the constructor and `updatePreconfs` cannot disagree. Takes
+    ///         are interpreted, so `initialize` and `updatePreconfs` cannot disagree. Takes
     ///         halves rather than a `Rule` so one body serves `memory` and `calldata` callers.
     /// @param _from  Sender half, or the zero address to route this rule to `toWildcards`.
     /// @param _to    Recipient half, or the zero address to route it to `fromWildcards`.
@@ -329,13 +344,7 @@ contract PreconfWhitelist {
     /// @param _list   Wildcard array to remove from — `fromWildcards` or `toWildcards`.
     /// @param _idxMap That array's membership index, rewritten for the swapped-in element.
     /// @param _addr   Address to revoke.
-    function _rmWildcard(
-        address[] storage _list,
-        mapping(address => uint256) storage _idxMap,
-        address _addr
-    )
-        internal
-    {
+    function _rmWildcard(address[] storage _list, mapping(address => uint256) storage _idxMap, address _addr) internal {
         uint256 idx = _idxMap[_addr];
         if (idx == 0) return;
         uint256 i = idx - 1;
