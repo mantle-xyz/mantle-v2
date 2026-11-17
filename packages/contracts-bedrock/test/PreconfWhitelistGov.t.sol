@@ -6,6 +6,7 @@ import { AddressAliasHelper } from "src/vendor/AddressAliasHelper.sol";
 import { OptimismPortal } from "src/L1/OptimismPortal.sol";
 import { PreconfWhitelist } from "src/L2/PreconfWhitelist.sol";
 import { PreconfWhitelistGov } from "src/L1/PreconfWhitelistGov.sol";
+import { PreconfWhitelistDeployer } from "test/mocks/PreconfWhitelistDeployer.sol";
 
 /// @title PreconfWhitelistGov_Test
 /// @notice Tests the L1 endpoint that governs `PreconfWhitelist`. Three things are worth asserting
@@ -40,6 +41,17 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
         out_[0] = PreconfWhitelist.Rule({ from: _from, to: _to });
     }
 
+    /// @notice An L2 allowlist behind its proxy, as deployed.
+    function _deploy(
+        address _authorizedL1,
+        PreconfWhitelist.Rule[] memory _initRules
+    )
+        internal
+        returns (PreconfWhitelist)
+    {
+        return PreconfWhitelistDeployer.deploy(address(0xAD01), _authorizedL1, _initRules);
+    }
+
     function _none() internal pure returns (PreconfWhitelist.Rule[] memory out_) {
         out_ = new PreconfWhitelist.Rule[](0);
     }
@@ -65,7 +77,7 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
     ///         source. Asserted against a real deployment rather than the literal 256: that is what
     ///         would still catch someone re-hardcoding either side later.
     function test_maxBatch_isTheSameConstantAsTheL2Contract_succeeds() external {
-        PreconfWhitelist wl = new PreconfWhitelist(address(0xA11CE), _none());
+        PreconfWhitelist wl = _deploy(address(0xA11CE), _none());
         assertEq(gov.MAX_BATCH(), wl.MAX_BATCH());
     }
 
@@ -255,8 +267,8 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
     }
 
     /// @notice **The coupling that would otherwise break silently.** The computed limit runs into
-    ///         `maxResourceLimit` at 282 rules, before `MAX_BATCH`'s 256 does — raise the cap past
-    ///         281 and the explicit path keeps working while the default one reverts in `metered`.
+    ///         `maxResourceLimit` at 281 rules, before `MAX_BATCH`'s 256 does — raise the cap past
+    ///         280 and the explicit path keeps working while the default one reverts in `metered`.
     function test_updatePreconfs_computedLimitAtMaxBatchFitsTheDepositCap_succeeds() external view {
         uint256 max = gov.MAX_BATCH();
         uint64 calldataLen = uint64(132 + 64 * max); // selector + two offsets + two lengths + 64/rule
@@ -272,7 +284,7 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
     ///         always over-covers, charging 16 per byte where zero bytes really cost 4. One rule is
     ///         the worst case: the fixed term is spread over nothing, so larger batches are cheaper.
     function test_updatePreconfs_computedLimitCoversTheL2Execution_succeeds() external {
-        PreconfWhitelist wl = new PreconfWhitelist(address(gov), _none());
+        PreconfWhitelist wl = _deploy(address(gov), _none());
         PreconfWhitelist.Rule[] memory add = _one(address(0x1111), address(0x2222));
         bytes memory data = abi.encodeCall(PreconfWhitelist.updatePreconfs, (add, _none()));
 
@@ -334,10 +346,10 @@ contract PreconfWhitelistGov_Test is Portal_Initializer {
     }
 
     /// @notice `ROTATE_GAS` measured against the real L2 function rather than asserted from the
-    ///         comment above it. Warm, though: the constructor touched the slot in this same
+    ///         comment above it. Warm, though: `initialize` touched the slot in this same
     ///         transaction, so a real deposit pays a few thousand more for cold access.
     function test_rotateAuthorizedL1_gasCoversTheL2Call_succeeds() external {
-        PreconfWhitelist wl = new PreconfWhitelist(address(gov), _none());
+        PreconfWhitelist wl = _deploy(address(gov), _none());
         address newGov = address(new PreconfWhitelistGov(op, OWNER));
 
         vm.prank(AddressAliasHelper.applyL1ToL2Alias(address(gov)));
