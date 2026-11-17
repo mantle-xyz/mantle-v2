@@ -1,0 +1,92 @@
+[
+  {
+    "name": "eth_getStorageAt_zero_slot",
+    "method": "eth_getStorageAt",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", "0x0", "latest"],
+    "description": "Get the value of storage slot 0"
+  },
+  {
+    "name": "eth_getStorageAt_arbitrary_slot",
+    "method": "eth_getStorageAt",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", "0x1", "latest"],
+    "description": "Get the value of storage slot 1"
+  },
+  {
+    "name": "eth_getStorageAt_large_slot",
+    "method": "eth_getStorageAt",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "latest"],
+    "description": "Get the value of the maximum storage slot"
+  },
+  {
+    "name": "eth_getStorageAt_pending",
+    "method": "eth_getStorageAt",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", "0x0", "pending"],
+    "description": "Get a storage slot in pending state"
+  },
+  {
+    "name": "eth_getStorageAt_earliest",
+    "method": "eth_getStorageAt",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", "0x0", "earliest"],
+    "description": "Get a storage slot at the earliest block"
+  },
+  {
+    "name": "eth_getStorageAt_eoa",
+    "method": "eth_getStorageAt",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "0x0", "latest"],
+    "description": "Get an EOA storage slot (expected 0x0)"
+  },
+  {
+    "name": "eth_getStorageAt_zero_address",
+    "method": "eth_getStorageAt",
+    "params": ["0x0000000000000000000000000000000000000000", "0x0", "latest"],
+    "description": "Get a storage slot of the zero address"
+  },
+  {
+    "name": "eth_getProof_simple",
+    "method": "eth_getProof",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", [], "latest"],
+    "description": "Get a Merkle proof for an EOA without storage keys"
+  },
+  {
+    "name": "eth_getProof_with_storage_keys",
+    "method": "eth_getProof",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", ["0x0", "0x1"], "latest"],
+    "description": "Get a Merkle proof for a contract with storage keys"
+  },
+  {
+    "name": "eth_getProof_pending",
+    "method": "eth_getProof",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", [], "pending"],
+    "description": "Get a Merkle proof for pending state"
+  },
+  {
+    "name": "eth_getProof_earliest",
+    "method": "eth_getProof",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", [], "earliest"],
+    "description": "Get a Merkle proof at the earliest block"
+  },
+  {
+    "name": "eth_getProof_zero_address",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000000", [], "latest"],
+    "description": "Get a Merkle proof for the zero address"
+  },
+  {
+    "name": "eth_getProof_with_block_number",
+    "method": "eth_getProof",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", [], "0x1"],
+    "description": "Get a Merkle proof at a specified block number"
+  },
+  {
+    "name": "eth_getProof_multiple_storage_keys",
+    "method": "eth_getProof",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", ["0x0", "0x1", "0x2", "0x3", "0x4"], "latest"],
+    "description": "Get a Merkle proof with multiple storage keys"
+  },
+  {
+    "name": "eth_getProof_large_storage_key",
+    "method": "eth_getProof",
+    "params": ["0xdeaddeaddeaddeaddeaddeaddeaddeaddead0001", ["0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"], "latest"],
+    "description": "Get a Merkle proof with a large storage key"
+  }
+]

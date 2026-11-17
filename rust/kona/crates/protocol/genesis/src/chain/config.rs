@@ -7,11 +7,12 @@ use alloy_primitives::Address;
 
 #[cfg(feature = "rollup_config_override")]
 use crate::FJORD_MAX_SEQUENCER_DRIFT;
+// [MANTLE] `MantleHardForkConfig` is pulled in so `RollupConfig` can initialize it.
+// `SuperchainLevel` was dropped along with upstream's version: it is no longer referenced here.
 use crate::{
     AddressList, AltDAConfig, BaseFeeConfig, ChainGenesis, GRANITE_CHANNEL_TIMEOUT, HardForkConfig,
-    // [MANTLE] Pull in the Mantle hardfork config so RollupConfig can initialize it.
-    MantleHardForkConfig, Roles, RollupConfig, SuperchainLevel, base_fee_params,
-    base_fee_params_canyon, params::base_fee_config,
+    MantleHardForkConfig, Roles, RollupConfig, base_fee_params, base_fee_params_canyon,
+    params::base_fee_config,
 };
 
 /// L1 chain configuration from the `alloy-genesis` crate.
@@ -33,6 +34,10 @@ pub type L1ChainConfig = alloy_genesis::ChainConfig;
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+// Reject any registry key the struct does not model, so a superchain-registry field that is added
+// but not wired up here fails loudly at deserialization (or at KONA_SYNC_SUPERCHAIN=true
+// regeneration) instead of being silently dropped. Mirrors HardForkConfig, which is already strict.
+#[cfg_attr(feature = "serde", serde(deny_unknown_fields))]
 pub struct ChainConfig {
     /// Chain name (e.g. "Base")
     #[cfg_attr(feature = "serde", serde(rename = "Name", alias = "name"))]
@@ -49,9 +54,6 @@ pub struct ChainConfig {
     /// Chain explorer HTTP endpoint
     #[cfg_attr(feature = "serde", serde(rename = "Explorer", alias = "explorer"))]
     pub explorer: String,
-    /// Level of integration with the superchain.
-    #[cfg_attr(feature = "serde", serde(rename = "SuperchainLevel", alias = "superchain_level"))]
-    pub superchain_level: SuperchainLevel,
     /// Whether the chain is governed by optimism.
     #[cfg_attr(
         feature = "serde",
@@ -198,6 +200,7 @@ impl ChainConfig {
 #[cfg(feature = "serde")]
 mod tests {
     use super::*;
+    use alloc::string::ToString;
 
     #[test]
     fn test_chain_config_json() {
@@ -207,7 +210,6 @@ mod tests {
             "PublicRPC": "https://mainnet.base.org",
             "SequencerRPC": "https://mainnet-sequencer.base.org",
             "Explorer": "https://explorer.base.org",
-            "SuperchainLevel": 1,
             "GovernedByOptimism": false,
             "SuperchainTime": 0,
             "DataAvailabilityType": "eth-da",
@@ -293,6 +295,14 @@ mod tests {
     }
 
     #[test]
+    fn test_chain_config_rejects_superchain_level() {
+        let mut toml_src = include_str!("../../tests/fixtures/rehearsal-0-bn-0.toml").to_string();
+        toml_src.insert_str(0, "superchain_level = 0\n");
+        let err = toml::from_str::<ChainConfig>(&toml_src).unwrap_err();
+        assert!(err.to_string().contains("unknown field `superchain_level`"));
+    }
+
+    #[test]
     fn test_chain_config_without_interop_skipped_in_json() {
         // ChainConfig::default() has interop: None; serializing must omit the key entirely.
         let cfg = ChainConfig::default();
@@ -300,6 +310,9 @@ mod tests {
         assert!(!json.contains("interop"), "expected `interop` key to be omitted; got: {json}");
     }
 
+    // Guards the `deny_unknown_fields` attribute on ChainConfig: an otherwise-valid config with one
+    // extra top-level key must be rejected. (The rest of the config must deserialize cleanly so the
+    // parser reaches the unknown key and that is the sole error.)
     #[test]
     fn test_chain_config_unknown_field_json() {
         let raw: &str = r#"
@@ -308,7 +321,6 @@ mod tests {
             "PublicRPC": "https://mainnet.base.org",
             "SequencerRPC": "https://mainnet-sequencer.base.org",
             "Explorer": "https://explorer.base.org",
-            "SuperchainLevel": 1,
             "GovernedByOptimism": false,
             "SuperchainTime": 0,
             "DataAvailabilityType": "eth-da",
@@ -327,9 +339,9 @@ mod tests {
                 "holocene_time": 1736445601
             },
             "optimism": {
-            "eip1559Elasticity": "0x6",
-            "eip1559Denominator": "0x32",
-            "eip1559DenominatorCanyon": "0xfa"
+                "eip1559Elasticity": 6,
+                "eip1559Denominator": 50,
+                "eip1559DenominatorCanyon": 250
             },
             "alt_da": null,
             "genesis": {
@@ -381,6 +393,9 @@ mod tests {
         "#;
 
         let err = serde_json::from_str::<ChainConfig>(raw).unwrap_err();
-        assert_eq!(err.classify(), serde_json::error::Category::Data);
+        assert!(
+            err.to_string().contains("unknown field `unknown_field`"),
+            "expected deny_unknown_fields to reject the extra key, got: {err}"
+        );
     }
 }

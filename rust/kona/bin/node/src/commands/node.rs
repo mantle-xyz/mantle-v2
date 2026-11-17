@@ -1,11 +1,11 @@
 //! Node Subcommand.
 
 use crate::{
+    cli_metrics::{CliMetrics, init_rollup_config_metrics},
     flags::{
         DerivationDelegateArgs, GlobalArgs, L1ClientArgs, L2ClientArgs, P2PArgs, RpcArgs,
         SequencerArgs,
     },
-    metrics::{CliMetrics, init_rollup_config_metrics},
 };
 use alloy_provider::RootProvider;
 use alloy_rpc_types_engine::JwtSecret;
@@ -21,8 +21,13 @@ use kona_node_service::{EngineConfig, L1ConfigBuilder, NodeMode, RollupNodeBuild
 use kona_registry::{L1Config, scr_rollup_config_by_alloy_ident};
 use op_alloy_network::Optimism;
 use op_alloy_provider::ext::engine::OpEngineApi;
-use serde_json::from_reader;
-use std::{fs::File, io::Write, path::PathBuf, sync::Arc};
+use serde_json::{Value, from_reader, from_value};
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::PathBuf,
+    sync::Arc,
+};
 use strum::IntoEnumIterator;
 use tracing::{debug, error, info};
 
@@ -103,13 +108,13 @@ pub struct NodeCommand {
     /// (overrides the default rollup configuration from the registry)
     #[arg(long, visible_alias = "rollup-cfg", env = "KONA_NODE_ROLLUP_CONFIG")]
     pub l2_config_file: Option<PathBuf>,
-    /// Path to a custom L1 rollup configuration file
-    /// (overrides the default rollup configuration from the registry)
+    /// Path to a custom L1 chain configuration or genesis file
+    /// (overrides the default L1 configuration from the registry)
     #[arg(long, visible_alias = "rollup-l1-cfg", env = "KONA_NODE_L1_CHAIN_CONFIG")]
     pub l1_config_file: Option<PathBuf>,
     /// Path to a JSON file describing the interop dependency set for this
     /// chain. Mirrors op-node's `--interop.dependency-set`. Required when the
-    /// rollup config schedules the Interop hardfork; the inner
+    /// rollup config schedules the Lagoon hardfork; the inner
     /// `StatefulAttributesBuilder` constructor panics otherwise; turning a
     /// silent state-divergence bug into a startup crash.
     #[arg(long = "interop.dependency-set", env = "KONA_NODE_INTEROP_DEPENDENCY_SET")]
@@ -340,7 +345,7 @@ impl NodeCommand {
     /// Loads the interop [`DependencySet`] from `--interop.dependency-set`.
     ///
     /// Enforces the invariant that when the rollup config schedules the
-    /// Interop hardfork, the operator must supply a dependency-set JSON file.
+    /// Lagoon hardfork, the operator must supply a dependency-set JSON file.
     /// Errors rather than panicking so the operator sees a clear message.
     fn load_dependency_set(&self, cfg: &RollupConfig) -> Result<Option<Arc<DependencySet>>> {
         match &self.interop_dependency_set {
@@ -353,15 +358,26 @@ impl NodeCommand {
                 })?;
                 Ok(Some(Arc::new(dep_set)))
             }
-            None if cfg.hardforks.interop_time.is_some() => bail!(
-                "Interop is scheduled for this chain (interop_time = {:?}), but \
+            None if cfg.hardforks.lagoon_time.is_some() => bail!(
+                "Lagoon is scheduled for this chain (lagoon_time = {:?}), but \
                  --interop.dependency-set was not provided. Supply the dependency-set \
                  JSON file matching op-node's --interop.dependency-set to avoid silent \
-                 state divergence on interop activation.",
-                cfg.hardforks.interop_time,
+                 state divergence on Lagoon activation.",
+                cfg.hardforks.lagoon_time,
             ),
             None => Ok(None),
         }
+    }
+
+    /// Parses an L1 chain config from either a direct config or a genesis document.
+    fn parse_l1_config(reader: impl Read) -> serde_json::Result<L1ChainConfig> {
+        let mut value: Value = from_reader(reader)?;
+        if let Value::Object(object) = &mut value &&
+            let Some(config) = object.remove("config")
+        {
+            return from_value(config);
+        }
+        from_value(value)
     }
 
     /// Get the L1 config, either from a file or the known chains.
@@ -371,7 +387,8 @@ impl NodeCommand {
                 debug!("Loading l1 config from file: {:?}", path);
                 let file = File::open(path)
                     .map_err(|e| anyhow::anyhow!("Failed to open l1 config file: {e}"))?;
-                from_reader(file).map_err(|e| anyhow::anyhow!("Failed to parse l1 config: {e}"))
+                Self::parse_l1_config(file)
+                    .map_err(|e| anyhow::anyhow!("Failed to parse l1 config: {e}"))
             }
             None => {
                 debug!("Loading l1 config from known chains");
@@ -390,7 +407,23 @@ impl NodeCommand {
                 debug!("Loading l2 config from file: {:?}", path);
                 let file = File::open(path)
                     .map_err(|e| anyhow::anyhow!("Failed to open l2 config file: {e}"))?;
-                from_reader(file).map_err(|e| anyhow::anyhow!("Failed to parse l2 config: {e}"))
+                let cfg: RollupConfig = from_reader(file)
+                    .map_err(|e| anyhow::anyhow!("Failed to parse l2 config: {e}"))?;
+
+                // [MANTLE] Reject an out-of-order Mantle fork schedule here, the way op-node's
+                // `CheckMantleForks` does at startup (`op-node/rollup/mantle_types.go`). The
+                // fault-proof hosts already do this (`bin/host/src/{single,interop}/cfg.rs`), but
+                // `kona-node` did not, and Mantle does not run fault proofs — so this path was the
+                // unguarded one.
+                //
+                // Without it a hand-edited rollup.json that omits, say, `mantle_skadi_time` while
+                // setting `mantle_arsia_time` starts up fine and then silently negotiates the
+                // Engine API at V2 forever: the L1 fork axis is keyed off the Mantle forks
+                // (`RollupConfig::mantle_ethereum_fork_condition`), so a missing Mantle fork makes
+                // Cancun/Prague resolve to `Never` rather than merely late. Failing at load is the
+                // only place that turns into a legible error.
+                cfg.check_mantle_fork_order()?;
+                Ok(cfg)
             }
             None => {
                 debug!("Loading l2 config from superchain registry");
@@ -505,6 +538,23 @@ mod tests {
         ])
         .unwrap_err();
         assert!(err.to_string().contains("--l2-engine-rpc"));
+    }
+
+    #[test]
+    fn test_get_l1_config_from_direct_and_genesis_files() {
+        let documents = [
+            serde_json::json!({"chainId": 123}),
+            serde_json::json!({"config": {"chainId": 123}, "alloc": {}}),
+        ];
+
+        for document in documents {
+            let mut file = tempfile::NamedTempFile::new().unwrap();
+            serde_json::to_writer(&mut file, &document).unwrap();
+
+            let command =
+                NodeCommand { l1_config_file: Some(file.path().into()), ..Default::default() };
+            assert_eq!(command.get_l1_config(123).unwrap().chain_id, 123);
+        }
     }
 
     #[test]

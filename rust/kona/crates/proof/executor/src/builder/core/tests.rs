@@ -1,19 +1,40 @@
 use crate::{
-    ExecutorError,
-    test_utils::{execute_loaded_fixture, load_test_fixture, run_test_fixture},
+    BlockBuildingOutcome, ExecutorError, StatelessL2Builder,
+    test_utils::{
+        ExecutorTestFixture, LoadedExecutorTestFixture, execute_loaded_fixture, load_test_fixture,
+        run_test_fixture,
+    },
 };
-use alloy_consensus::Header;
+use alloy_consensus::{Header, Transaction};
 use alloy_eips::Encodable2718;
+use alloy_op_evm::OpEvmFactory;
+use alloy_primitives::{Address, Sealable, U256};
+use kona_mpt::NoopTrieHinter;
 use op_alloy_consensus::{OpReceiptEnvelope, SDMGasEntry, build_post_exec_tx};
+use op_revm::constants::{BASE_FEE_RECIPIENT, OPERATOR_FEE_RECIPIENT};
 use rstest::rstest;
-use std::path::PathBuf;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+};
 
 /// Path to the fixture used by all post-exec tests.
 ///
 /// The chosen fixture must contain a regular (non-deposit, non-post-exec) tx at index 1, since
 /// several tests target that index when constructing payload entries.
 fn post_exec_fixture_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata/block-26207960.tar.gz")
+    // [MANTLE] A Mantle fixture: OP Sepolia fixtures cannot be decoded here at all, because their
+    // deposits carry the 8-field OP wire format while Mantle's `TxDeposit` requires the BVM_ETH
+    // `eth_value` field, so RLP decoding overflows into `input`.
+    //
+    // Mantle Sepolia (sepolia-testnet-qa1, chain 5003) block 26157064, regenerated in the kona
+    // v1.8.0 sync. It replaces sepolia-qa3 block 2510026, which upstream's v1.8.0 PostExec tests
+    // outgrew: they need the block to be pre-Isthmus (qa3 activates every fork at genesis; on
+    // Mantle, Isthmus == Arsia) and to hold at least 10 transactions (the sparse-entry test
+    // references tx index 9; 2510026 has 2). 26157064 is a deposit at index 0 followed by ten
+    // regular transactions, at timestamp 1753858801 — inside `[Skadi, Limb)`, which also keeps it
+    // clear of the EIP-7825 gas-cap question open from Limb onward.
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata/block-26157064.tar.gz")
 }
 
 fn fixture_block_number(parent_header: &Header) -> u64 {
@@ -41,6 +62,41 @@ fn assert_post_exec_validation_failure(err: ExecutorError, expected: &str) {
     let err = err.to_string();
     assert!(err.to_lowercase().contains("invalid post-exec payload"), "unexpected error: {err}");
     assert!(err.contains(expected), "expected {err:?} to contain {expected:?}");
+}
+
+/// Executes a fixture and reads selected balances from its resulting state trie.
+fn execute_loaded_fixture_with_balances(
+    loaded: LoadedExecutorTestFixture,
+    sdm_active_override: Option<bool>,
+    addresses: &BTreeSet<Address>,
+) -> (BlockBuildingOutcome<OpReceiptEnvelope>, BTreeMap<Address, U256>) {
+    let LoadedExecutorTestFixture { fixture_dir: _fixture_dir, fixture, provider } = loaded;
+    let ExecutorTestFixture { rollup_config, parent_header, executing_payload, .. } = fixture;
+
+    let mut executor = StatelessL2Builder::new(
+        &rollup_config,
+        OpEvmFactory::<alloy_op_evm::OpTx>::default(),
+        alloy_op_evm::block::OpAlloyReceiptBuilder::default(),
+        provider,
+        NoopTrieHinter,
+        parent_header.seal_slow(),
+    );
+    executor.set_sdm_active_override(sdm_active_override);
+    let outcome = executor.build_block(executing_payload).expect("fixture executes");
+    let balances = addresses
+        .iter()
+        .map(|address| {
+            let balance = executor
+                .trie_db
+                .get_trie_account(address)
+                .expect("account proof is available")
+                .unwrap_or_else(|| panic!("account {address} exists"))
+                .balance;
+            (*address, balance)
+        })
+        .collect();
+
+    (outcome, balances)
 }
 
 #[rstest]
@@ -112,10 +168,7 @@ async fn post_exec_sdm_enabled_rejects_duplicate_post_exec_txs() {
 }
 
 #[tokio::test]
-async fn post_exec_valid_empty_payload_executes_without_state_or_gas_change() {
-    let baseline = execute_loaded_fixture(load_test_fixture(post_exec_fixture_path()).await, None)
-        .expect("baseline fixture must execute");
-
+async fn post_exec_rejects_empty_payload_entries() {
     let mut loaded = load_test_fixture(post_exec_fixture_path()).await;
     let block_number = fixture_block_number(&loaded.fixture.parent_header);
     append_post_exec_tx(
@@ -124,7 +177,127 @@ async fn post_exec_valid_empty_payload_executes_without_state_or_gas_change() {
         Vec::new(),
     );
 
-    let outcome = execute_loaded_fixture(loaded, Some(true)).expect("post-exec fixture executes");
+    let err = execute_loaded_fixture(loaded, Some(true)).unwrap_err();
+    assert_post_exec_validation_failure(err, "empty post-exec payload gas refund entries");
+}
+
+#[tokio::test]
+async fn post_exec_rejects_entries_exceeding_block_transaction_count() {
+    let mut loaded = load_test_fixture(post_exec_fixture_path()).await;
+    let block_number = fixture_block_number(&loaded.fixture.parent_header);
+    let transactions = loaded.fixture.executing_payload.transactions.as_mut().unwrap();
+    let entries =
+        (0..=transactions.len() as u64).map(|index| SDMGasEntry { index, gas_refund: 1 }).collect();
+    append_post_exec_tx(transactions, block_number, entries);
+
+    let err = execute_loaded_fixture(loaded, Some(true)).unwrap_err();
+    assert_post_exec_validation_failure(err, "entries exceed block transaction count");
+}
+
+#[tokio::test]
+async fn post_exec_rejects_zero_refund() {
+    let mut loaded = load_test_fixture(post_exec_fixture_path()).await;
+    let block_number = fixture_block_number(&loaded.fixture.parent_header);
+    append_post_exec_tx(
+        loaded.fixture.executing_payload.transactions.as_mut().unwrap(),
+        block_number,
+        vec![SDMGasEntry { index: 1, gas_refund: 0 }],
+    );
+
+    let err = execute_loaded_fixture(loaded, Some(true)).unwrap_err();
+    assert_post_exec_validation_failure(err, "zero post-exec payload refund for tx index 1");
+}
+
+#[tokio::test]
+async fn post_exec_rejects_decreasing_entries() {
+    let mut loaded = load_test_fixture(post_exec_fixture_path()).await;
+    let block_number = fixture_block_number(&loaded.fixture.parent_header);
+    append_post_exec_tx(
+        loaded.fixture.executing_payload.transactions.as_mut().unwrap(),
+        block_number,
+        vec![SDMGasEntry { index: 2, gas_refund: 1 }, SDMGasEntry { index: 1, gas_refund: 1 }],
+    );
+
+    let err = execute_loaded_fixture(loaded, Some(true)).unwrap_err();
+    assert_post_exec_validation_failure(err, "tx index 1 follows 2");
+}
+
+#[tokio::test]
+async fn post_exec_accepts_sparse_ordered_entries() {
+    let mut loaded = load_test_fixture(post_exec_fixture_path()).await;
+    let block_number = fixture_block_number(&loaded.fixture.parent_header);
+    append_post_exec_tx(
+        loaded.fixture.executing_payload.transactions.as_mut().unwrap(),
+        block_number,
+        vec![SDMGasEntry { index: 1, gas_refund: 1 }, SDMGasEntry { index: 9, gas_refund: 1 }],
+    );
+
+    execute_loaded_fixture(loaded, Some(true)).expect("sparse ordered entries must execute");
+}
+
+#[tokio::test]
+async fn post_exec_nonzero_payload_applies_refunds() {
+    let mut loaded = load_test_fixture(post_exec_fixture_path()).await;
+    let block_number = fixture_block_number(&loaded.fixture.parent_header);
+    let timestamp = loaded.fixture.executing_payload.payload_attributes.timestamp;
+    assert!(
+        !loaded.fixture.rollup_config.is_isthmus_active(timestamp),
+        "fixture must remain pre-Isthmus so operator-fee settlement is zero"
+    );
+
+    let recovered = loaded
+        .fixture
+        .executing_payload
+        .recovered_transactions()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("fixture transactions recover");
+    // [MANTLE] Upstream pins the fixture at exactly ten transactions and asserts eight refunds
+    // below. Mantle's fixture (see `post_exec_fixture_path`) has eleven, and a Mantle Sepolia block
+    // in the usable window with exactly ten is impractical to find, so both counts are derived
+    // from the fixture instead. Every balance and gas assertion below already works from
+    // `refunded` / `refund_total`, so the check is unchanged; only the two literals moved.
+    assert!(recovered.len() >= 10, "fixture must contain at least ten pre-PostExec transactions");
+
+    // Leave the deposit at index 0 and the first regular transaction unrefunded, then refund one
+    // gas from each of the remaining transactions.
+    let refunded = &recovered[2..];
+    let refund_senders = refunded.iter().map(|tx| tx.signer()).collect::<BTreeSet<_>>();
+    let beneficiary = loaded.fixture.executing_payload.payload_attributes.suggested_fee_recipient;
+    assert_ne!(beneficiary, BASE_FEE_RECIPIENT);
+    assert_ne!(beneficiary, OPERATOR_FEE_RECIPIENT);
+    assert_ne!(BASE_FEE_RECIPIENT, OPERATOR_FEE_RECIPIENT);
+    assert!(
+        refund_senders.iter().all(|sender| ![
+            beneficiary,
+            BASE_FEE_RECIPIENT,
+            OPERATOR_FEE_RECIPIENT
+        ]
+        .contains(sender)),
+        "refund senders must not alias fee recipients"
+    );
+
+    let mut affected_accounts = refund_senders.clone();
+    // [MANTLE] Upstream also reads `OPERATOR_FEE_RECIPIENT`. On Mantle the operator fee starts at
+    // Arsia, so a pre-Arsia block never touches that vault and the witness generated from the real
+    // chain has no proof for it (`Preimage not found`). See the matching note at the end of the
+    // test.
+    affected_accounts.extend([beneficiary, BASE_FEE_RECIPIENT]);
+    let (baseline, baseline_balances) = execute_loaded_fixture_with_balances(
+        load_test_fixture(post_exec_fixture_path()).await,
+        None,
+        &affected_accounts,
+    );
+
+    let transactions = loaded.fixture.executing_payload.transactions.as_mut().unwrap();
+    let gas_refund_entries = (2..transactions.len())
+        .map(|index| SDMGasEntry { index: index as u64, gas_refund: 1 })
+        .collect::<Vec<_>>();
+    let refund_total = gas_refund_entries.len() as u64;
+    assert_eq!(refund_total, recovered.len() as u64 - 2);
+    append_post_exec_tx(transactions, block_number, gas_refund_entries);
+
+    let (outcome, refunded_balances) =
+        execute_loaded_fixture_with_balances(loaded, Some(true), &affected_accounts);
     assert_eq!(
         outcome.execution_result.receipts.len(),
         baseline.execution_result.receipts.len() + 1
@@ -133,8 +306,59 @@ async fn post_exec_valid_empty_payload_executes_without_state_or_gas_change() {
         outcome.execution_result.receipts.last(),
         Some(OpReceiptEnvelope::PostExec(_))
     ));
-    assert_eq!(outcome.execution_result.gas_used, baseline.execution_result.gas_used);
-    assert_eq!(outcome.header.state_root, baseline.header.state_root);
+    assert_eq!(
+        outcome.execution_result.gas_used,
+        baseline.execution_result.gas_used - refund_total
+    );
+    assert_eq!(outcome.header.gas_used, baseline.header.gas_used - refund_total);
+
+    let base_fee = baseline.header.base_fee_per_gas.expect("fixture has a base fee");
+    let mut expected_sender_credits = BTreeMap::<Address, U256>::new();
+    let mut expected_beneficiary_debit = U256::ZERO;
+    for tx in refunded {
+        let effective_gas_price = tx.inner().effective_gas_price(Some(base_fee));
+        *expected_sender_credits.entry(tx.signer()).or_default() += U256::from(effective_gas_price);
+        expected_beneficiary_debit +=
+            U256::from(effective_gas_price.saturating_sub(u128::from(base_fee)));
+    }
+    let expected_base_fee_debit = U256::from(base_fee) * U256::from(refund_total);
+
+    for (sender, expected_credit) in expected_sender_credits {
+        assert_eq!(
+            refunded_balances[&sender],
+            baseline_balances[&sender] + expected_credit,
+            "refunded sender {sender} must receive its exact effective-gas-price credit"
+        );
+    }
+    assert_eq!(
+        refunded_balances[&beneficiary],
+        baseline_balances[&beneficiary]
+            .checked_sub(expected_beneficiary_debit)
+            .expect("beneficiary funds the priority-fee refund"),
+        "beneficiary must fund the exact priority-fee share"
+    );
+    assert_eq!(
+        refunded_balances[&BASE_FEE_RECIPIENT],
+        baseline_balances[&BASE_FEE_RECIPIENT]
+            .checked_sub(expected_base_fee_debit)
+            .expect("base-fee recipient funds the base-fee refund"),
+        "base-fee recipient must fund the exact base-fee share"
+    );
+    // [MANTLE] Upstream asserts here that the operator-fee recipient's balance is unchanged. With
+    // Mantle's fixture that holds in a stronger form: the witness carries no proof for the vault,
+    // so any read of it during the refunded execution above would have failed with
+    // `Preimage not found` and `execute_loaded_fixture_with_balances` would have panicked. The
+    // execution succeeding therefore shows the settlement never touched the vault at all.
+
+    let total = |balances: &BTreeMap<Address, U256>| {
+        balances.values().copied().fold(U256::ZERO, |total, balance| total + balance)
+    };
+    assert_eq!(
+        total(&refunded_balances),
+        total(&baseline_balances),
+        "settlement must only transfer value among affected accounts"
+    );
+    assert_ne!(outcome.header.state_root, baseline.header.state_root);
     assert_ne!(outcome.header.transactions_root, baseline.header.transactions_root);
     assert_ne!(outcome.header.receipts_root, baseline.header.receipts_root);
 }

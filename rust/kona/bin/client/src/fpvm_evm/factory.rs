@@ -10,7 +10,7 @@ use kona_preimage::{HintWriterClient, PreimageOracleClient};
 use op_revm::{L1BlockInfo, OpBuilder, OpHaltReason, OpSpecId, OpTransaction};
 use revm::{
     Context, Inspector, MainContext,
-    context::{BlockEnv, CfgEnv, result::EVMError},
+    context::{BlockEnv, CfgEnv, DBErrorMarker, result::EVMError},
     inspector::NoOpInspector,
 };
 
@@ -49,6 +49,8 @@ where
     H: HintWriterClient + Clone + Send + Sync + 'static,
     O: PreimageOracleClient + Clone + Send + Sync + 'static,
 {
+    type Snapshot = ();
+
     fn begin_post_exec_tx<DB, I>(evm: &mut Self::Evm<DB, I>, ctx: PostExecTxContext)
     where
         DB: Database,
@@ -64,6 +66,22 @@ where
     {
         evm.take_last_post_exec_tx_result()
     }
+
+    fn refund_snapshot<DB, I>(evm: &Self::Evm<DB, I>) -> Self::Snapshot
+    where
+        DB: Database,
+        I: Inspector<Self::Context<DB>>,
+    {
+        evm.refund_snapshot()
+    }
+
+    fn seed_refund_snapshot<DB, I>(evm: &mut Self::Evm<DB, I>, state: Self::Snapshot)
+    where
+        DB: Database,
+        I: Inspector<Self::Context<DB>>,
+    {
+        evm.seed_refund_snapshot(state);
+    }
 }
 
 impl<H, O> EvmFactory for FpvmOpEvmFactory<H, O>
@@ -75,7 +93,7 @@ where
         OpEvm<DB, I, OpFpvmPrecompiles<H, O>, FpvmOpTx>;
     type Context<DB: Database> = OpEvmContext<DB>;
     type Tx = FpvmOpTx;
-    type Error<DBError: core::error::Error + Send + Sync + 'static> = EVMError<DBError, OpTxError>;
+    type Error<DBError: DBErrorMarker> = EVMError<DBError, OpTxError>;
     type HaltReason = OpHaltReason;
     type Spec = OpSpecId;
     type Precompiles = OpFpvmPrecompiles<H, O>;

@@ -1,0 +1,146 @@
+[
+  {
+    "name": "eth_getBalance_latest",
+    "method": "eth_getBalance",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "latest"],
+    "description": "Get the latest balance"
+  },
+  {
+    "name": "eth_getBalance_latest_template",
+    "method": "eth_getBalance",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "{{latest_block_number}}"],
+    "description": "Get the latest balance using the latest_block_number template variable"
+  },
+  {
+    "name": "eth_getBalance_earliest",
+    "method": "eth_getBalance",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "earliest"],
+    "description": "Get the balance at the earliest block"
+  },
+  {
+    "name": "eth_getBalance_pending",
+    "method": "eth_getBalance",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "pending"],
+    "description": "Get the pending balance"
+  },
+  {
+    "name": "eth_getBalance_by_number",
+    "method": "eth_getBalance",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "0x1"],
+    "description": "Get the balance at a specified block"
+  },
+  {
+    "name": "eth_getBalance_zero_address",
+    "method": "eth_getBalance",
+    "params": ["0x0000000000000000000000000000000000000000", "latest"],
+    "description": "Get the zero address balance"
+  },
+  {
+    "name": "eth_getBalance_safe",
+    "method": "eth_getBalance",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "safe"],
+    "description": "Get the balance at the safe block"
+  },
+  {
+    "name": "eth_getBalance_finalized",
+    "method": "eth_getBalance",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "finalized"],
+    "description": "Get the balance at the finalized block"
+  },
+  {
+    "name": "eth_getCode_contract",
+    "method": "eth_getCode",
+    "params": ["0x4200000000000000000000000000000000000015", "latest"],
+    "description": "Get contract code"
+  },
+  {
+    "name": "eth_getCode_latest_template",
+    "method": "eth_getCode",
+    "params": ["0x4200000000000000000000000000000000000015", "{{latest_block_number}}"],
+    "description": "Get contract code using the latest_block_number template variable"
+  },
+  {
+    "name": "eth_getCode_eoa",
+    "method": "eth_getCode",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "latest"],
+    "description": "Get EOA code (should be empty)"
+  },
+  {
+    "name": "eth_getCode_pending",
+    "method": "eth_getCode",
+    "params": ["0x4200000000000000000000000000000000000015", "pending"],
+    "description": "Get code from pending state"
+  },
+  {
+    "name": "eth_getCode_safe",
+    "method": "eth_getCode",
+    "params": ["0x4200000000000000000000000000000000000015", "safe"],
+    "description": "Get code at the safe block"
+  },
+  {
+    "name": "eth_getCode_finalized",
+    "method": "eth_getCode",
+    "params": ["0x4200000000000000000000000000000000000015", "finalized"],
+    "description": "Get code at the finalized block"
+  },
+  {
+    "name": "eth_getStorageAt_slot0",
+    "method": "eth_getStorageAt",
+    "params": ["0x4200000000000000000000000000000000000015", "0x0", "latest"],
+    "description": "Get storage slot 0"
+  },
+  {
+    "name": "eth_getStorageAt_pending",
+    "method": "eth_getStorageAt",
+    "params": ["0x4200000000000000000000000000000000000015", "0x0", "pending"],
+    "description": "Get storage from pending state"
+  },
+  {
+    "name": "eth_getStorageAt_empty",
+    "method": "eth_getStorageAt",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "0x0", "latest"],
+    "description": "Get storage for an empty account"
+  },
+  {
+    "name": "eth_getStorageAt_safe",
+    "method": "eth_getStorageAt",
+    "params": ["0x4200000000000000000000000000000000000015", "0x0", "safe"],
+    "description": "Get storage at the safe block"
+  },
+  {
+    "name": "eth_getStorageAt_finalized",
+    "method": "eth_getStorageAt",
+    "params": ["0x4200000000000000000000000000000000000015", "0x0", "finalized"],
+    "description": "Get storage at the finalized block"
+  },
+  {
+    "name": "eth_getTransactionCount_latest",
+    "method": "eth_getTransactionCount",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "latest"],
+    "description": "Get the latest nonce"
+  },
+  {
+    "name": "eth_getTransactionCount_pending",
+    "method": "eth_getTransactionCount",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "pending"],
+    "description": "Get the pending nonce"
+  },
+  {
+    "name": "eth_getTransactionCount_earliest",
+    "method": "eth_getTransactionCount",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "earliest"],
+    "description": "Get the nonce at the earliest block"
+  },
+  {
+    "name": "eth_getTransactionCount_safe",
+    "method": "eth_getTransactionCount",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "safe"],
+    "description": "Get the nonce at the safe block"
+  },
+  {
+    "name": "eth_getTransactionCount_finalized",
+    "method": "eth_getTransactionCount",
+    "params": ["0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", "finalized"],
+    "description": "Get the nonce at the finalized block"
+  }
+]

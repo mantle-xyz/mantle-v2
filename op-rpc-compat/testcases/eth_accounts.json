@@ -1,0 +1,110 @@
+[
+  {
+    "name": "eth_getBalance_zero_latest",
+    "method": "eth_getBalance",
+    "params": ["0x0000000000000000000000000000000000000000", "latest"],
+    "description": "Get the zero address balance"
+  },
+  {
+    "name": "eth_getBalance_zero_earliest",
+    "method": "eth_getBalance",
+    "params": ["0x0000000000000000000000000000000000000000", "earliest"],
+    "description": "Get the zero address balance at genesis"
+  },
+  {
+    "name": "eth_getBalance_zero_0x1",
+    "method": "eth_getBalance",
+    "params": ["0x0000000000000000000000000000000000000000", "0x1"],
+    "description": "Get the zero address balance at block 1"
+  },
+  {
+    "name": "eth_getBalance_zero_pending",
+    "method": "eth_getBalance",
+    "params": ["0x0000000000000000000000000000000000000000", "pending"],
+    "description": "Get the pending balance of the zero address"
+  },
+  {
+    "name": "eth_getCode_zero_latest",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000000", "latest"],
+    "description": "Get the code at the zero address"
+  },
+  {
+    "name": "eth_getCode_precompile_1",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000001", "latest"],
+    "description": "Get the code of precompile 1 (ecrecover)"
+  },
+  {
+    "name": "eth_getCode_precompile_2",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000002", "latest"],
+    "description": "Get the code of precompile 2 (sha256)"
+  },
+  {
+    "name": "eth_getCode_precompile_3",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000003", "latest"],
+    "description": "Get the code of precompile 3 (ripemd160)"
+  },
+  {
+    "name": "eth_getCode_precompile_4",
+    "method": "eth_getCode",
+    "params": ["0x0000000000000000000000000000000000000004", "latest"],
+    "description": "Get the code of precompile 4 (identity)"
+  },
+  {
+    "name": "eth_getStorageAt_zero_slot0",
+    "method": "eth_getStorageAt",
+    "params": ["0x0000000000000000000000000000000000000000", "0x0", "latest"],
+    "description": "Get storage slot 0 of the zero address"
+  },
+  {
+    "name": "eth_getStorageAt_zero_slot1",
+    "method": "eth_getStorageAt",
+    "params": ["0x0000000000000000000000000000000000000000", "0x1", "latest"],
+    "description": "Get storage slot 1 of the zero address"
+  },
+  {
+    "name": "eth_getStorageAt_zero_maxSlot",
+    "method": "eth_getStorageAt",
+    "params": ["0x0000000000000000000000000000000000000000", "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "latest"],
+    "description": "Get the maximum storage slot of the zero address"
+  },
+  {
+    "name": "eth_getTransactionCount_zero_latest",
+    "method": "eth_getTransactionCount",
+    "params": ["0x0000000000000000000000000000000000000000", "latest"],
+    "description": "Get the nonce of the zero address"
+  },
+  {
+    "name": "eth_getTransactionCount_zero_pending",
+    "method": "eth_getTransactionCount",
+    "params": ["0x0000000000000000000000000000000000000000", "pending"],
+    "description": "Get the pending nonce of the zero address"
+  },
+  {
+    "name": "eth_getTransactionCount_zero_earliest",
+    "method": "eth_getTransactionCount",
+    "params": ["0x0000000000000000000000000000000000000000", "earliest"],
+    "description": "Get the nonce of the zero address at genesis"
+  },
+  {
+    "name": "eth_getProof_zero",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000000", [], "latest"],
+    "description": "Get a Merkle proof for the zero address"
+  },
+  {
+    "name": "eth_getProof_with_storage_keys",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000000", ["0x0000000000000000000000000000000000000000000000000000000000000000"], "latest"],
+    "description": "Get a Merkle proof with one storage key"
+  },
+  {
+    "name": "eth_getProof_multiple_keys",
+    "method": "eth_getProof",
+    "params": ["0x0000000000000000000000000000000000000000", ["0x0000000000000000000000000000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000000000000000000000000001"], "latest"],
+    "description": "Get a Merkle proof with multiple storage keys"
+  }
+]

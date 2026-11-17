@@ -5,13 +5,14 @@ use alloy_eips::BlockNumHash;
 use alloy_op_hardforks::{
     OP_MAINNET_CANYON_TIMESTAMP, OP_MAINNET_ECOTONE_TIMESTAMP, OP_MAINNET_FJORD_TIMESTAMP,
     OP_MAINNET_GRANITE_TIMESTAMP, OP_MAINNET_HOLOCENE_TIMESTAMP, OP_MAINNET_ISTHMUS_TIMESTAMP,
-    OP_MAINNET_JOVIAN_TIMESTAMP,
+    OP_MAINNET_JOVIAN_TIMESTAMP, OP_MAINNET_KARST_TIMESTAMP,
 };
 use alloy_primitives::{address, b256, uint};
 #[cfg(feature = "rollup_config_override")]
 use kona_genesis::FJORD_MAX_SEQUENCER_DRIFT;
 use kona_genesis::{
-    ChainGenesis, HardForkConfig, OP_MAINNET_BASE_FEE_CONFIG, RollupConfig, SystemConfig,
+    ChainGenesis, HardForkConfig, MantleHardForkConfig, OP_MAINNET_BASE_FEE_CONFIG, RollupConfig,
+    SystemConfig,
 };
 
 /// The [`RollupConfig`] for OP Mainnet.
@@ -31,6 +32,8 @@ pub const OP_MAINNET_CONFIG: RollupConfig = RollupConfig {
             overhead: uint!(0xbc_U256),
             scalar: uint!(0xa6fe0_U256),
             gas_limit: 30_000_000_u64,
+            // [MANTLE] Mantle-only field; OP chains never set it.
+            base_fee: None,
             base_fee_scalar: None,
             blob_base_fee_scalar: None,
             eip1559_denominator: None,
@@ -63,9 +66,12 @@ pub const OP_MAINNET_CONFIG: RollupConfig = RollupConfig {
         pectra_blob_schedule_time: None,
         isthmus_time: Some(OP_MAINNET_ISTHMUS_TIMESTAMP),
         jovian_time: Some(OP_MAINNET_JOVIAN_TIMESTAMP),
-        karst_time: None,
-        interop_time: None,
+        karst_time: Some(OP_MAINNET_KARST_TIMESTAMP),
+        keep_karst_upgrade_gas: true,
+        lagoon_time: None,
     },
+    // [MANTLE] Mantle-only field; OP chains schedule no Mantle hardforks.
+    mantle_hardforks: MantleHardForkConfig::NONE,
     batch_inbox_address: address!("ff00000000000000000000000000000000000010"),
     deposit_contract_address: address!("beb5fc579115071764c7423a4f12edde41f106ed"),
     l1_system_config_address: address!("229047fed2591dbec1ef1118d64f7af3db9eb290"),

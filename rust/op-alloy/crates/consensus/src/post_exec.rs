@@ -50,6 +50,8 @@ pub struct PostExecPayload {
     /// payloads in different blocks produce distinct transaction hashes.
     pub block_number: u64,
     /// Initial SDM gas refund entries keyed by transaction index.
+    ///
+    /// Version 1 requires this list to be non-empty and ordered by strictly increasing index.
     pub gas_refund_entries: Vec<SDMGasEntry>,
 }
 
@@ -115,6 +117,16 @@ pub enum PostExecPayloadValidationError {
         /// Containing block number.
         block_number: u64,
     },
+    /// The payload has more refund entries than preceding block transactions they could target.
+    #[error(
+        "post-exec payload has {entry_count} gas refund entries but only {preceding_transaction_count} preceding transactions"
+    )]
+    TooManyGasRefundEntries {
+        /// Number of refund entries in the payload.
+        entry_count: usize,
+        /// Number of transactions preceding the final `PostExec` transaction.
+        preceding_transaction_count: usize,
+    },
 }
 
 impl PostExecPayloadValidationError {
@@ -122,6 +134,18 @@ impl PostExecPayloadValidationError {
     #[must_use]
     pub fn into_string(self) -> String {
         self.to_string()
+    }
+
+    /// The failed rule as a stable label value, independent of the display text.
+    #[must_use]
+    pub const fn as_reason(self) -> &'static str {
+        match self {
+            Self::UnexpectedPostExecTx { .. } => "unexpected_post_exec_tx",
+            Self::MultiplePostExecTxs { .. } => "multiple_post_exec_txs",
+            Self::PostExecTxNotLast { .. } => "post_exec_tx_not_last",
+            Self::BlockNumberMismatch { .. } => "block_number_mismatch",
+            Self::TooManyGasRefundEntries { .. } => "too_many_gas_refund_entries",
+        }
     }
 }
 
@@ -186,13 +210,83 @@ where
         });
     }
 
+    if let Some(parsed) = parsed
+        .as_ref()
+        .filter(|parsed| parsed.payload.gas_refund_entries.len() > parsed.tx_index as usize)
+    {
+        return Err(PostExecPayloadValidationError::TooManyGasRefundEntries {
+            entry_count: parsed.payload.gas_refund_entries.len(),
+            preceding_transaction_count: parsed.tx_index as usize,
+        });
+    }
+
     Ok(parsed)
+}
+
+/// Total SDM gas refunded by `entries`, saturating on overflow.
+pub fn total_gas_refund(entries: &[SDMGasEntry]) -> u64 {
+    entries.iter().map(|entry| entry.gas_refund).fold(0, u64::saturating_add)
+}
+
+/// Validate the placement and entry count of an encoded `PostExec` payload without allocating its
+/// entry vector.
+///
+/// This is a contextual preflight for raw block transaction lists. The full transaction count is
+/// known before individual envelopes are decoded, while a standalone `0x7D` decoder has no block
+/// context. At most one `PostExec` transaction may appear and it must be final. Every refund entry
+/// must target a distinct preceding transaction, so the final transaction's index is also the
+/// maximum valid entry count.
+pub fn validate_post_exec_entry_count(transactions: &[Bytes]) -> alloy_rlp::Result<()> {
+    let mut post_exec = None;
+
+    for (tx_index, encoded) in transactions.iter().enumerate() {
+        if encoded.first().copied() != Some(POST_EXEC_TX_TYPE_ID) {
+            continue;
+        }
+        if post_exec.is_some() {
+            return Err(alloy_rlp::Error::Custom("multiple post-exec transactions"));
+        }
+        post_exec = Some((tx_index, encoded));
+    }
+
+    let Some((tx_index, encoded)) = post_exec else { return Ok(()) };
+    if tx_index != transactions.len() - 1 {
+        return Err(alloy_rlp::Error::Custom("post-exec transaction must be final"));
+    }
+
+    let mut encoded_payload = &encoded[1..];
+    let mut payload = Header::decode_bytes(&mut encoded_payload, true)?;
+    let _version = u8::decode(&mut payload)?;
+    let _block_number = u64::decode(&mut payload)?;
+    let mut encoded_entries = Header::decode_bytes(&mut payload, true)?;
+    let mut entry_count = 0usize;
+
+    while !encoded_entries.is_empty() {
+        if entry_count == tx_index {
+            return Err(alloy_rlp::Error::Custom(
+                "post-exec gas refund entries exceed block transaction count",
+            ));
+        }
+        let _entry = SDMGasEntry::decode(&mut encoded_entries)?;
+        entry_count += 1;
+    }
+
+    if !payload.is_empty() || !encoded_payload.is_empty() {
+        return Err(alloy_rlp::Error::UnexpectedLength);
+    }
+
+    Ok(())
 }
 
 impl PostExecPayload {
     /// Look up refund for a given tx index.
     pub fn gas_refund_for_idx(&self, index: u64) -> Option<u64> {
         self.gas_refund_entries.iter().find(|e| e.index == index).map(|e| e.gas_refund)
+    }
+
+    /// Total SDM gas refunded by this payload, saturating on overflow.
+    pub fn total_gas_refund(&self) -> u64 {
+        total_gas_refund(&self.gas_refund_entries)
     }
 
     /// RLP-encode the payload into bytes.
@@ -276,6 +370,11 @@ impl TxPostExec {
     /// Returns the canonical signer address for post-exec transactions.
     pub const fn signer_address(&self) -> Address {
         Address::ZERO
+    }
+
+    /// Decodes the transaction from RLP bytes.
+    pub fn rlp_decode(data: &mut &[u8]) -> alloy_rlp::Result<Self> {
+        Ok(Self::new(PostExecPayload::decode_checked(data)?))
     }
 
     /// Encoded length of the transaction body.
@@ -416,11 +515,13 @@ impl Decodable2718 for TxPostExec {
         if ty != POST_EXEC_TX_TYPE_ID {
             return Err(Eip2718Error::UnexpectedType(ty));
         }
-        Ok(Self::new(PostExecPayload::decode_checked(data)?))
+        Ok(Self::rlp_decode(data)?)
     }
 
-    fn fallback_decode(data: &mut &[u8]) -> Eip2718Result<Self> {
-        Ok(Self::new(PostExecPayload::decode_checked(data)?))
+    fn fallback_decode(_data: &mut &[u8]) -> Eip2718Result<Self> {
+        // Post-exec transactions have no untyped form: reaching untyped dispatch means the 0x7D
+        // tag was absent, so reject rather than resurrect the type from the body.
+        Err(Eip2718Error::UnexpectedType(POST_EXEC_TX_TYPE_ID))
     }
 }
 
@@ -436,7 +537,7 @@ impl Encodable for TxPostExec {
 
 impl Decodable for TxPostExec {
     fn decode(data: &mut &[u8]) -> alloy_rlp::Result<Self> {
-        Ok(Self::new(PostExecPayload::decode_checked(data)?))
+        Self::rlp_decode(data)
     }
 }
 
@@ -506,148 +607,35 @@ where
     .serialize(serializer)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Deserialize a post-exec transaction from its RPC representation.
+///
+/// Counterpart to [`serde_post_exec_tx_rpc`]. RPC responses (e.g. `eth_getBlockByHash` with full
+/// transactions) encode the transaction as a full object whose `input` field carries the
+/// RLP-encoded [`PostExecPayload`]; the remaining fields (`gas`, `value`, `from`, `gasPrice`, …)
+/// are derived placeholders that we ignore. We decode the payload from `input` and reuse the
+/// RPC-provided `hash` so the sealed transaction round-trips without recomputation.
+///
+/// Without this, the envelope's `PostExec` variant would fall back to [`TxPostExec`]'s standalone
+/// serde form (which expects the [`PostExecPayload`] shape), and deserializing an RPC block that
+/// contains a post-exec transaction would fail.
+#[cfg(feature = "serde")]
+pub fn serde_post_exec_tx_rpc_de<'de, D>(deserializer: D) -> Result<Sealed<TxPostExec>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
 
-    #[test]
-    fn post_exec_payload_rlp_roundtrip_preserves_block_number() {
-        let payload = PostExecPayload {
-            version: 1,
-            block_number: 42,
-            gas_refund_entries: vec![SDMGasEntry { index: 3, gas_refund: 7 }],
-        };
-
-        let encoded = payload.to_rlp_bytes();
-        let decoded = PostExecPayload::from_rlp_bytes(encoded.as_ref()).expect("decode payload");
-
-        assert_eq!(decoded, payload);
+    #[derive(Deserialize)]
+    struct SerdeHelper {
+        hash: B256,
+        input: Bytes,
     }
 
-    #[test]
-    fn post_exec_payload_rlp_decode_rejects_unknown_version() {
-        let payload = PostExecPayload {
-            version: POST_EXEC_PAYLOAD_VERSION + 1,
-            block_number: 42,
-            gas_refund_entries: vec![SDMGasEntry { index: 3, gas_refund: 7 }],
-        };
-
-        let encoded = payload.to_rlp_bytes();
-        let err =
-            PostExecPayload::from_rlp_bytes(encoded.as_ref()).expect_err("reject unknown version");
-        assert_eq!(err, alloy_rlp::Error::Custom("unsupported post-exec payload version"));
-    }
-
-    #[test]
-    fn post_exec_payload_rlp_decode_rejects_trailing_bytes() {
-        let payload = PostExecPayload {
-            version: 1,
-            block_number: 42,
-            gas_refund_entries: vec![SDMGasEntry { index: 3, gas_refund: 7 }],
-        };
-
-        let mut encoded = payload.to_rlp_bytes().to_vec();
-        encoded.push(0);
-
-        let err = PostExecPayload::from_rlp_bytes(&encoded).expect_err("reject trailing bytes");
-        assert_eq!(err, alloy_rlp::Error::UnexpectedLength);
-    }
-
-    #[test]
-    fn post_exec_tx_hash_depends_on_block_number() {
-        let entries = vec![SDMGasEntry { index: 3, gas_refund: 7 }];
-        let tx_a = build_post_exec_tx(42, entries.clone());
-        let tx_b = build_post_exec_tx(43, entries);
-
-        assert_ne!(tx_a.tx_hash(), tx_b.tx_hash());
-    }
-
-    #[test]
-    fn post_exec_tx_eip2718_roundtrip() {
-        let tx = build_post_exec_tx(
-            99,
-            vec![
-                SDMGasEntry { index: 0, gas_refund: 100 },
-                SDMGasEntry { index: 5, gas_refund: 200 },
-            ],
-        );
-
-        let mut buf = Vec::new();
-        tx.encode_2718(&mut buf);
-
-        let decoded = TxPostExec::decode_2718(&mut buf.as_slice()).expect("decode 2718");
-        assert_eq!(decoded, tx);
-        assert_eq!(decoded.tx_hash(), tx.tx_hash());
-    }
-
-    #[test]
-    fn post_exec_tx_eip2718_decode_rejects_unknown_version() {
-        let payload = PostExecPayload {
-            version: POST_EXEC_PAYLOAD_VERSION + 1,
-            block_number: 42,
-            gas_refund_entries: vec![SDMGasEntry { index: 3, gas_refund: 7 }],
-        };
-
-        let mut buf = Vec::new();
-        buf.put_u8(POST_EXEC_TX_TYPE_ID);
-        payload.encode(&mut buf);
-
-        let err = TxPostExec::decode_2718(&mut buf.as_slice())
-            .expect_err("2718 decode must reject unknown version");
-        assert!(
-            matches!(
-                err,
-                Eip2718Error::RlpError(alloy_rlp::Error::Custom(
-                    "unsupported post-exec payload version"
-                ))
-            ),
-            "unexpected error: {err:?}"
-        );
-    }
-
-    #[test]
-    fn post_exec_tx_rlp_decode_rejects_unknown_version() {
-        let payload = PostExecPayload {
-            version: POST_EXEC_PAYLOAD_VERSION + 1,
-            block_number: 42,
-            gas_refund_entries: vec![SDMGasEntry { index: 3, gas_refund: 7 }],
-        };
-        let mut buf = Vec::new();
-        payload.encode(&mut buf);
-
-        let err = TxPostExec::decode(&mut buf.as_slice())
-            .expect_err("rlp decode must reject unknown version");
-        assert_eq!(err, alloy_rlp::Error::Custom("unsupported post-exec payload version"));
-    }
-
-    #[test]
-    fn post_exec_tx_eip2718_roundtrip_empty_refunds() {
-        let tx = build_post_exec_tx(1, vec![]);
-
-        let mut buf = Vec::new();
-        tx.encode_2718(&mut buf);
-
-        let decoded = TxPostExec::decode_2718(&mut buf.as_slice()).expect("decode 2718");
-        assert_eq!(decoded, tx);
-    }
-
-    #[cfg(feature = "serde")]
-    #[test]
-    fn post_exec_tx_serde_serializes_as_payload() {
-        let tx = build_post_exec_tx(42, vec![SDMGasEntry { index: 3, gas_refund: 7 }]);
-        let value = serde_json::to_value(&tx).expect("serialize tx");
-
-        assert_eq!(value, serde_json::to_value(&tx.payload).expect("serialize payload"));
-    }
-
-    #[cfg(feature = "serde")]
-    #[test]
-    fn post_exec_tx_serde_roundtrip_preserves_cached_input() {
-        let tx = build_post_exec_tx(42, vec![SDMGasEntry { index: 3, gas_refund: 7 }]);
-        let value = serde_json::to_value(&tx).expect("serialize tx");
-
-        let decoded: TxPostExec = serde_json::from_value(value).expect("deserialize tx");
-        assert_eq!(decoded, tx);
-        assert_eq!(decoded.input, decoded.payload.to_rlp_bytes());
-    }
+    let SerdeHelper { hash, input } = SerdeHelper::deserialize(deserializer)?;
+    let payload =
+        PostExecPayload::from_rlp_bytes(input.as_ref()).map_err(serde::de::Error::custom)?;
+    Ok(Sealed::new_unchecked(TxPostExec::new(payload), hash))
 }
+
+#[cfg(test)]
+mod tests;

@@ -2,7 +2,7 @@
 
 A `no_std` compatible implementation of the OP Stack's [derivation pipeline][derive].
 
-[derive]: (https://specs.optimism.io/protocol/derivation.html#l2-chain-derivation-specification).
+[derive]: https://specs.optimism.io/protocol/derivation.html#l2-chain-derivation-specification
 
 ## Usage
 
@@ -34,7 +34,7 @@ let attributes = StatefulAttributesBuilder::new(
    chain_provider.clone(),
    dependency_set,
 );
-let dap = EthereumDataSource::new(
+let dap = EthereumDataSource::new_from_parts(
    chain_provider.clone(),
    blob_provider,
    cfg.as_ref()
@@ -48,7 +48,7 @@ let pipeline = PipelineBuilder::new()
    .chain_provider(chain_provider)
    .builder(attributes)
    .origin(l1_origin)
-   .build();
+   .build_polled();
 ```
 
 [p]: ./src/traits/pipeline.rs

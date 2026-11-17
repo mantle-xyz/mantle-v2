@@ -28,7 +28,7 @@ pub enum SystemConfigUpdateError {
     /// An unsafe block signer update error.
     #[error("Unsafe block signer update error: {0}")]
     UnsafeBlockSigner(UnsafeBlockSignerUpdateError),
-    /// [MANTLE] A base fee update error.
+    /// `[MANTLE]` A base fee update error.
     #[error("Base fee update error: {0}")]
     BaseFee(BaseFeeUpdateError),
     /// A min base fee parameter update error.
@@ -135,7 +135,7 @@ pub enum GasConfigUpdateError {
     ScalarDecodingError,
 }
 
-/// [MANTLE] An error for updating the base fee on the [`crate::SystemConfig`].
+/// `[MANTLE]` An error for updating the base fee on the [`crate::SystemConfig`].
 #[derive(Debug, thiserror::Error, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum BaseFeeUpdateError {

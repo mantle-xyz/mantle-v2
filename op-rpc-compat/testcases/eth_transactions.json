@@ -1,0 +1,56 @@
+[
+  {
+    "name": "eth_getTransactionReceipt_not_found",
+    "method": "eth_getTransactionReceipt",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "Transaction hash does not exist"
+  },
+  {
+    "name": "eth_getTransactionReceipt_latest_template",
+    "method": "eth_getTransactionReceipt",
+    "params": ["{{latest_tx_hash}}"],
+    "description": "Get the latest transaction receipt using the latest_tx_hash template variable"
+  },
+  {
+    "name": "eth_getTransactionReceipt_deposit",
+    "method": "eth_getTransactionReceipt",
+    "params": ["{{latest_deposit_tx_hash}}"],
+    "description": "Geth/reth receipt consistency for a deposit transaction (type 0x7e): deposits pay no L1 fee, so geth omits l1Fee, l1GasPrice, scalars, and blobGasUsed; reth should match (before the fix, extra reth fields produced a WARNING)"
+  },
+  {
+    "name": "eth_getRawTransactionByHash_not_found",
+    "method": "eth_getRawTransactionByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "Transaction hash does not exist"
+  },
+  {
+    "name": "eth_getRawTransactionByHash_latest_template",
+    "method": "eth_getRawTransactionByHash",
+    "params": ["{{latest_tx_hash}}"],
+    "description": "Get the latest raw transaction using the latest_tx_hash template variable"
+  },
+  {
+    "name": "eth_getTransactionByHash_not_found",
+    "method": "eth_getTransactionByHash",
+    "params": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+    "description": "Transaction hash does not exist"
+  },
+  {
+    "name": "eth_getTransactionByHash_latest_template",
+    "method": "eth_getTransactionByHash",
+    "params": ["{{latest_tx_hash}}"],
+    "description": "Get the latest transaction using the latest_tx_hash template variable"
+  },
+  {
+    "name": "eth_sendTransaction_invalid",
+    "method": "eth_sendTransaction",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000000",
+        "to": "0x0000000000000000000000000000000000000001",
+        "value": "0x0"
+      }
+    ],
+    "description": "Send a transaction (may fail if the account is locked or has insufficient balance)"
+  }
+]

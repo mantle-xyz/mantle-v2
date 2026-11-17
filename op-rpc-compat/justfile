@@ -1,0 +1,10 @@
+import '../justfiles/go.just'
+
+BINARY := "./bin/op-rpc-compat"
+
+op-rpc-compat: (go_build BINARY ".")
+
+test: (go_test "./...")
+
+clean:
+    rm -f {{BINARY}}

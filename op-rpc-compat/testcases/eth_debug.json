@@ -1,0 +1,227 @@
+[
+  {
+    "name": "debug_getRawHeader_latest",
+    "method": "debug_getRawHeader",
+    "params": ["latest"],
+    "description": "Get the raw header of the latest block"
+  },
+  {
+    "name": "debug_getRawHeader_0x1",
+    "method": "debug_getRawHeader",
+    "params": ["0x1"],
+    "description": "Get the raw header of block 1"
+  },
+  {
+    "name": "debug_getRawBlock_latest",
+    "method": "debug_getRawBlock",
+    "params": ["latest"],
+    "description": "Get the raw data of the latest block"
+  },
+  {
+    "name": "debug_getRawBlock_0x1",
+    "method": "debug_getRawBlock",
+    "params": ["0x1"],
+    "description": "Get the raw data of block 1"
+  },
+  {
+    "name": "debug_getRawReceipts_latest",
+    "method": "debug_getRawReceipts",
+    "params": ["latest"],
+    "description": "Get the raw receipts of the latest block"
+  },
+  {
+    "name": "debug_getRawReceipts_0x1",
+    "method": "debug_getRawReceipts",
+    "params": ["0x1"],
+    "description": "Get the raw receipts of block 1"
+  },
+  {
+    "name": "debug_getBadBlocks",
+    "method": "debug_getBadBlocks",
+    "params": [],
+    "description": "Get the bad block list"
+  },
+  {
+    "name": "debug_traceBlockByNumber_0x1",
+    "method": "debug_traceBlockByNumber",
+    "params": ["0x1", {}],
+    "description": "Trace execution of block 1"
+  },
+  {
+    "name": "debug_traceBlockByNumber_latest",
+    "method": "debug_traceBlockByNumber",
+    "params": ["latest", {}],
+    "description": "Trace execution of the latest block"
+  },
+  {
+    "name": "debug_traceBlockByNumber_callTracer",
+    "method": "debug_traceBlockByNumber",
+    "params": ["0x1", {"tracer": "callTracer"}],
+    "description": "Trace block 1 with callTracer"
+  },
+  {
+    "name": "debug_dbAncient",
+    "method": "debug_dbAncient",
+    "params": [
+      "headers",
+      "0x0"
+    ],
+    "description": "Get ancient database data (requires kind and number parameters)"
+  },
+  {
+    "name": "debug_dbAncients",
+    "method": "debug_dbAncients",
+    "params": [],
+    "description": "Get all ancient database information"
+  },
+  {
+    "name": "debug_dbGet_valid",
+    "method": "debug_dbGet",
+    "params": [
+      "0x0000000000000000000000000000000000000000000000000000000000000000"
+    ],
+    "description": "Get database data with a valid key"
+  },
+  {
+    "name": "debug_dbGet_invalid",
+    "method": "debug_dbGet",
+    "params": [
+      "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    ],
+    "description": "Get database data with an invalid key (may return an error)"
+  },
+  {
+    "name": "debug_dumpBlock_latest",
+    "method": "debug_dumpBlock",
+    "params": [
+      "latest"
+    ],
+    "description": "Dump the state of the latest block"
+  },
+  {
+    "name": "debug_dumpBlock_0x1",
+    "method": "debug_dumpBlock",
+    "params": [
+      "0x1"
+    ],
+    "description": "Dump the state of block 1"
+  },
+  {
+    "name": "debug_executionWitness_latest",
+    "method": "debug_executionWitness",
+    "params": [
+      "latest"
+    ],
+    "description": "Get the execution witness for the latest block"
+  },
+  {
+    "name": "debug_executionWitness_0x1",
+    "method": "debug_executionWitness",
+    "params": [
+      "0x1"
+    ],
+    "description": "Get the execution witness for block 1"
+  },
+  {
+    "name": "debug_getAccessibleState_latest",
+    "method": "debug_getAccessibleState",
+    "params": [
+      "0x0",
+      "latest"
+    ],
+    "description": "Get accessible state for the latest block (requires from and to parameters)"
+  },
+  {
+    "name": "debug_getAccessibleState_0x1",
+    "method": "debug_getAccessibleState",
+    "params": [
+      "0x0",
+      "0x1"
+    ],
+    "description": "Get accessible state for block 1 (requires from and to parameters)"
+  },
+  {
+    "name": "debug_getModifiedAccountsByHash_latest",
+    "method": "debug_getModifiedAccountsByHash",
+    "params": [
+      "0x0",
+      "{{latest_block_hash}}"
+    ],
+    "description": "Get modified accounts by block hash (requires start and end block hashes; start must precede end)"
+  },
+  {
+    "name": "debug_getModifiedAccountsByHash_invalid",
+    "method": "debug_getModifiedAccountsByHash",
+    "params": [
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "0x0000000000000000000000000000000000000000000000000000000000000000"
+    ],
+    "description": "Get modified accounts by invalid block hash (may return an error; requires start and end parameters)"
+  },
+  {
+    "name": "debug_getModifiedAccountsByNumber_0x1",
+    "method": "debug_getModifiedAccountsByNumber",
+    "params": [
+      "0x0",
+      "0x1"
+    ],
+    "description": "Get modified accounts by block number (requires start and end block numbers)"
+  },
+  {
+    "name": "debug_getModifiedAccountsByNumber_latest",
+    "method": "debug_getModifiedAccountsByNumber",
+    "params": [
+      "0x0",
+      "latest"
+    ],
+    "description": "Get modified accounts through the latest block number (requires start and end block numbers)"
+  },
+  {
+    "name": "debug_preimage_valid",
+    "method": "debug_preimage",
+    "params": [
+      "0x0000000000000000000000000000000000000000000000000000000000000000"
+    ],
+    "description": "Get the preimage of a hash if available"
+  },
+  {
+    "name": "debug_preimage_invalid",
+    "method": "debug_preimage",
+    "params": [
+      "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    ],
+    "description": "Get the preimage of a nonexistent hash (may return null)"
+  },
+  {
+    "name": "debug_setTrieFlushInterval",
+    "method": "debug_setTrieFlushInterval",
+    "params": [
+      "1s"
+    ],
+    "description": "Set the trie flush interval (geth expects a duration string such as \"1s\")"
+  },
+  {
+    "name": "debug_storageRangeAt_latest",
+    "method": "debug_storageRangeAt",
+    "params": [
+      "{{latest_block_hash}}",
+      0,
+      "0x0000000000000000000000000000000000000000",
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+      1
+    ],
+    "description": "Get the storage range for the latest block (requires blockHash, txIndex, address, startKey, and maxResult). Reth requires the first parameter to be a block hash"
+  },
+  {
+    "name": "debug_storageRangeAt_0x1",
+    "method": "debug_storageRangeAt",
+    "params": [
+      "{{latest_block_hash}}",
+      0,
+      "0x0000000000000000000000000000000000000000",
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+      1
+    ],
+    "description": "Get a block's storage range (requires blockHash, txIndex, address, startKey, and maxResult). Reth requires the first parameter to be a block hash; use the latest_block_hash template variable"
+  }
+]

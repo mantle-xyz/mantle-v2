@@ -1,0 +1,50 @@
+[
+  {
+    "name": "eth_getFilterLogs_invalid",
+    "method": "eth_getFilterLogs",
+    "params": ["0xffffffff"],
+    "description": "Invalid filter ID"
+  },
+  {
+    "name": "eth_getFilterChanges_invalid",
+    "method": "eth_getFilterChanges",
+    "params": ["0xffffffff"],
+    "description": "Invalid filter ID"
+  },
+  {
+    "name": "eth_uninstallFilter_invalid",
+    "method": "eth_uninstallFilter",
+    "params": ["0xffffffff"],
+    "description": "Uninstall an invalid filter"
+  },
+  {
+    "name": "eth_newBlockFilter",
+    "method": "eth_newBlockFilter",
+    "params": [],
+    "description": "Create a new block filter"
+  },
+  {
+    "name": "eth_newFilter",
+    "method": "eth_newFilter",
+    "params": [
+      {}
+    ],
+    "description": "Create a new log filter with empty parameters"
+  },
+  {
+    "name": "eth_newFilter_with_address",
+    "method": "eth_newFilter",
+    "params": [
+      {
+        "address": "0x0000000000000000000000000000000000000000"
+      }
+    ],
+    "description": "Create a new log filter for a specified address"
+  },
+  {
+    "name": "eth_newPendingTransactionFilter",
+    "method": "eth_newPendingTransactionFilter",
+    "params": [],
+    "description": "Create a pending transaction filter"
+  }
+]

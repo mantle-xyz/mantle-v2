@@ -1,0 +1,32 @@
+[
+  {
+    "name": "rollup_getInfo",
+    "method": "rollup_getInfo",
+    "params": [],
+    "description": "Get rollup information (Optimism)"
+  },
+  {
+    "name": "rollup_gasPrices",
+    "method": "rollup_gasPrices",
+    "params": [],
+    "description": "Get rollup gas prices (Optimism)"
+  },
+  {
+    "name": "eth_getBlockRange_0_to_5",
+    "method": "eth_getBlockRange",
+    "params": ["0x0", "0x5", false],
+    "description": "Get blocks in range 0-5 (Optimism)"
+  },
+  {
+    "name": "eth_getBlockRange_0_to_5_full",
+    "method": "eth_getBlockRange",
+    "params": ["0x0", "0x5", true],
+    "description": "Get blocks in range 0-5 with full transactions (Optimism)"
+  },
+  {
+    "name": "eth_getBlockRange_0_to_1",
+    "method": "eth_getBlockRange",
+    "params": ["0x0", "0x1", false],
+    "description": "Get blocks in range 0-1 (Optimism)"
+  }
+]

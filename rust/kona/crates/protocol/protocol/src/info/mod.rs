@@ -20,7 +20,7 @@
 //! 2. `L1BlockInfoBedrockBase` < `L1BlockInfoBedrock`
 //! 3. `L1BlockInfoEcotoneBase` < `L1BlockInfoEcotone`
 //!
-//! [MANTLE] `L1BlockInfoArsia` is the Mantle Arsia variant. Its calldata
+//! `[MANTLE]` `L1BlockInfoArsia` is the Mantle Arsia variant. Its calldata
 //! layout is byte-for-byte identical to Jovian; only the selector differs
 //! (`0x49e72383` vs Jovian's `0x3db6be2b`). See `arsia.rs` for details.
 

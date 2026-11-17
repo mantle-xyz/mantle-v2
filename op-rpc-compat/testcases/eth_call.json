@@ -1,0 +1,99 @@
+[
+  {
+    "name": "eth_call_simple",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      },
+      "latest"
+    ],
+    "description": "Simple eth_call to the zero address"
+  },
+  {
+    "name": "eth_call_latest_template",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      },
+      "{{latest_block_number}}"
+    ],
+    "description": "Simple eth_call using the latest_block_number template variable"
+  },
+  {
+    "name": "eth_call_with_value",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000001",
+        "value": "0x0",
+        "data": "0x"
+      },
+      "latest"
+    ],
+    "description": "eth_call with value"
+  },
+  {
+    "name": "eth_call_with_gas",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000001",
+        "gas": "0x7530",
+        "data": "0x"
+      },
+      "latest"
+    ],
+    "description": "eth_call with a gas limit (30000 is sufficient for execution)"
+  },
+  {
+    "name": "eth_call_block_0x1",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      },
+      "0x1"
+    ],
+    "description": "Execute eth_call at block 1"
+  },
+  {
+    "name": "eth_estimateGas_simple",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      }
+    ],
+    "description": "Simple gas estimation"
+  },
+  {
+    "name": "eth_estimateGas_transfer",
+    "method": "eth_estimateGas",
+    "params": [
+      {
+        "from": "0x0000000000000000000000000000000000000001",
+        "to": "0x0000000000000000000000000000000000000002",
+        "value": "0x1"
+      }
+    ],
+    "description": "Gas estimation for an ETH transfer"
+  },
+  {
+    "name": "eth_createAccessList_simple",
+    "method": "eth_createAccessList",
+    "params": [
+      {
+        "to": "0x0000000000000000000000000000000000000000",
+        "data": "0x"
+      },
+      "latest"
+    ],
+    "description": "Create an access list"
+  }
+]
