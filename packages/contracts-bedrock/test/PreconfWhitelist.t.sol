@@ -6,14 +6,21 @@ import { Vm } from "forge-std/Vm.sol";
 import { Portal_Initializer } from "./CommonTest.t.sol";
 import { AddressAliasHelper } from "src/vendor/AddressAliasHelper.sol";
 import { Predeploys } from "src/libraries/Predeploys.sol";
+import { Proxy } from "src/universal/Proxy.sol";
 import { PreconfWhitelist } from "src/L2/PreconfWhitelist.sol";
+import { PreconfWhitelistDeployer } from "test/mocks/PreconfWhitelistDeployer.sol";
+import { EIP1967Helper } from "test/mocks/EIP1967Helper.sol";
 
 /// @title PreconfWhitelist_Test
 /// @notice Tests the three-form rule routing, the alias-based authorization gate, the batch guard,
-///         and — critically — the storage layout and event topic that op-reth depends on.
+///         the proxy setup, and — critically — the storage layout and event topic that op-reth
+///         depends on. Every instance is a proxy, as deployed, so the layout asserted is the proxy's.
 contract PreconfWhitelist_Test is Portal_Initializer {
     /// @notice The one L1 address allowed to govern the allowlist.
     address internal constant AUTHORIZED_L1 = address(0xAbC0);
+
+    /// @notice Admin of every proxy these tests deploy.
+    address internal constant PROXY_ADMIN = address(0xAD01);
 
     /// @notice Seeded exact rule.
     address internal constant P_FROM = address(0x1111);
@@ -35,10 +42,31 @@ contract PreconfWhitelist_Test is Portal_Initializer {
         seed[0] = _p(P_FROM, P_TO);
         seed[1] = _p(FW, address(0));
         seed[2] = _p(address(0), TW);
-        wl = new PreconfWhitelist(AUTHORIZED_L1, seed);
+        wl = _deploy(AUTHORIZED_L1, seed);
     }
 
     // ===== helpers =====
+
+    /// @notice A seeded proxy, deployed as it ships.
+    function _deploy(
+        address _authorizedL1,
+        PreconfWhitelist.Rule[] memory _initRules
+    )
+        internal
+        returns (PreconfWhitelist)
+    {
+        return PreconfWhitelistDeployer.deploy(PROXY_ADMIN, _authorizedL1, _initRules);
+    }
+
+    /// @notice A proxy pointed at a fresh implementation but not yet initialized, so a test can call
+    ///         `initialize` itself: `upgradeToAndCall` replaces any revert reason with its own.
+    function _uninitialized() internal returns (PreconfWhitelist) {
+        Proxy proxy = new Proxy(PROXY_ADMIN);
+        address impl = address(new PreconfWhitelist());
+        vm.prank(PROXY_ADMIN);
+        proxy.upgradeTo(impl);
+        return PreconfWhitelist(address(proxy));
+    }
 
     function _p(address _from, address _to) internal pure returns (PreconfWhitelist.Rule memory) {
         return PreconfWhitelist.Rule({ from: _from, to: _to });
@@ -97,9 +125,9 @@ contract PreconfWhitelist_Test is Portal_Initializer {
         _gov(add, _none());
     }
 
-    // ===== constructor / seeding =====
+    // ===== initialize / seeding =====
 
-    function test_constructor_seedsAllThreeForms_succeeds() external view {
+    function test_initialize_seedsAllThreeForms_succeeds() external view {
         assertEq(wl.authorizedL1(), AUTHORIZED_L1);
         assertTrue(wl.isExactPair(P_FROM, P_TO));
         assertTrue(wl.isFromWildcard(FW));
@@ -110,26 +138,87 @@ contract PreconfWhitelist_Test is Portal_Initializer {
         assertEq(t, 1);
     }
 
-    function test_constructor_emitsWhitelistUpdated_succeeds() external {
+    /// @notice Emitted by the proxy, which is the address op-reth filters on.
+    function test_initialize_emitsWhitelistUpdated_succeeds() external {
         PreconfWhitelist.Rule[] memory seed = new PreconfWhitelist.Rule[](2);
         seed[0] = _p(address(0xAA), address(0xBB));
         seed[1] = _p(address(0xCC), address(0));
+        PreconfWhitelist fresh = _uninitialized();
 
-        vm.expectEmit(true, true, true, true);
+        vm.expectEmit(true, true, true, true, address(fresh));
         emit WhitelistUpdated(1, 1, 0);
-        new PreconfWhitelist(AUTHORIZED_L1, seed);
+        fresh.initialize(AUTHORIZED_L1, seed);
     }
 
-    function test_constructor_zeroAuthorizedL1_reverts() external {
+    function test_initialize_zeroAuthorizedL1_reverts() external {
+        PreconfWhitelist fresh = _uninitialized();
         vm.expectRevert("PreconfWhitelist: authorized L1 sender is the zero address");
-        new PreconfWhitelist(address(0), _none());
+        fresh.initialize(address(0), _none());
     }
 
-    /// @notice The all-zero form is rejected in the constructor too — `_apply` is the single place
+    /// @notice The all-zero form is rejected in `initialize` too — `_apply` is the single place
     ///         the three forms are interpreted, so both entry points agree by construction.
-    function test_constructor_allZeroPair_reverts() external {
+    function test_initialize_allZeroPair_reverts() external {
+        PreconfWhitelist fresh = _uninitialized();
         vm.expectRevert("PreconfWhitelist: pair is all-zero");
-        new PreconfWhitelist(AUTHORIZED_L1, _one(address(0), address(0)));
+        fresh.initialize(AUTHORIZED_L1, _one(address(0), address(0)));
+    }
+
+    /// @notice Initializing again would replace `authorizedL1` and re-seed `listsHash` — a takeover
+    ///         that needs no governance at all.
+    function test_initialize_twice_reverts() external {
+        vm.expectRevert("PreconfWhitelist: already initialized");
+        wl.initialize(address(0xBAD), _none());
+    }
+
+    /// @notice The implementation locks itself, so nobody can seed the bare contract and pass it
+    ///         off as the allowlist.
+    function test_initialize_implementation_reverts() external {
+        PreconfWhitelist impl = new PreconfWhitelist();
+        assertTrue(impl.initialized());
+        vm.expectRevert("PreconfWhitelist: already initialized");
+        impl.initialize(AUTHORIZED_L1, _none());
+    }
+
+    // ===== upgrade =====
+
+    /// @notice What upgradeability is for: a new implementation keeps the address op-reth reads and
+    ///         every rule already stored, and governance keeps working without re-sending the lists.
+    function test_upgrade_keepsRulesAndListsHash_succeeds() external {
+        _gov(_one(address(0x5555), address(0x6666)), _none());
+        PreconfWhitelist.Rule[] memory rulesBefore = wl.getAllRules();
+        bytes32 hashBefore = wl.listsHash();
+        address newImpl = address(new PreconfWhitelist());
+
+        vm.prank(PROXY_ADMIN);
+        Proxy(payable(address(wl))).upgradeTo(newImpl);
+
+        assertEq(EIP1967Helper.getImplementation(address(wl)), newImpl);
+        assertEq(keccak256(abi.encode(wl.getAllRules())), keccak256(abi.encode(rulesBefore)));
+        assertEq(wl.listsHash(), hashBefore);
+        assertEq(wl.authorizedL1(), AUTHORIZED_L1);
+        assertEq(wl.layoutVersion(), 3);
+        assertTrue(wl.initialized(), "an upgrade must not reopen initialize");
+
+        _gov(_none(), _one(P_FROM, P_TO));
+        assertFalse(wl.isExactPair(P_FROM, P_TO));
+    }
+
+    /// @notice Only the proxy admin can swap the implementation — governance included, since it
+    ///         controls the lists, not the code.
+    function test_upgrade_notAdmin_reverts() external {
+        address newImpl = address(new PreconfWhitelist());
+        vm.prank(AddressAliasHelper.applyL1ToL2Alias(AUTHORIZED_L1));
+        vm.expectRevert();
+        Proxy(payable(address(wl))).upgradeTo(newImpl);
+        assertTrue(EIP1967Helper.getImplementation(address(wl)) != newImpl);
+    }
+
+    /// @notice `setUp` goes through the ship path: seeded by `upgradeToAndCall`, then handed to the
+    ///         admin. The deployer keeps nothing.
+    function test_initialize_viaUpgradeToAndCall_seedsTheProxy_succeeds() external view {
+        assertEq(EIP1967Helper.getAdmin(address(wl)), PROXY_ADMIN);
+        assertTrue(wl.initialized());
     }
 
     // ===== routing: the three forms =====
@@ -432,7 +521,7 @@ contract PreconfWhitelist_Test is Portal_Initializer {
 
     /// @notice Rotating to zero would disable governance permanently, and disabling the fast path
     ///         is the node operator's switch rather than a state this contract can enter. Matches
-    ///         the constructor's guard, so both entry points agree about the one refused value.
+    ///         `initialize`'s guard, so both entry points agree about the one refused value.
     function test_setAuthorizedL1_zeroAddress_reverts() external {
         _asL1(AUTHORIZED_L1);
         vm.expectRevert("PreconfWhitelist: authorized L1 sender is the zero address");
@@ -463,8 +552,7 @@ contract PreconfWhitelist_Test is Portal_Initializer {
         out_ = new PreconfWhitelist.Rule[](_n);
         for (uint256 i = 0; i < _n; i++) {
             out_[i] = PreconfWhitelist.Rule({
-                from: address(uint160(_seed + i + 1)),
-                to: address(uint160(_seed + i + 0x100000))
+                from: address(uint160(_seed + i + 1)), to: address(uint160(_seed + i + 0x100000))
             });
         }
     }
@@ -549,7 +637,7 @@ contract PreconfWhitelist_Test is Portal_Initializer {
     /// @notice An empty allowlist yields empty arrays rather than a revert, so tooling does not
     ///         have to special-case a fresh deployment.
     function test_getAll_emptyAllowlist_returnsEmptyArrays_succeeds() external {
-        PreconfWhitelist fresh = new PreconfWhitelist(AUTHORIZED_L1, _none());
+        PreconfWhitelist fresh = _deploy(AUTHORIZED_L1, _none());
         assertEq(fresh.getAllExactPairs().length, 0);
         assertEq(fresh.getAllFromWildcards().length, 0);
         assertEq(fresh.getAllToWildcards().length, 0);
@@ -628,18 +716,18 @@ contract PreconfWhitelist_Test is Portal_Initializer {
         assertEq(wl.getAllRules().length, 8);
     }
 
-    /// @notice The documented migration path: `getAllRules()` output is valid constructor and
+    /// @notice The documented migration path: `getAllRules()` output is valid `initialize` and
     ///         `updatePreconfs` input, so an allowlist can be cloned onto a fresh deployment with
     ///         no off-chain reassembly. This is what makes a `LAYOUT_VERSION` bump survivable.
     ///
-    ///         The clone's constructor also doubles as an assertion that the output never contains
+    ///         The clone's `initialize` also doubles as an assertion that the output never contains
     ///         an all-zero rule: `_apply` reverts on that form, so an emitted `(0, 0)` would fail
     ///         this test rather than silently disappear.
     function test_getAllRules_roundTripsIntoAFreshDeployment_succeeds() external {
         _seedMixed();
 
         PreconfWhitelist.Rule[] memory all = wl.getAllRules();
-        PreconfWhitelist clone = new PreconfWhitelist(AUTHORIZED_L1, all);
+        PreconfWhitelist clone = _deploy(AUTHORIZED_L1, all);
 
         assertEq(clone.exactPairsLength(), wl.exactPairsLength());
         assertEq(clone.fromWildcardsLength(), wl.fromWildcardsLength());
@@ -715,7 +803,7 @@ contract PreconfWhitelist_Test is Portal_Initializer {
     /// @notice An empty allowlist pages to an empty array. The total is a sum of three lengths, so
     ///         this also covers the case where every segment is empty at once.
     function test_getRules_emptyAllowlist_returnsEmptyArray_succeeds() external {
-        PreconfWhitelist fresh = new PreconfWhitelist(AUTHORIZED_L1, _none());
+        PreconfWhitelist fresh = _deploy(AUTHORIZED_L1, _none());
         assertEq(fresh.getRules(0, 10).length, 0);
     }
 
@@ -736,7 +824,7 @@ contract PreconfWhitelist_Test is Portal_Initializer {
 
     /// @notice Zero on an empty allowlist rather than a revert, matching the per-set counters.
     function test_rulesLength_emptyAllowlist_isZero_succeeds() external {
-        PreconfWhitelist fresh = new PreconfWhitelist(AUTHORIZED_L1, _none());
+        PreconfWhitelist fresh = _deploy(AUTHORIZED_L1, _none());
         assertEq(fresh.rulesLength(), 0);
     }
 
@@ -804,8 +892,8 @@ contract PreconfWhitelist_Test is Portal_Initializer {
     ///         and `fromWildcardIndex` as `fromWildcards`, while `layoutVersion` — moved to slot 7
     ///         — read back as 0 and produced an error naming the wrong cause.
     ///
-    ///         Asserted after a rotation rather than on the constructor's value, so that a setter
-    ///         writing to some other slot cannot pass by leaving the constructor's write in place.
+    ///         Asserted after a rotation rather than on `initialize`'s value, so that a setter
+    ///         writing to some other slot cannot pass by leaving `initialize`'s write in place.
     function test_storageLayout_authorizedL1IsAppendedAtSlot7_succeeds() external {
         address newGov = address(0x9E01);
         _asL1(AUTHORIZED_L1);
@@ -817,10 +905,10 @@ contract PreconfWhitelist_Test is Portal_Initializer {
         assertEq(uint256(vm.load(address(wl), bytes32(uint256(0)))), 1, "exactPairs still slot 0");
     }
 
-    /// @notice The marker is written by the constructor, so every deployment carries it — there is
-    ///         no window in which a live contract reads back as version 0.
-    function test_constructor_writesLayoutVersion_succeeds() external {
-        PreconfWhitelist fresh = new PreconfWhitelist(AUTHORIZED_L1, _none());
+    /// @notice The marker is written by `initialize`, so every deployment carries it — there is
+    ///         no window in which a live proxy seeded by `upgradeToAndCall` reads back as version 0.
+    function test_initialize_writesLayoutVersion_succeeds() external {
+        PreconfWhitelist fresh = _deploy(AUTHORIZED_L1, _none());
         assertEq(fresh.layoutVersion(), 3, "even an empty deployment declares its layout");
     }
 
@@ -842,9 +930,17 @@ contract PreconfWhitelist_Test is Portal_Initializer {
         assertTrue(wl.listsHash() != bytes32(0));
     }
 
-    function test_constructor_seedsListsHash_succeeds() external {
+    /// @notice The initialized flag sits after every slot op-reth reads, so adding it moved none of
+    ///         them. OpenZeppelin's `Initializable` would have put it in slot 0 and slid every array
+    ///         down one; the slot 0–8 assertions above would catch that, this one pins where it went.
+    function test_storageLayout_initializedIsSlot9_succeeds() external view {
+        assertEq(uint256(vm.load(address(wl), bytes32(uint256(9)))), 1, "initialized must be slot 9");
+        assertEq(vm.load(address(wl), bytes32(uint256(8))), wl.listsHash(), "listsHash still slot 8");
+    }
+
+    function test_initialize_seedsListsHash_succeeds() external {
         PreconfWhitelist.Rule[] memory seed = _one(P_FROM, P_TO);
-        PreconfWhitelist fresh = new PreconfWhitelist(AUTHORIZED_L1, seed);
+        PreconfWhitelist fresh = _deploy(AUTHORIZED_L1, seed);
         assertEq(fresh.listsHash(), keccak256(abi.encode(bytes32(0), seed, _none())));
     }
 
@@ -917,7 +1013,7 @@ contract PreconfWhitelist_Test is Portal_Initializer {
     // update the table in `PreconfWhitelist.sol`.
 
     /// @notice A full `MAX_BATCH` of exact-pair adds — the expensive form `MAX_BATCH` is sized
-    ///         against. Recorded at 17,496,087 (68,344 per rule).
+    ///         against. Recorded at 17,500,158 (68,359 per rule).
     function test_gas_maxBatchOfPairAdds() external {
         uint256 max = wl.MAX_BATCH();
         PreconfWhitelist.Rule[] memory adds = _pairBatch(max, 0);
@@ -947,13 +1043,13 @@ contract PreconfWhitelist_Test is Portal_Initializer {
         uint256 used = g - gasleft();
 
         console.log("gas, single pair add  ", used);
-        console.log("gas, per-rule average ", uint256(68_344));
-        console.log("un-amortized excess   ", used - 68_344);
-        assertLt(used, 100_000, "single add got more expensive -- re-derive PreconfWhitelistGov.BASE_GAS");
+        console.log("gas, per-rule average ", uint256(68_359));
+        console.log("un-amortized excess   ", used - 68_359);
+        assertLt(used, 105_000, "single add got more expensive -- re-derive PreconfWhitelistGov.BASE_GAS");
     }
 
     /// @notice The same batch made entirely of wildcards, to confirm the pair form really is the
-    ///         expensive one. Recorded at 11,776,517 (46,002 per rule).
+    ///         expensive one. Recorded at 11,780,588 (46,017 per rule).
     /// @dev    Bounded above by the pair figure as well as by an absolute number: if a wildcard add
     ///         ever became the costlier of the two, `MAX_BATCH` would be sized against the wrong
     ///         operation and the ceiling above would stop being an upper bound at all.
@@ -973,6 +1069,6 @@ contract PreconfWhitelist_Test is Portal_Initializer {
         console.log("gas per wildcard add  ", used / max);
 
         assertLt(used, 12_400_000, "wildcard adds got more expensive -- re-measure");
-        assertLt(used, 17_496_087, "the exact-pair form must stay the expensive one");
+        assertLt(used, 17_500_158, "the exact-pair form must stay the expensive one");
     }
 }

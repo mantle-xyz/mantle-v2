@@ -125,12 +125,7 @@ contract L2StandardBridge_Test is Bridge_Initializer {
 
         vm.expectEmit(true, true, true, true, address(L2Bridge));
         emit WithdrawalInitiated({
-            l1Token: address(0),
-            l2Token: Predeploys.BVM_ETH,
-            from: alice,
-            to: alice,
-            amount: 100,
-            data: hex""
+            l1Token: address(0), l2Token: Predeploys.BVM_ETH, from: alice, to: alice, amount: 100, data: hex""
         });
 
         vm.expectEmit(true, true, true, true, address(L2Bridge));
@@ -138,10 +133,7 @@ contract L2StandardBridge_Test is Bridge_Initializer {
 
         vm.prank(alice, alice);
         L2Bridge.withdraw{ value: 0 }({
-            _l2Token: Predeploys.BVM_ETH,
-            _amount: 100,
-            _minGasLimit: 1000,
-            _extraData: hex""
+            _l2Token: Predeploys.BVM_ETH, _amount: 100, _minGasLimit: 1000, _extraData: hex""
         });
 
         assertEq(l2ETH.balanceOf(Predeploys.L2_TO_L1_MESSAGE_PASSER), 0);
@@ -156,12 +148,7 @@ contract L2StandardBridge_Test is Bridge_Initializer {
 
         vm.expectEmit(true, true, true, true, address(L2Bridge));
         emit WithdrawalInitiated({
-            l1Token: address(l1MNT),
-            l2Token: address(0),
-            from: alice,
-            to: alice,
-            amount: 100,
-            data: hex""
+            l1Token: address(l1MNT), l2Token: address(0), from: alice, to: alice, amount: 100, data: hex""
         });
 
         vm.expectEmit(true, true, true, true, address(L2Bridge));
@@ -182,8 +169,9 @@ contract PreBridgeERC20 is Bridge_Initializer {
         deal(_l2Token, alice, 100, true);
         assertEq(ERC20(_l2Token).balanceOf(alice), 100);
         uint256 nonce = L2Messenger.messageNonce();
-        bytes memory message =
-            abi.encodeCall(L1StandardBridge.finalizeBridgeERC20, (address(L1Token), _l2Token, alice, alice, 100, hex""));
+        bytes memory message = abi.encodeCall(
+            L1StandardBridge.finalizeBridgeERC20, (address(L1Token), _l2Token, alice, alice, 100, hex"")
+        );
         uint64 baseGas = L2Messenger.baseGas(message, 1000);
         bytes memory withdrawalData = abi.encodeCall(
             L1CrossDomainMessenger.relayMessage, (nonce, address(L2Bridge), address(L1Bridge), 0, 0, 1000, message)
