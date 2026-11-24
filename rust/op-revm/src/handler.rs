@@ -23,7 +23,7 @@ use revm::{
     handler::{
         EthFrame, EvmTr, FrameResult, Handler, MainnetHandler,
         evm::FrameTr,
-        handle_reservoir_remaining_gas,
+        execution, handle_reservoir_remaining_gas,
         handler::EvmTrError,
         post_execution::{self, reimburse_caller},
         pre_execution::{calculate_caller_fee, validate_account_nonce_and_code_with_components},
@@ -33,7 +33,7 @@ use revm::{
     interpreter::{
         GasTracker, InitialAndFloorGas, interpreter::EthInterpreter, interpreter_action::FrameInit,
     },
-    primitives::U256,
+    primitives::{U256, hardfork::SpecId},
 };
 use std::{boxed::Box, vec};
 
@@ -128,7 +128,7 @@ where
         }
     }
 
-    /// UPSTREAM-MIRROR(override): revm-handler@41.0.0
+    /// UPSTREAM-MIRROR(override): revm-handler@43.0.2
     /// `revm_handler::Handler::validate_initial_tx_gas`
     ///
     /// `[MANTLE]` Calls upstream's default first, then (before Arsia) scales the result by the
@@ -179,8 +179,8 @@ where
                 // multiply the initial gas by the token ratio Keep behavior aligned
                 // with op-geth: Uint256 token ratio is truncated to low 64 bits.
                 let token_ratio = chain.token_ratio.as_limbs()[0].max(1);
-                // [MANTLE] revm 41 removed the `initial_total_gas` field; it is now a
-                // derived value, `initial_regular_gas + initial_state_gas - state_refund`.
+                // [MANTLE] `initial_total_gas` is a derived value,
+                // `initial_regular_gas + initial_state_gas` (revm 43 dropped `state_refund`).
                 // The original semantics were "scale the total by token_ratio", so the
                 // `checked_mul` is still applied to the total (preserving the original
                 // overflow check) and the result is then written entirely into the regular
@@ -193,7 +193,6 @@ where
                     .ok_or(InvalidTransaction::CallerGasLimitMoreThanBlock)?;
                 initial_gas.initial_regular_gas = scaled_total;
                 initial_gas.initial_state_gas = 0;
-                initial_gas.state_refund = 0;
 
                 initial_gas.floor_gas = initial_gas
                     .floor_gas
@@ -452,26 +451,31 @@ where
         reimburse_caller(evm.ctx(), frame_result.gas(), additional_refund).map_err(From::from)
     }
 
-    /// UPSTREAM-MIRROR(override): revm-handler@41.0.0 `revm_handler::Handler::execution`
+    /// UPSTREAM-MIRROR(override): revm-handler@43.0.2 `revm_handler::Handler::execution`
     ///
     /// `[MANTLE]` From Arsia on this delegates to upstream. Before Arsia it copies upstream's body
-    /// (`first_frame_input` → `run_exec_loop` → `last_frame_result`, reservoir 0 because EIP-8037
-    /// state gas is not enabled on Mantle) and first deducts the L1 cost, converted to gas through
-    /// the token ratio, from the gas limit. Re-check against upstream's `execution` whenever the
-    /// frame API changes.
+    /// (`first_frame_input` → `run_exec_loop` → `last_frame_result`) and first deducts the L1
+    /// cost, converted to gas through the token ratio, from the gas the first frame receives.
+    /// Upstream's first frame takes all of `gas.remaining()`, so lowering `remaining` before the
+    /// frame is created is the revm 43 form of the reduced `gas_limit` the revm 41 body passed to
+    /// `first_frame_input`. EIP-8037 state gas and the EIP-2780 runtime charges are not enabled
+    /// on Mantle, so the reservoir is 0 and `gas.remaining()` is still
+    /// `tx.gas_limit() - initial_total_gas()` here. Re-check against upstream's `execution`
+    /// whenever the frame API changes.
     fn execution(
         &mut self,
         evm: &mut Self::Evm,
-        init_and_floor_gas: &InitialAndFloorGas,
-    ) -> Result<FrameResult, Self::Error> {
+        checkpoint: JournalCheckpoint,
+        gas: &mut GasTracker,
+    ) -> Result<Option<FrameResult>, Self::Error> {
         let (block, tx, cfg, _, chain, _) = evm.ctx().all_mut();
 
         if cfg.spec().is_enabled_in(OpSpecId::ARSIA) {
-            return self.mainnet.execution(evm, init_and_floor_gas);
+            return self.mainnet.execution(evm, checkpoint, gas);
         }
 
         let is_deposit = tx.tx_type() == DEPOSIT_TRANSACTION_TYPE;
-        let mut gas_limit = tx.gas_limit() - init_and_floor_gas.initial_total_gas();
+        let mut gas_limit = gas.remaining();
 
         // l1cost = l1cost / effective_gas_price
         // gas_limit = gas_limit - l1cost
@@ -492,7 +496,7 @@ where
             if tx_l1_cost.gt(&U256::from(gas_limit)) {
                 return Err(ERROR::from(OpTransactionError::Base(
                     InvalidTransaction::CallGasCostMoreThanGasLimit {
-                        initial_gas: init_and_floor_gas.initial_total_gas(),
+                        initial_gas: tx.gas_limit() - gas_limit,
                         gas_limit,
                     },
                 )));
@@ -507,19 +511,23 @@ where
             let tx_l1_cost_u64: u64 =
                 tx_l1_cost.try_into().map_err(|_| OpTransactionError::TxL1CostOutOfRange)?;
             gas_limit = gas_limit.wrapping_sub(tx_l1_cost_u64).wrapping_div(token_ratio_u64);
+            gas.set_remaining(gas_limit);
         }
 
-        // Create first frame action
-        let first_frame_input = self.first_frame_input(evm, gas_limit, 0)?;
+        // Create first frame action. It never runs out of gas here: the EIP-2780 runtime charges
+        // are not enabled before Arsia; the branch mirrors upstream.
+        let Some(first_frame_input) = self.first_frame_input(evm, gas)? else {
+            execution::runtime_oog_unwind(evm.ctx(), checkpoint)?;
+            return Ok(None);
+        };
+        evm.ctx().journal_mut().checkpoint_commit();
 
         // Run execution loop
         let mut frame_result = self.run_exec_loop(evm, first_frame_input)?;
 
         // Handle last frame result
-        // [MANTLE] reservoir is 0: EIP-8037 state gas is not enabled on Mantle (same as the
-        // `first_frame_input` call above).
-        self.last_frame_result(evm, 0, &mut frame_result)?;
-        Ok(frame_result)
+        self.last_frame_result(evm, &mut frame_result, gas)?;
+        Ok(Some(frame_result))
     }
 
     /// UPSTREAM-MIRROR(override): revm-handler@43.0.2 `revm_handler::Handler::refund`
@@ -534,7 +542,10 @@ where
         frame_result.gas_mut().record_refund(eip7702_refund);
         let (_, tx, cfg, _, chain, _) = evm.ctx().all_mut();
         let is_deposit = tx.tx_type() == DEPOSIT_TRANSACTION_TYPE;
-        let is_london = cfg.spec().into_eth_spec().is_enabled_in(SpecId::LONDON);
+        // revm 43 takes the EIP-3529 quotient directly; these are the values revm 41 derived
+        // from `is_london`.
+        let max_refund_quotient =
+            if cfg.spec().into_eth_spec().is_enabled_in(SpecId::LONDON) { 5 } else { 2 };
         let gas = frame_result.gas_mut();
         let is_system = tx.is_system_transaction();
 
@@ -558,7 +569,7 @@ where
             }
 
             // Calculate final refund based on (possibly adjusted) limit
-            gas.set_final_refund(is_london);
+            gas.set_final_refund(max_refund_quotient);
 
             if !is_arsia {
                 // scale refund and remaining by token_ratio, restore limit
@@ -569,7 +580,7 @@ where
         } else {
             // Deposit and system transactions: no refunds
             gas.set_refund(0);
-            gas.set_final_refund(is_london);
+            gas.set_final_refund(max_refund_quotient);
         }
 
         Ok(())
@@ -1298,7 +1309,9 @@ mod tests {
             let mut handler =
                 OpHandler::<_, EVMError<_, OpTransactionError>, EthFrame<EthInterpreter>>::new();
             let init = handler.validate_initial_tx_gas(&mut evm)?;
-            handler.execution(&mut evm, &init)
+            let mut gas = handler.tx_gas(&mut evm, &init);
+            let checkpoint = evm.ctx().journal_mut().checkpoint();
+            handler.execution(&mut evm, checkpoint, &mut gas)
         };
 
         // low 64 bits are 0, so execution path should clamp divisor to 1.
@@ -1308,7 +1321,7 @@ mod tests {
 
         // The main assertion here is "no panic" in execution path with low64 == 0.
         let zero_low64_result = run(low64_zero_ratio)
-            .map(|frame| frame.interpreter_result().result)
+            .map(|frame| frame.map(|frame| frame.interpreter_result().result))
             .map_err(|err| err.to_string());
         if let Err(msg) = zero_low64_result {
             assert!(

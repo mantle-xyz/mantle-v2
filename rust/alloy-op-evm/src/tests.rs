@@ -345,10 +345,13 @@ fn deposit_above_tx_gas_limit_cap_receives_the_full_gas_limit() {
             ..Default::default()
         },
         enveloped_tx: None,
+        // [MANTLE] the two trailing `None`s are the BVM_ETH `eth_value` / `eth_tx_value` fields.
         deposit: op_revm::transaction::deposit::DepositTransactionParts::new(
             B256::from([0x11; 32]),
             None,
             false,
+            None,
+            None,
         ),
     });
 
