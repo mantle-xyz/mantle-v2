@@ -3,7 +3,7 @@
 use crate::{
     NodeActor, SequencerAdminQuery, UnsafePayloadGossipClient,
     actors::{
-        SequencerEngineClient,
+        Clock, SequencerEngineClient,
         engine::EngineClientError,
         sequencer::{
             conductor::Conductor,
@@ -26,9 +26,13 @@ use kona_protocol::{BlockInfo, L2BlockInfo, OpAttributesWithParent};
 use op_alloy_rpc_types_engine::OpPayloadAttributes;
 use std::{
     sync::Arc,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, UNIX_EPOCH},
 };
-use tokio::{select, sync::mpsc, time::Interval};
+use tokio::{
+    select,
+    sync::mpsc,
+    time::{Instant, Interval},
+};
 
 /// The handle to a block that has been started but not sealed.
 #[derive(Debug)]
@@ -50,8 +54,8 @@ struct SealLastStartNextResult {
 }
 
 /// The [`SequencerActor`] is responsible for building L2 blocks on top of the current unsafe head
-/// and scheduling them to be signed and gossipped by the P2P layer, extending the L2 chain with new
-/// blocks.
+/// and handing them to the [`SignerActor`](crate::SignerActor) to be signed and gossipped,
+/// extending the L2 chain with new blocks.
 #[derive(Debug)]
 pub struct SequencerActor<
     AttributesBuilder_,
@@ -82,8 +86,11 @@ pub struct SequencerActor<
     pub origin_selector: OriginSelector_,
     /// The rollup configuration.
     pub rollup_config: Arc<RollupConfig>,
-    /// A client to asynchronously sign and gossip built payloads to the network actor.
+    /// A client that hands built payloads to the signer actor, which signs them for the network
+    /// actor to gossip.
     pub unsafe_payload_gossip_client: UnsafePayloadGossipClient_,
+    /// The wall clock used to schedule blocks.
+    pub clock: Arc<dyn Clock>,
 
     /// Ticker that paces block-building attempts.
     build_ticker: Interval,
@@ -128,6 +135,7 @@ where
         origin_selector: OriginSelector_,
         rollup_config: Arc<RollupConfig>,
         unsafe_payload_gossip_client: UnsafePayloadGossipClient_,
+        clock: Arc<dyn Clock>,
     ) -> Self {
         let build_ticker = tokio::time::interval(Duration::from_secs(rollup_config.block_time));
         Self {
@@ -140,6 +148,7 @@ where
             origin_selector,
             rollup_config,
             unsafe_payload_gossip_client,
+            clock,
             build_ticker,
             next_payload_to_seal: None,
             last_seal_duration: Duration::from_secs(0),
@@ -470,6 +479,11 @@ where
             }
             // The sequencer must be active to build new blocks.
             _ = self.build_ticker.tick(), if self.is_active => {
+                if !self.unsafe_payload_gossip_client.has_capacity() {
+                    warn!(target: "sequencer", "Sequencing tick, gossip queue full, not building a block");
+                    return Ok(());
+                }
+                info!(target: "sequencer", "Sequencing tick, building block");
                 // Move the pending payload out of self so the &mut self call below doesn't conflict
                 // with the &self read of self.next_payload_to_seal.
                 let pending = self.next_payload_to_seal.take();
@@ -495,7 +509,7 @@ where
                     let next_block_seconds = payload.attributes_with_parent.parent().block_info.timestamp.saturating_add(self.rollup_config.block_time);
                     // next block time is last + block_time - time it takes to seal.
                     let next_block_time = UNIX_EPOCH + Duration::from_secs(next_block_seconds) - self.last_seal_duration;
-                    match next_block_time.duration_since(SystemTime::now()) {
+                    match next_block_time.duration_since(self.clock.now()) {
                         Ok(duration) => self.build_ticker.reset_after(duration),
                         Err(_) => self.build_ticker.reset_immediately(),
                     };

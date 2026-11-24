@@ -2,8 +2,14 @@
 //!
 //! [NodeActor]: super::NodeActor
 
+// Actors read time from tokio's clock or an injected `Clock`, so tests can control it.
+#![warn(clippy::disallowed_methods)]
+
 mod traits;
 pub use traits::NodeActor;
+
+mod clock;
+pub use clock::{Clock, SystemClock};
 
 mod engine;
 pub use engine::{
@@ -32,6 +38,9 @@ pub use l1_watcher::{
     BlockStream, L1WatcherActor, L1WatcherActorError, L1WatcherChain, L1WatcherDerivationClient,
     QueuedL1WatcherDerivationClient,
 };
+
+mod signer;
+pub use signer::{SignedPayload, SignerActor, SignerActorError};
 
 mod network;
 pub use network::{
