@@ -76,7 +76,7 @@ pub struct MantleHardForkConfig {
     #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     pub mantle_elysium_time: Option<u64>,
     /// `mantle_hoodi_bvm_upgrade_time` sets the activation time for the Mantle Hoodi BVM upgrade,
-    /// an irregular state transition that writes the BVM_ETH and LegacyERC20MNT predeploy
+    /// an irregular state transition that writes the `BVM_ETH` and `LegacyERC20MNT` predeploy
     /// code. Only scheduled on Mantle Hoodi.
     /// Active if `mantle_hoodi_bvm_upgrade_time` != None && L2 block timestamp >=
     /// `Some(mantle_hoodi_bvm_upgrade_time)`, inactive otherwise.

@@ -785,7 +785,7 @@ impl OpHardforks for RollupConfig {
         self.is_mantle_elysium_active(timestamp)
     }
 
-    /// [MANTLE] Lets the shared `alloy-op-evm` block executor apply the Hoodi BVM upgrade
+    /// `[MANTLE]` Lets the shared `alloy-op-evm` block executor apply the Hoodi BVM upgrade
     /// when kona re-executes blocks (fault/validity proofs).
     fn is_mantle_hoodi_bvm_upgrade_active_at_timestamp(&self, timestamp: u64) -> bool {
         self.is_mantle_hoodi_bvm_upgrade_active(timestamp)

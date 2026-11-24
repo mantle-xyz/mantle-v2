@@ -1012,7 +1012,7 @@ fn only_transaction_errors_make_a_payload_invalid() {
 
 mod structural_tests;
 
-/// [MANTLE] The `HoodiBvmUpgrade` write runs in `apply_pre_execution_changes`, keyed on the EVM's
+/// `[MANTLE]` The `HoodiBvmUpgrade` write runs in `apply_pre_execution_changes`, keyed on the EVM's
 /// chain id, so every consumer of this executor (reth, kona) applies it.
 mod hoodi_bvm_upgrade_executor {
     use super::*;

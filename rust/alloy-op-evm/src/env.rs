@@ -197,7 +197,7 @@ pub fn evm_env_for_op_payload(
     evm_env_for_op(input, chain_spec, chain_id)
 }
 
-/// [MANTLE] A fake Mantle chain spec with configurable fork activation. No published chain spec
+/// `[MANTLE]` A fake Mantle chain spec with configurable fork activation. No published chain spec
 /// sets `is_mantle()`, so the Mantle branch of the spec picker is only reachable through this.
 #[cfg(test)]
 #[derive(Debug)]
@@ -642,7 +642,7 @@ mod tests {
         }
     }
 
-    /// [MANTLE] The mirror of the test above for Mantle chains: their Osaka-level forks do not
+    /// `[MANTLE]` The mirror of the test above for Mantle chains: their Osaka-level forks do not
     /// activate EIP-7825, so the builder holds the cap open where revm would otherwise apply it.
     /// Isthmus is included because it reaches the same effective cap by a different route --
     /// revm's pre-Osaka default -- and the two must not disagree.
