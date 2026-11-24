@@ -780,6 +780,14 @@ mod tests {
         };
 
         // Nothing was spent, so the whole limit-based charge is refunded.
-        assert_eq!(l1_block_info.operator_fee_refund(&gas, OpSpecId::ISTHMUS), U256::from(100));
+        // [MANTLE] Mantle charges the operator fee from Arsia (not Isthmus) with the Jovian formula
+        // `gas * scalar * 100 + constant`, so upstream's Isthmus expectation (100) becomes 0 at
+        // Isthmus and 50_000 * 2000 * 100 at Arsia. What this test checks is unchanged: the
+        // used-gas expression saturates instead of underflowing.
+        assert_eq!(l1_block_info.operator_fee_refund(&gas, OpSpecId::ISTHMUS), U256::ZERO);
+        assert_eq!(
+            l1_block_info.operator_fee_refund(&gas, OpSpecId::ARSIA),
+            U256::from(10_000_000_000u64)
+        );
     }
 }
