@@ -181,7 +181,7 @@ impl OpHardfork {
         *self as usize
     }
 
-    /// UPSTREAM-MIRROR(set): alloy-hardforks@0.4.7 `alloy_hardforks::EthereumHardfork`
+    /// UPSTREAM-MIRROR(set): alloy-hardforks@0.4.8 `alloy_hardforks::EthereumHardfork`
     ///
     /// A new upstream variant needs an explicit decision here. The `VARIANTS` loop below
     /// only smoke-tests lookup; semantic mappings remain explicit assertions.
@@ -943,6 +943,7 @@ mod tests {
         // L1 forks newer than the latest implied one are not activated by any OP fork.
         assert_eq!(OpHardfork::activating_op_fork(EthereumHardfork::Bpo1), None);
         assert_eq!(OpHardfork::activating_op_fork(EthereumHardfork::Amsterdam), None);
+        assert_eq!(OpHardfork::activating_op_fork(EthereumHardfork::Bogota), None);
     }
 
     #[test]

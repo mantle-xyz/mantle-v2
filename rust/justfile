@@ -102,11 +102,11 @@ test-docs:
 # Run all lints for the workspace.
 lint: fmt-check lint-clippy lint-docs
 
-# [MANTLE] REVM41-PIN: `check-upstream-mirrors` is not wired into `lint`: `scripts/upstream-mirrors.py`
+# [MANTLE] `check-upstream-mirrors` is not wired into `lint`: `scripts/upstream-mirrors.py`
 # resolves crates from crates.io only, and Mantle's revm comes from the git `[patch.crates-io]`
-# source, so every `revm-*@41.0.0` tag reports `unknown-crate` (26 in the kona v1.8.0 sync). The
-# tags themselves match the pinned versions. Wire it in once the script accepts `[patch]` sources
-# (MANTLE_CHANGES.md §2.5).
+# source (mantle-xyz/revm tag v119-mantle.1), so every `revm-*` tag reports `unknown-crate`. This
+# outlived the revm 41 pin: it is about the patch source, not the version. Wire it in once the
+# script accepts `[patch]` sources (MANTLE_CHANGES.md §2.5).
 # List the UPSTREAM-MIRROR tags — OP code that reproduces upstream reth/revm/alloy logic —
 # with each one's last-verified version against what the workspace resolves to today.
 # `just mirrors stale` is the worklist for a pin bump.
@@ -197,7 +197,8 @@ rust-review base='':
 
 ############################ no_std #################################
 
-# Check no_std compatibility for proof, protocol, alloy, and op-alloy crates
+# Check no_std compatibility for proof, protocol, alloy, and op-alloy crates, plus the host-target
+# no_std build of op-reth's evm crate, whose reth dependencies do not build for riscv.
 check-no-std:
   #!/usr/bin/env bash
   set -euo pipefail
@@ -249,6 +250,16 @@ check-no-std:
     echo "Successfully checked no_std build for: $package"
   done
 
+  host_no_std_packages=(
+    reth-optimism-evm
+  )
+
+  for package in "${host_no_std_packages[@]}"; do
+    echo "Checking host-target no_std build for: $package"
+    cargo check -p "$package" --no-default-features
+    echo "Successfully checked host-target no_std build for: $package"
+  done
+
 ########################### Benchmarks ##############################
 
 # Run benchmarks (compile only)
@@ -257,9 +268,9 @@ bench:
 
 ########################## Misc tools ###############################
 
-# Audit dependencies for licenses, advisories, and bans
+# Audit dependencies for licenses, bans, and sources (advisories are tracked via image scanning)
 deny:
-  cargo deny --all-features check all
+  cargo deny --all-features check bans licenses sources
 
 # Check for unused dependencies (requires nightly + cargo-udeps)
 check-udeps:

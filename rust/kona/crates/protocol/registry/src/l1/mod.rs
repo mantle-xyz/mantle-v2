@@ -137,11 +137,8 @@ impl L1Config {
             // holds, i.e. from Arsia until Elysium, and only when the L1 is Ethereum mainnet.
             // Do not re-null these — that would make the Elysium activation a no-op.
             osaka_time: alloy_hardforks::EthereumHardfork::Osaka.mainnet_activation_timestamp(),
-            // [MANTLE] REVM41-PIN: `bogota_time` sits before `amsterdam_time` in all four configs;
-            // upstream v1.8.0 adds the same field after it. Keep exactly one per config — the
-            // v1.8.0 auto-merge produced a duplicate field without a conflict marker.
-            bogota_time: None,
             amsterdam_time: None,
+            bogota_time: None,
             bpo1_time: alloy_hardforks::EthereumHardfork::Bpo1.mainnet_activation_timestamp(),
             bpo2_time: alloy_hardforks::EthereumHardfork::Bpo2.mainnet_activation_timestamp(),
             bpo3_time: alloy_hardforks::EthereumHardfork::Bpo3.mainnet_activation_timestamp(),
@@ -196,8 +193,8 @@ impl L1Config {
             cancun_time: alloy_hardforks::EthereumHardfork::Cancun.sepolia_activation_timestamp(),
             prague_time: alloy_hardforks::EthereumHardfork::Prague.sepolia_activation_timestamp(),
             osaka_time: alloy_hardforks::EthereumHardfork::Osaka.sepolia_activation_timestamp(),
-            bogota_time: None,
             amsterdam_time: None,
+            bogota_time: None,
             bpo1_time: alloy_hardforks::EthereumHardfork::Bpo1.sepolia_activation_timestamp(),
             bpo2_time: alloy_hardforks::EthereumHardfork::Bpo2.sepolia_activation_timestamp(),
             bpo3_time: alloy_hardforks::EthereumHardfork::Bpo3.sepolia_activation_timestamp(),
@@ -243,8 +240,8 @@ impl L1Config {
             cancun_time: alloy_hardforks::EthereumHardfork::Cancun.holesky_activation_timestamp(),
             prague_time: alloy_hardforks::EthereumHardfork::Prague.holesky_activation_timestamp(),
             osaka_time: alloy_hardforks::EthereumHardfork::Osaka.holesky_activation_timestamp(),
-            bogota_time: None,
             amsterdam_time: None,
+            bogota_time: None,
             bpo1_time: alloy_hardforks::EthereumHardfork::Bpo1.holesky_activation_timestamp(),
             bpo2_time: alloy_hardforks::EthereumHardfork::Bpo2.holesky_activation_timestamp(),
             bpo3_time: alloy_hardforks::EthereumHardfork::Bpo3.holesky_activation_timestamp(),
@@ -291,8 +288,8 @@ impl L1Config {
             cancun_time: alloy_hardforks::EthereumHardfork::Cancun.hoodi_activation_timestamp(),
             prague_time: alloy_hardforks::EthereumHardfork::Prague.hoodi_activation_timestamp(),
             osaka_time: alloy_hardforks::EthereumHardfork::Osaka.hoodi_activation_timestamp(),
-            bogota_time: None,
             amsterdam_time: None,
+            bogota_time: None,
             bpo1_time: alloy_hardforks::EthereumHardfork::Bpo1.hoodi_activation_timestamp(),
             bpo2_time: alloy_hardforks::EthereumHardfork::Bpo2.hoodi_activation_timestamp(),
             bpo3_time: alloy_hardforks::EthereumHardfork::Bpo3.hoodi_activation_timestamp(),

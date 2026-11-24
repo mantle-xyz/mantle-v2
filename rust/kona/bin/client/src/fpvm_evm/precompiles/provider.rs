@@ -101,9 +101,7 @@ where
         true
     }
 
-    // [MANTLE] REVM41-PIN: upstream v1.8.0 tags this `revm-handler@42.0.1`; the copy below was
-    // verified against revm-handler 41.0.0, the version Mantle pins (MANTLE_CHANGES.md §2.5).
-    /// UPSTREAM-MIRROR(copy): revm-handler@41.0.0 `revm_handler::EthPrecompiles::run`
+    /// UPSTREAM-MIRROR(copy): revm-handler@43.0.2 `revm_handler::EthPrecompiles::run`
     ///
     /// FPVM acceleration replaces dispatch, while output conversion delegates to revm. Re-check
     /// input materialization, execution errors, and gas/reservoir propagation across both paths.

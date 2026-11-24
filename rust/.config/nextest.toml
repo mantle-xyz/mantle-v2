@@ -27,6 +27,9 @@ path = "junit.xml"
 #
 # If `op-reth/` is ever brought back into the workspace, restore all three from upstream's
 # `.config/nextest.toml`.
+#
+# v1.9.0 adds a fourth override for the kona-sp1 calibration tests. `kona/sp1/` is filtered out
+# of this tree (MANTLE_CHANGES.md §3.11), so it is not taken either.
 
 # `p2p_version::peers_negotiate_eth_69` intermittently dies with SIGSEGV *after* its body
 # has passed — the assertions succeed and nextest prints `test result: ok`, then the binary
