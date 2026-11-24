@@ -10,19 +10,33 @@ when synchronizing future upstream changes via `git subtree pull`.
 
 | Item | Value |
 |---|---|
-| Upstream tracking point | optimism `kona-client/v1.8.0` @ **`a271fd6b3feb76e49f3453e5a27be4b33a3c7211`** (2026-10-01) — **with the revm 41 pin, see §2.5** |
-| Bridge tag | `rust-kona-client-v1.8.0` (= bridge split `b6beb8e2fa0df79cd91ce17fa4b42952c95d238c`, parent `9ef6825f` = filtered v1.7.0) |
-| Bridge branch (last sync source) | `sync-kona-client-v1.8.0` |
+| Upstream tracking point | optimism `kona-client/v1.9.0` @ **`1286a886f0853e07503b46c2d6233b6a2f623286`** — **no revm pin** (the REVM41-PIN of §2.5 is undone). Its shared crates are tree-identical to `op-reth/v2.8.0`'s, the anchor of mantle-xyz/reth `dev/amsterdam` |
+| Bridge tag | `rust-kona-client-v1.9.0` (= bridge split `169da4e9c3fb4cfbe5159022cfb81f07e6569a1f`, parent `b6beb8e2` = filtered v1.8.0) |
+| Bridge branch (last sync source) | `sync-kona-client-v1.9.0` (bridge `main` deliberately left at the v1.8.0 split: v1.9.0 is only on `dev/amsterdam`) |
 | Bridge repo | https://github.com/mantle-xyz/optimism-rust-bridge |
 | `git subtree add` commit | `ba2cc4514` ("Add 'rust/' from commit '1ad181f05...'") |
-| Last subtree-pull merge commit | `341cbfc1bdb9c752454d88755483d5fe2058ee49` (v1.8.0; parents `f81803d15` + bridge split `b6beb8e2`). v1.7.0 was `dc2f93af30386a8f995844cd2318d26c89adec32` (two parents: the previous branch tip and the bridge split — verify with `git cat-file -p <sha>`; a single-parent commit here means the merge base is lost for the next sync) |
-| Previous baseline | `kona-client/v1.7.0` @ `64b043ea` / bridge split `fa7ef15e`, filtered to `9ef6825f` (bridge `main`). Before that: `kona-client/v1.5.1` @ `fbbf9089` / split `a6c46d8a` |
+| Last subtree-pull merge commit | `e518aabb4` (v1.9.0; parents `26156cd16` + bridge split `169da4e9`). v1.8.0 was `341cbfc1bdb9c752454d88755483d5fe2058ee49` (parents `f81803d15` + `b6beb8e2`) |
+| Previous baseline | `kona-client/v1.8.0` @ `a271fd6b` / bridge split `b6beb8e2`. Before that: `kona-client/v1.7.0` @ `64b043ea` / split `fa7ef15e`, filtered to `9ef6825f` |
+| revm | mantle-xyz/revm tag `v119-mantle.1` (revm 43.0.2 + Mantle changes; §2.1) |
 | Rust toolchain | 1.95 (see `rust/rust-toolchain.toml`) |
 
 **The source SHA is recorded above.** The v1.5.1 and op-reth/v2.4.2 rounds both omitted it; that
 gap is what the rest of this section used to document. Keep recording it.
 
-### How the v1.8.0 sync was performed (read before the next one)
+### How the v1.9.0 sync was performed (read before the next one)
+
+The v1.9.0 round (on `dev/amsterdam`) **undoes the REVM41-PIN** (§2.5) and moves the shared
+crates to revm 43 together with mantle-xyz/reth, which anchors on `op-reth/v2.8.0`.
+
+| Step | What was done |
+|---|---|
+| Bridge split, filtered | Same index-free method as v1.8.0, from optimism `kona-client/v1.9.0` @ `1286a886`, parent `b6beb8e2`, signed. Filtered tree `dd412950`; the diff to upstream `rust/` is 437 deletions, all under `op-reth/` (296), `kona/sp1/` (132), `lokahi/` (6), `op-reth-test-engine/` (3). 146 files changed vs `b6beb8e2`. Pushed atomically as `sync-kona-client-v1.9.0` + tag `rust-kona-client-v1.9.0` (`169da4e9`). |
+| Re-apply the two skipped commits | Before the merge, so that the 3-way merge sees "upstream v1.8.0 + Mantle" on our side: `1cbf91ab9` (`6aa707ae3`) and `bf4fc514f` (`26156cd16`), each with `git apply --3way` limited to the shared crates. The pre-image blobs had to be copied into this repo first (`git cat-file blob` from the optimism clone → `git hash-object -w`), otherwise `--3way` silently falls back to a plain apply. Mantle's pre-Arsia `execution` override and the token_ratio branch of `refund` were kept as-is in these commits and ported in a separate one. |
+| Merge | `git merge --no-ff --no-commit -Xsubtree=rust/ <split>` → `e518aabb4`, merge base `b6beb8e2`. **8 conflicted files**: `Cargo.toml`, `Cargo.lock`, `deny.toml`, `.config/nextest.toml`, `justfile`, `kona/.../precompiles/provider.rs`, `kona/.../executor/src/errors.rs`, `op-revm/src/handler.rs`. Resolutions are in the merge commit message; §3.13 lists the resulting Mantle deltas. |
+| Port | `e173211ae`: Mantle's op-revm overrides on the revm 43 API (§3.13). `8ab5f8fc3`: upstream's unspent-reservoir operator-fee test adapted to Mantle's Arsia gating. `18c22c152`: pre-existing doc lints (bare `[MANTLE]` in doc comments, one `doc_markdown`). |
+| Verification | §4.3 steps 1–5b green (rustfmt `nightly-2025-10-15`; clippy compared with the pre-sync tree under the same toolchain: identical error sets, op-revm lib 51 / lib-test 92); `revm-ee-tests` snapshot JSONs unchanged and passing; kona-executor fixtures (incl. pre-Arsia `block-26157064`) passing. §4.4 (`OLD_SPLIT=b6beb8e2`, `NEW_SPLIT=169da4e9`, `PRE=8a159aa77`): **116 `KEPT`, 6 `OVERWRITTEN`, 0 `DELETED`**; all 6 overwritten files had carried only REVM41-PIN artefacts (version tags, the `transact_raw` deposit cap workaround, the two `errors.rs` arms). |
+
+### How the v1.8.0 sync was performed
 
 The v1.8.0 round is a **revm-pinned** sync: kona and everything else move to v1.8.0, but the
 revm family, `alloy-evm`, `revm-inspectors` and alloy stay where `mantle-xyz/reth` (anchored at
@@ -88,7 +102,13 @@ The table below is kept because two of its traps are still live when auditing th
 
 ## 2. Architecture decisions
 
-### 2.1 revm sourced from mantle-xyz/revm @ rev `c6df4c5ef` (branch `dev/mantle-v1.6.3`)
+### 2.1 revm sourced from mantle-xyz/revm @ tag `v119-mantle.1`
+
+> **v1.9.0 sync:** the `[patch.crates-io]` now names tag `v119-mantle.1` (commit `5b88be58`,
+> revm 43.0.2 + Mantle changes), the same tag mantle-xyz/reth `dev/amsterdam` resolves. Tags on
+> mantle-xyz/revm are never moved; a fix ships as `-mantle.<N+1>`. The history below describes
+> the rev-pinned v1.8.0 state.
+
 
 > **Pinned by `rev` since the v1.8.0 review.** Before, the `[patch]` used `branch =
 > "dev/mantle-v1.6.3"`, so only `Cargo.lock` held the pin and any `cargo update` would have moved
@@ -226,6 +246,17 @@ constructs the upstream `EthereumDataSource` with the standard `BlobSource`. Pha
 removed these two orphan modules; see §3.11.
 
 ### 2.5 revm 41 pin (kona-client v1.8.0 onward) — and the way back
+
+> **Undone in the v1.9.0 sync (`dev/amsterdam`).** The reth anchor decision was "accept OP's reth
+> fork" (mantle-xyz/reth follows `op-reth/v2.8.0`, i.e. `op-v2.6.0-1` + revm 43). `1cbf91ab9` and
+> `bf4fc514f` were re-applied, upstream's `Cargo.toml` pins taken, and every row of the table below
+> resolved: provider.rs tag at `revm-handler@43.0.2`; registry l1 `bogota_time` now in upstream's
+> position; `errors.rs` equals upstream; the `transact_raw` deposit workaround is gone (Mantle's
+> all-transaction exemption via `tx_gas_limit_cap_override` stays). The one row that outlived the
+> pin is the justfile: `check-upstream-mirrors` stays out of `lint` because the script does not
+> understand git `[patch]` sources — that is about the patch source, not the revm version. The
+> text below is kept as the record of the pin.
+
 
 **Why the pin exists.** `mantle-xyz/reth` consumes this tree's `op-revm`, `alloy-op-evm` and
 `op-alloy` through git `[patch]`, and is anchored at op-reth v2.4.2 (paradigmxyz/reth@aef8d3ef,
@@ -1249,6 +1280,20 @@ affected by this tree no longer carrying a stale unbuilt copy.
 | `rust/UPDATING-RETH.md` | `[MANTLE]` header note (v1.8.0 review) | Upstream guide kept verbatim, but in mantle-v2 the mirror check is not in `lint` and its `docs/ai/*` references do not exist |
 | `op-alloy/crates/rpc-types/src/transaction.rs` | Stale `[MANTLE]` comment said `TxDeposit::eth_value` is `u128`; now `U256` (v1.8.0 review) | Missed by the earlier u128-wording cleanup (`87a0af21a`) |
 
+### 3.13 kona-client v1.9.0 sync — new Mantle deltas
+
+| File | Change | Why |
+|---|---|---|
+| `op-revm/src/handler.rs` `execution` | Pre-Arsia token_ratio path on the revm 43 API: L1 cost (in gas) and the token_ratio division lower `gas.remaining()` before `first_frame_input`; checkpoint commit / runtime-OOG branch mirror upstream. Tag `revm-handler@43.0.2` | revm 43 passes the transaction-level `GasTracker` and the first frame takes all of `remaining`; this is the same arithmetic the revm 41 body applied to the `gas_limit` it passed in. EIP-8037 / EIP-2780 are off on Mantle, so the reservoir is 0 |
+| `op-revm/src/handler.rs` `refund` | `set_final_refund(5 or 2)` from `is_london` | revm 43 takes the EIP-3529 quotient instead of a flag; same values |
+| `op-revm/src/handler.rs` `validate_initial_tx_gas` | `state_refund` assignment dropped | revm 43 removed the field; the state part was already zeroed |
+| `op-revm/src/l1block.rs` `operator_fee_refund` | Upstream's `saturating_sub`, Mantle's one-argument `operator_fee_charge_inner` | revm 42+ can make `remaining + reservoir + refunded` exceed the limit |
+| `op-revm/src/l1block.rs` test `test_operator_fee_refund_with_unspent_reservoir` | Expects 0 at Isthmus and `50_000 * 2000 * 100` at Arsia | Mantle's operator fee starts at Arsia with the Jovian formula |
+| `alloy-op-evm/src/tests.rs` | Upstream's deposit gas-cap test passes Mantle's two BVM_ETH fields to `DepositTransactionParts::new` | Mantle's constructor takes five arguments |
+| `rust/Cargo.toml` | `[patch.crates-io]` → tag `v119-mantle.1`; `alloy-eip7928 >= 0.4.11`; `rustls-platform-verifier` added (now used by `kona-sources`); no op-reth / kona-sp1 members or deps | §2.1; revm#3916 in `v119-mantle.1` needs the accessor; §3.11 |
+| `rust/Cargo.lock` | Upstream's, re-resolved; `alloy-eip7928` pinned at 0.4.11 | Same version mantle-xyz/reth locks (its vendored engine-tree still reads `CodeChange.new_code`) |
+| `.config/nextest.toml`, `deny.toml`, `justfile` | Kept ours: no op-reth / kona-sp1 overrides or recipes; Mantle's advisory list | §3.11 |
+
 ## 4. Sync workflow
 
 ### 4.1 Pre-sync dry-run (optional but recommended)
@@ -1307,7 +1352,7 @@ git diff --name-only --diff-filter=U | xargs grep -l "\[MANTLE\]"
 >
 > | Item | Note |
 > |---|---|
-> | libclang on macOS | `librocksdb-sys` and `libproc` run bindgen. Release builds need `LIBCLANG_PATH`; the debug build script of `librocksdb-sys` also loads `libclang.dylib` at **run time**, so tests additionally need `DYLD_FALLBACK_LIBRARY_PATH` set to the same directory (e.g. `…/XcodeDefault.xctoolchain/usr/lib`). |
+> | libclang on macOS | On a machine with only the Command Line Tools (no Xcode.app) the library is `/Library/Developer/CommandLineTools/usr/lib/libclang.dylib`. `librocksdb-sys` and `libproc` run bindgen. Release builds need `LIBCLANG_PATH`; the debug build script of `librocksdb-sys` also loads `libclang.dylib` at **run time**, so tests additionally need `DYLD_FALLBACK_LIBRARY_PATH` set to the same directory (e.g. `…/XcodeDefault.xctoolchain/usr/lib`). |
 > | rustfmt version | Use **nightly-2025-10-15**: the tree is clean under it. An older nightly (2024-12) reports diffs in ~38 untouched files — a version artefact, not a regression. Judge fmt by "no file newly dirty versus the pre-sync tree". |
 > | clippy baseline | Outside `op-revm`, clippy is clean after removing a pre-existing unused import (§3.12). `op-revm` keeps its baseline (lib 50 / lib-test 91 errors under `--all-features --all-targets -D warnings`). Compare it by error kind and file with line numbers stripped, against the pre-sync tree built the same way — in v1.8.0 the sets were identical. |
 > | Executor fixtures | Use sepolia-testnet-qa1 via `mrr` (`MRR_URL=https://mrr.qa4.gomantle.org`); the public Mantle Sepolia RPC is archive but does not whitelist the `debug_*` methods the fixture tool needs. Batch JSON-RPC requests above ~50 calls get HTTP 413. |
